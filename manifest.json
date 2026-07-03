@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "Data entry helper for me",
+  "version": "1.0.0",
+
+  "background": {
+      "service_worker": "src/background.js"
+  },
+  
+  "permissions": [
+    "downloads",
+    "storage"
+  ],
+  
+  "host_permissions": [
+      "http://localhost:3737/*"
+  ],
+
+"content_scripts": [
+    {
+        "matches": [
+            "https://www.tradetech.net/*",
+            "https://mergeimagesonline.com/*"
+        ],
+        "js": [
+            "src/utils/date.js",
+            "src/utils/banner.js",
+            "src/utils/button.js",
+            "src/utils/dom.js",
+            "src/core/boundary.js",
+            "src/features/notes.js",
+            "src/features/validation.js",
+            "src/features/date-syncing.js",
+            "src/features/port-highlighting.js",
+            "src/features/vessel-correction.js",
+            "src/features/vessel-no-date.js",
+            "src/features/vessel-to-be-announced.js",
+            "src/features/voyage-direction.js",
+            "src/features/resize-toggle.js",
+            "src/features/service-relay-send.js",
+            "src/features/schedule-cascade.js",
+            "src/features/merge-download-signal.js",
+            "src/features/upload-proof.js",
+            "src/main.js"
+        ],
+        "all_frames": true,
+        "run_at": "document_idle"
+    },
+    {
+    "matches": ["<all_urls>"],
+    "exclude_matches": [
+        "https://www.tradetech.net/*"
+    ],
+    "js": [
+        "src/utils/button.js",
+        "src/features/rename-toggle.js",
+        "src/rename-toggle-init.js"
+    ],
+    "run_at": "document_idle"
+}
+]
+}
