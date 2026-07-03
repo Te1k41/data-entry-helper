@@ -25,7 +25,7 @@ function createButton(options) {
     const btn = document.createElement("button");
     btn.id          = options.id;
     btn.textContent = options.label;
-    const position = options.position || "fixed";
+    const position = options.position || "absolute";
     btn.type        = "button";
 
     btn.style.cssText = `
