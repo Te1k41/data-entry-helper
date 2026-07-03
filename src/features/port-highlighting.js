@@ -22,8 +22,13 @@ const PortHighlighting = {
     // Category rank — lower = higher priority. Used when multiple
     // valid category-change candidates exist on the same route.
     // Add or reorder entries here to change priority.
+    //
+    // NOTE: Canada does NOT get its own entry here. It's folded into
+    // the "USA" category down in getPortCategory() below, so the two
+    // are treated as a single region — crossing between a Canadian
+    // port and a US port is never counted as a region change.
     CATEGORY_RANK: {
-        USA: 1, CANADA: 1,
+        USA: 1,
         JAPAN: 2, EU_UK: 2
     },
 
@@ -41,12 +46,19 @@ const PortHighlighting = {
 
     // Classifies a port name string by checking what it ends with.
     // Returns "OTHER" for anything not recognized.
+    //
+    // Canada is intentionally classified as "USA" here (not its own
+    // "CANADA" category). This means the US and Canada are one region
+    // for highlighting purposes — whichever port appears first when
+    // entering that region is the one that gets highlighted, and
+    // continuing on into the other one afterward does not trigger a
+    // second highlight.
     getPortCategory(portName) {
         if (!portName) return null;
         const name = portName.trim().toUpperCase();
 
         if (name.endsWith("USA"))            return "USA";
-        if (name.endsWith("CANADA"))         return "CANADA";
+        if (name.endsWith("CANADA"))         return "USA"; // merged w/ USA — see note above
         if (name.endsWith("JAPAN"))          return "JAPAN";
         if (name.endsWith("JAP"))            return "JAPAN";
         if (name.endsWith("UNITED KINGDOM")) return "EU_UK";
@@ -182,7 +194,9 @@ const PortHighlighting = {
     console.log(`  first_${key}_port: SP${rowNum} is ${currentCat}, above is ${aboveCat}`);
 
     // Only highlight if it's a genuine category entry (not OTHER,
-    // and not the same category as the row above it).
+    // and not the same category as the row above it — this is also
+    // what makes a Canada→USA (or USA→Canada) step a non-event, since
+    // both resolve to the same "USA" category).
     if (currentCat === "OTHER" || currentCat === aboveCat) {
         console.log(`  ⚠ not a valid entry transition — skipping`);
         continue;
@@ -199,6 +213,10 @@ const PortHighlighting = {
         }
 
         // ── Generic scan: collect every valid category-change candidate ──
+        // Because Canada and USA share one category, this loop naturally
+        // highlights whichever of the two is entered FIRST (Canada, in a
+        // route like HKG → CANADA → USA) since the row immediately after
+        // it shares the same category and is skipped as "not a change."
         const candidates = [];
         console.log(`🔎 Scanning ${portNameFields.length} ports, bias: ${biasFirst ? "FIRST" : "LAST"}`);
 
