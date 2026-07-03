@@ -16,7 +16,7 @@ const ScheduleCascade = {
             left:    "30px",
             onClick: () => {
                 this.storeDiffs();
-                showBanner({
+                showTemporaryBanner({
                     title:   "📸 Diffs Snapshotted",
                     message: `Stored ${Object.keys(this.diffs).length} port intervals`
                 });
@@ -37,22 +37,15 @@ const ScheduleCascade = {
     storeDiffs() {
     this.diffs = {};
 
-    // Gather every row that has a port name, with its raw arrival/depart values
-    const rows = new Map(); // rowStr -> { arrivalRaw, departRaw }
-
     document.querySelectorAll('input[name^="SP"][name$="_arrival_date_diff"]')
         .forEach(field => {
             const match = field.name.match(/^SP(\d+)_arrival_date_diff$/);
             if (!match) return;
             const arrVal = field.value.trim();
-            if (!arrVal) return; // truly empty → skip; "0" is a real value
-
+            if (!arrVal) return;  // empty → skip entirely, don't store
             const row = match[1];
-            const portNameField = document.querySelector(`input[name="SP${row}_port_name"]`);
-            if (!portNameField || !portNameField.value.trim()) return; // no port name → skip
-
-            if (!rows.has(row)) rows.set(row, {});
-            rows.get(row).arrivalRaw = arrVal;
+            if (!this.diffs[row]) this.diffs[row] = {};
+            this.diffs[row].arrival = parseInt(arrVal, 10);
         });
 
     document.querySelectorAll('input[name^="SP"][name$="_depart_date_diff"]')
@@ -60,50 +53,11 @@ const ScheduleCascade = {
             const match = field.name.match(/^SP(\d+)_depart_date_diff$/);
             if (!match) return;
             const depVal = field.value.trim();
-            if (!depVal) return; // truly empty → skip; "0" is a real value
-
+            if (!depVal) return;  // empty → skip entirely, don't store
             const row = match[1];
-            const portNameField = document.querySelector(`input[name="SP${row}_port_name"]`);
-            if (!portNameField || !portNameField.value.trim()) return; // no port name → skip
-
-            if (!rows.has(row)) rows.set(row, {});
-            rows.get(row).departRaw = depVal;
+            if (!this.diffs[row]) this.diffs[row] = {};
+            this.diffs[row].depart = parseInt(depVal, 10);
         });
-
-    // Walk rows in numeric order, only keeping values that are >= the
-    // last value we actually stored for that same field (arrival/depart).
-    // Anything smaller is treated as a boundary/repeat artifact and is
-    // skipped WITHOUT updating the running "last stored" value.
-    const sortedRows = Array.from(rows.keys()).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-
-    let lastArrival = null;
-    let lastDepart  = null;
-
-    for (const row of sortedRows) {
-        const { arrivalRaw, departRaw } = rows.get(row);
-
-        if (arrivalRaw !== undefined) {
-            const val = parseInt(arrivalRaw, 10);
-            if (lastArrival === null || val >= lastArrival) {
-                if (!this.diffs[row]) this.diffs[row] = {};
-                this.diffs[row].arrival = val;
-                lastArrival = val;
-            } else {
-                console.log(`⛔ Skipped SP${row} arrival diff (${val}) — less than last stored (${lastArrival})`);
-            }
-        }
-
-        if (departRaw !== undefined) {
-            const val = parseInt(departRaw, 10);
-            if (lastDepart === null || val >= lastDepart) {
-                if (!this.diffs[row]) this.diffs[row] = {};
-                this.diffs[row].depart = val;
-                lastDepart = val;
-            } else {
-                console.log(`⛔ Skipped SP${row} depart diff (${val}) — less than last stored (${lastDepart})`);
-            }
-        }
-    }
 
     console.log("📦 Diffs stored:", JSON.stringify(this.diffs));
     },
@@ -154,7 +108,7 @@ const ScheduleCascade = {
         }
     }
 
-    showBanner({
+    showTemporaryBanner({
         title:   "🌊 Cascade complete",
         message: `Ports recalculated from SP001 ${DateUtils.format(sp001Date)}`
     });

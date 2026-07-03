@@ -13,30 +13,24 @@ const SP001DateValidation = {
         if (!sp001) return;
 
         const spDate = sp001.value.trim();
-        if (!spDate) { removeBanner(); return; } // nothing entered yet, no warning needed
+        if (!spDate) { setWarning("sp001-mismatch", null); return; }
 
         const match = this.findMatchingSVDate(spDate);
 
         if (match) {
             console.log(`✅ SP001 matches ${match}`);
-            removeBanner();
+            setWarning("sp001-mismatch", null);
         } else {
             console.warn(`⚠ No SV departure matches ${spDate}`);
-            showBanner({
+            setWarning("sp001-mismatch", {
                 title:   "🚢 Vessel date mismatch",
                 message: `No SV vessel found for ${spDate}`
             });
         }
     },
 
-    // Compares SP001's date against every SV*_depart_date field.
-    // Uses DateUtils.normalize() so "06/25/26" and "062526" are
-    // treated as equal. Returns the matching field's name, or null.
     findMatchingSVDate(spDate) {
     const normalizedSP = DateUtils.normalize(spDate);
-
-    // name^="SV"  → starts with "SV"
-    // name$="_depart_date" → ends with "_depart_date"
     const svFields = document.querySelectorAll(
         'input[name^="SV"][name$="_depart_date"]'
     );
@@ -57,24 +51,11 @@ const SP001DateValidation = {
     // --- Module interface ---
 
     init() {
-        // Nothing extra needed on load; validate() is called
-        // after syncing in the date-syncing feature instead.
+        // Nothing extra needed on load; validateSP001Date is called
+        // after syncing in the date-syncing feature
     },
 
-    // Only re-runs validation when an SV departure date or one of
-    // SP001's own date fields changes — everything else is ignored
-    // even though this listens to every field change globally.
     handle(event) {
-        const { name } = event.target;
-        const isSVDate  = name?.startsWith("SV") && name?.endsWith("_depart_date");
-        const isSP001   = name === "SP001_depart_date" || name === "SP001_arrival_date";
-
-        if (isSVDate || isSP001) {
-            this.validate();
-        }
-    },
-    handleBlur(event)
-    {
         const { name } = event.target;
         const isSVDate  = name?.startsWith("SV") && name?.endsWith("_depart_date");
         const isSP001   = name === "SP001_depart_date" || name === "SP001_arrival_date";
