@@ -22,6 +22,10 @@
 //  Every other field is left completely alone — normal browser tab
 //  order applies everywhere except this cycle.
 //
+//  Every jump also selects the destination field's full text (like
+//  landing on a cell in a spreadsheet) — so you can start typing
+//  right away to overwrite it, without needing to clear it first.
+//
 //  Runs off its own keydown listener (registered in init())
 //  rather than the shared "change" bus in main.js, since it
 //  needs to intercept the key before the browser's default
@@ -104,6 +108,17 @@ const KeyboardFieldNav = {
         }
     },
 
+    // Focuses a field AND selects all its text — like landing on a
+    // cell in a spreadsheet, so typing immediately overwrites whatever
+    // was there instead of you needing to select/clear it first.
+    // Every navigation jump in this feature goes through this one
+    // helper so the select-all behavior stays consistent everywhere.
+    focusField(field, event) {
+        event.preventDefault();
+        field.focus();
+        field.select();
+    },
+
     // Focuses a specific named field in the same row, if it exists.
     jumpToField(prefix, rowStr, targetField, event) {
         const next = document.querySelector(
@@ -111,8 +126,7 @@ const KeyboardFieldNav = {
         );
         if (!next) return; // field doesn't exist on this row — fall back to normal tab
 
-        event.preventDefault();
-        next.focus();
+        this.focusField(next, event);
     },
 
     // Same as jumpToField, but for crossing into a DIFFERENT row
@@ -153,8 +167,7 @@ const KeyboardFieldNav = {
         );
         if (!next) return; // no such row — do nothing, don't jump wild
 
-        event.preventDefault();
-        next.focus();
+        this.focusField(next, event);
     },
 
     // ← / → — same row, previous/next field by actual left-to-right
@@ -173,8 +186,7 @@ const KeyboardFieldNav = {
         );
         if (!next) return;
 
-        event.preventDefault();
-        next.focus();
+        this.focusField(next, event);
     },
 
     // Finds every field belonging to one row (e.g. all "SP001_*"
