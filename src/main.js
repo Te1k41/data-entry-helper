@@ -35,7 +35,9 @@ const FEATURES = [
     ServiceRelaySend,
     ScheduleCascade,
     MergeDownloadSignal,
-    UploadProof
+    UploadProof,
+    KeyboardFieldNav,
+    
 
     // Add new features here ↓
     // MyNewFeature,

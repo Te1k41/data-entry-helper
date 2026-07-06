@@ -41,6 +41,7 @@
             "src/features/schedule-cascade.js",
             "src/features/merge-download-signal.js",
             "src/features/upload-proof.js",
+            "src/features/keyboard-navigation.js",
             "src/main.js"
         ],
         "all_frames": true,
