@@ -35,30 +35,82 @@ const ScheduleCascade = {
     },
 
     storeDiffs() {
-    this.diffs = {};
+    const sp001Field = document.querySelector('input[name="SP001_arrival_date"]');
+    const sp001Date  = sp001Field ? DateUtils.parse(sp001Field.value) : null;
+
+    if (!sp001Date) {
+        console.warn("⚠ SP001 arrival date not set — snapshot skipped");
+        return;
+    }
+
+    // First pass: collect the raw diff values per row (keeping the
+    // original zero-padded row string, e.g. "001", for building field
+    // names later).
+    const rawDiffs = {};   // { rowNum: { rowStr, arrival?, depart? } }
 
     document.querySelectorAll('input[name^="SP"][name$="_arrival_date_diff"]')
         .forEach(field => {
             const match = field.name.match(/^SP(\d+)_arrival_date_diff$/);
             if (!match) return;
-            const arrVal = field.value.trim();
-            if (!arrVal) return;  // empty → skip entirely, don't store
-            const row = match[1];
-            if (!this.diffs[row]) this.diffs[row] = {};
-            this.diffs[row].arrival = parseInt(arrVal, 10);
+            const val = field.value.trim();
+            if (!val) return; // empty → skip entirely, don't store
+            const rowStr = match[1];
+            const rowNum = parseInt(rowStr, 10);
+            if (!rawDiffs[rowNum]) rawDiffs[rowNum] = { rowStr };
+            rawDiffs[rowNum].arrival = parseInt(val, 10);
         });
 
     document.querySelectorAll('input[name^="SP"][name$="_depart_date_diff"]')
         .forEach(field => {
             const match = field.name.match(/^SP(\d+)_depart_date_diff$/);
             if (!match) return;
-            const depVal = field.value.trim();
-            if (!depVal) return;  // empty → skip entirely, don't store
-            const row = match[1];
-            if (!this.diffs[row]) this.diffs[row] = {};
-            this.diffs[row].depart = parseInt(depVal, 10);
+            const val = field.value.trim();
+            if (!val) return; // empty → skip entirely, don't store
+            const rowStr = match[1];
+            const rowNum = parseInt(rowStr, 10);
+            if (!rawDiffs[rowNum]) rawDiffs[rowNum] = { rowStr };
+            rawDiffs[rowNum].depart = parseInt(val, 10);
         });
 
+    // Second pass: walk the rows in order and enforce the real-world
+    // rule this schedule always follows —
+    //   arrival_001 ≤ depart_001 ≤ arrival_002 ≤ depart_002 ≤ ...
+    // Each reconstructed date must be >= the one before it in the
+    // chain. If a diff would push the date BACKWARD, that's the sign
+    // Tradetech hasn't recalculated it yet (or it's just bad data) —
+    // skip that one value only, rather than trusting a broken sequence.
+    const newDiffs = {};
+    let previousDate = sp001Date; // arrival_001 is the anchor of the whole chain
+
+    const orderedRows = Object.keys(rawDiffs).map(Number).sort((a, b) => a - b);
+
+    for (const rowNum of orderedRows) {
+        const { rowStr, arrival, depart } = rawDiffs[rowNum];
+
+        if (arrival !== undefined) {
+            const candidate = DateUtils.addDays(sp001Date, arrival);
+            if (candidate >= previousDate) {
+                if (!newDiffs[rowStr]) newDiffs[rowStr] = {};
+                newDiffs[rowStr].arrival = arrival;
+                previousDate = candidate;
+            } else {
+                console.warn(`⚠ SP${rowStr} arrival diff (${arrival}) goes backward in the sequence — skipped`);
+            }
+        }
+
+        if (depart !== undefined) {
+            const candidate = DateUtils.addDays(sp001Date, depart);
+            if (candidate >= previousDate) {
+                if (!newDiffs[rowStr]) newDiffs[rowStr] = {};
+                newDiffs[rowStr].depart = depart;
+                previousDate = candidate;
+            } else {
+                console.warn(`⚠ SP${rowStr} depart diff (${depart}) goes backward in the sequence — skipped`);
+            }
+        }
+    }
+
+    this.diffs = newDiffs;
     console.log("📦 Diffs stored:", JSON.stringify(this.diffs));
     },
 
