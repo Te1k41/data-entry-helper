@@ -2,8 +2,8 @@
 //  FEATURE: Upload Proof
 //  Button on main page opens the Support Document popup.
 //  Same script running inside the popup detects the pending
-//  job, fills the file input, then WAITS for the user to
-//  confirm before clicking Upload.
+//  job, fills the file input, and submits automatically —
+//  a banner just confirms what happened, no click needed.
 // ─────────────────────────────────────────────────────
 const UploadProof = {
 
@@ -136,7 +136,22 @@ const UploadProof = {
 
             await chrome.storage.local.remove("pendingUpload");
 
-            this.showConfirmBanner(pendingUpload);
+            // Submit immediately — no confirm step.
+            const submitBtn = document.querySelector('input[type="submit"][value="Upload"]');
+            if (submitBtn) {
+                submitBtn.click();
+                console.log("🚀 Upload submitted automatically");
+                showTemporaryBanner({
+                    title:   "✅ Upload submitted",
+                    message: pendingUpload
+                });
+            } else {
+                console.warn("⚠ Submit button not found");
+                showBanner({
+                    title:   "⚠ Upload proof staged, not submitted",
+                    message: `Submit button not found — staged ${pendingUpload} manually`
+                });
+            }
         } catch (err) {
             console.error("❌ Auto-fill failed:", err);
             showBanner({
@@ -144,62 +159,6 @@ const UploadProof = {
                 message: "Could not fetch or stage the file — check console"
             });
         }
-    },
-
-    showConfirmBanner(filename) {
-        removeBanner();
-
-        const div = document.createElement("div");
-        div.id = "tt-banner";
-
-        div.innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 4px;">📎 Ready to upload</div>
-            <div style="opacity: 0.85; margin-bottom: 8px;">${filename}</div>
-            <button id="tt-confirm-upload" style="
-                font-family: monospace; font-size: 11px; cursor: pointer;
-                border: 2px solid #000; background: #d4ffd4; padding: 3px 8px; margin-right: 6px;
-            ">✅ Confirm Upload</button>
-            <button id="tt-cancel-upload" style="
-                font-family: monospace; font-size: 11px; cursor: pointer;
-                border: 2px solid #000; background: #ffd4d4; padding: 3px 8px;
-            ">✖ Cancel</button>
-        `;
-
-        div.style.cssText = `
-            position: fixed;
-            top: 16px;
-            right: 16px;
-            z-index: 999999;
-            background: #fcff9e;
-            color: #000000;
-            border: 2px solid #000000;
-            border-radius: 0px;
-            padding: 10px 16px;
-            font-family: monospace;
-            font-size: 11px;
-            letter-spacing: 0.5px;
-            line-height: 1.6;
-            box-shadow: 3px 3px 0px #000000;
-            min-width: 260px;
-        `;
-
-        document.body.appendChild(div);
-
-        document.getElementById("tt-confirm-upload").addEventListener("click", () => {
-            const submitBtn = document.querySelector('input[type="submit"][value="Upload"]');
-            if (submitBtn) {
-                submitBtn.click();
-                console.log("🚀 Upload submitted (user confirmed)");
-            } else {
-                console.warn("⚠ Submit button not found");
-            }
-            removeBanner();
-        });
-
-        document.getElementById("tt-cancel-upload").addEventListener("click", () => {
-            console.log("🚫 Upload cancelled by user");
-            removeBanner();
-        });
     },
 
     handle(_event) {},
