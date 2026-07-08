@@ -88,6 +88,22 @@ date mismatches before they become problems.
 │  Service Relay Send         Sends the service code to   │
 │                             the local relay server so   │
 │                             downloads can be renamed    │
+├─────────────────────────────────────────────────────────┤
+│  Merge Download Signal      Tells the relay server to   │
+│                             clean up duplicate/screen-  │
+│                             capture files after a merge │
+├─────────────────────────────────────────────────────────┤
+│  Upload Proof               One click stages and        │
+│                             submits today's proof file  │
+│                             in the Support Doc popup     │
+├─────────────────────────────────────────────────────────┤
+│  Keyboard Field Navigation  Arrow keys + Tab move        │
+│                             between SP/SV fields like    │
+│                             a spreadsheet                │
+├─────────────────────────────────────────────────────────┤
+│  Rename Toggle              ON/OFF switch (any site,     │
+│                             except Tradetech) for the    │
+│                             relay's download renaming    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -99,20 +115,23 @@ date mismatches before they become problems.
 extension/
 │
 ├── manifest.json                    ← Chrome config, load order lives here
-├── background.js                    ← Renames downloads using relay service code
-│
+│                                       (two content_scripts blocks — see below)
 └── src/
+    │
+    ├── background.js                ← Service worker. Connects to the relay's
+    │                                   WebSocket for state; download renaming
+    │                                   itself now happens server-side.
     │
     ├── utils/                       ← Shared helpers, no features here
     │   ├── date.js                  ← All date math (parse, format, compare)
     │   ├── dom.js                   ← Writing values into form fields
-    │   ├── banner.js                ← Show/hide the warning banner
+    │   ├── banner.js                ← Warning banner + success banner + registry
     │   └── button.js                ← Create styled, draggable buttons
     │
     ├── core/                        ← Shared logic used by multiple features
     │   └── boundary.js              ← Port repeat detection (sync boundary)
     │
-    ├── features/                    ← One file per feature
+    ├── features/                    ← One file per feature (Tradetech bundle)
     │   ├── notes.js                 ← Notes date replacement
     │   ├── validation.js            ← SP001 date validation
     │   ├── date-syncing.js          ← ETA ↔ ETD syncing
@@ -123,22 +142,36 @@ extension/
     │   ├── voyage-direction.js      ← Appends direction suffix to voyage codes
     │   ├── resize-toggle.js         ← Turns off resize switch (image merge site)
     │   ├── service-relay-send.js    ← Sends service code to local relay server
-    │   └── schedule-cascade.js      ← Snapshot + cascade port date diffs
+    │   ├── schedule-cascade.js      ← Snapshot + cascade port date diffs
+    │   ├── merge-download-signal.js ← Signals relay to clean up merge downloads
+    │   ├── upload-proof.js          ← Stages + auto-submits today's proof file
+    │   └── keyboard-navigation.js   ← Spreadsheet-style arrow/tab navigation
     │
-    └── main.js                      ← Registers all features, runs bootstrap
+    ├── main.js                      ← Registers Tradetech features, runs bootstrap
+    │
+    ├── features/rename-toggle.js    ← Rename ON/OFF button (all-sites bundle)
+    └── rename-toggle-init.js        ← Bootstraps the all-sites bundle
 
 service-relay/                       ← Separate local Node.js process, NOT
 ├── server.js                          part of the Chrome extension bundle.
-└── start-hidden.vbs                   Lets the Edge tab and the Chrome
-                                        downloads listener share state.
+│                                       HTTP + WebSocket on port 3737, watches
+│                                       Downloads with chokidar.
+├── package.json                       Deps: ws, chokidar
+└── start-hidden.vbs                   Runs server.js silently on login
+                                        (Windows Task Scheduler).
 ```
 
 > Rule of thumb:
 > utils   → things that do one job and know nothing about the form
 > core    → things shared between features that know about the form
 > features → things that do one specific thing on the page
-> main.js → the only file that knows about all features
-> background.js → runs outside the page, listens for Chrome download events
+> main.js → the only file that knows about all Tradetech features
+> background.js → runs outside the page, syncs state with the relay over WebSocket
+>
+> manifest.json actually defines TWO content script bundles:
+>   1. Tradetech + mergeimagesonline — everything above `main.js`
+>   2. All other sites (except Tradetech) — just button.js, rename-toggle.js,
+>      and rename-toggle-init.js, for the standalone rename ON/OFF switch
 
 ---
 
@@ -236,6 +269,51 @@ code, e.g. "ZX2-N" → voyage "104" becomes "104N".
 Runs automatically on page load — turns off the resize switch if
 it's on, so merged images keep their original size.
 
+### Keyboard Field Navigation
+No button — just start using arrow keys inside any SP*/SV* field:
+```
+↑ / ↓   same field, previous/next row
+← / →   previous/next field in the row (by on-page position),
+        only once the cursor is already at that edge of the text
+Tab     cycles arrival_date ↔ depart_date within/across rows
+```
+Landing on a field also selects its full text, like a spreadsheet
+cell, so you can just start typing to overwrite it.
+
+### Upload Proof
+```
+┌──────────────────────┐
+│ 📤 Upload Proof      │   ← click me
+└──────────────────────┘
+```
+Click it once the service code is set. It asks the local relay
+server for today's proof file matching that service code, opens
+the Support Document popup, stages the file into the upload input,
+and **submits it automatically** — no confirmation click needed.
+A green banner confirms the filename that was submitted and clears
+itself after a few seconds:
+```
+┌──────────────────────────────────────┐
+│  ✅ Upload submitted                 │
+│  MEDEX-E-070326.png                  │
+└──────────────────────────────────────┘
+```
+If no matching file is found, or the relay server isn't reachable,
+you'll get an alert instead of a silent failure.
+
+### Rename Toggle (any site except Tradetech)
+```
+┌────────────────────────┐
+│ 📁 Rename: ON          │   ← click to toggle ON/OFF
+└────────────────────────┘
+```
+Appears on every site except Tradetech itself (so it doesn't clash
+with the extension's Tradetech-side buttons). Toggling it broadcasts
+the new state to the relay server over WebSocket, which turns its
+automatic Downloads-folder renaming on or off — the button stays in
+sync across every open tab/browser since they all get the same
+broadcast.
+
 ---
 
 ## 5. How To Add A New Feature
@@ -290,9 +368,16 @@ const FEATURES = [
     ResizeToggleOff,
     ServiceRelaySend,
     ScheduleCascade,
+    MergeDownloadSignal,
+    UploadProof,
+    KeyboardFieldNav,
     YourFeatureName,        // ← add here
 ];
 ```
+
+> Note: `RenameToggle` is NOT in this array — it belongs to the
+> separate "all sites except Tradetech" content script bundle and
+> is bootstrapped directly by `rename-toggle-init.js` instead.
 
 ### Step 3 — Add it to manifest.json
 
@@ -314,10 +399,21 @@ const FEATURES = [
   "src/features/resize-toggle.js",
   "src/features/service-relay-send.js",
   "src/features/schedule-cascade.js",
+  "src/features/merge-download-signal.js",
+  "src/features/upload-proof.js",
+  "src/features/keyboard-navigation.js",
   "src/features/your-feature-name.js",   ← add here, BEFORE main.js
   "src/main.js"
 ]
 ```
+
+This is the FIRST `content_scripts` block (matches Tradetech +
+mergeimagesonline). There's a SECOND block in manifest.json for
+`<all_urls>` (excluding Tradetech) that only loads
+`src/utils/button.js`, `src/features/rename-toggle.js`, and
+`src/rename-toggle-init.js` — that one is unrelated to the
+FEATURES array above and doesn't need touching for a normal
+Tradetech feature.
 
 That's it. No other wiring needed.
 
@@ -412,13 +508,32 @@ if (value.trim() === "`") {
 Swap the backtick for whatever character you'd rather type.
 
 ### Change which download rename format is used
-Open `background.js` and find:
+Renaming now happens on the relay server, not in the extension.
+Open `service-relay/server.js` and find (it appears twice — in the
+file-watcher `add` handler and in `runMergeCleanup()`):
 
 ```js
-const newFilename = `${lastServiceCode}-${dateStr}.${extension}`;
+const newName = `${currentServiceCode}-${dateStr}${ext}`;
 ```
 
-Edit the template string to change the naming pattern.
+Edit the template string to change the naming pattern. Restart the
+relay server after editing (see Section 9).
+
+### Change the Upload Proof confirmation behavior
+`src/features/upload-proof.js` currently auto-submits as soon as
+the file is staged, showing a temporary success banner instead of
+asking for confirmation. Find this block in `tryAutoFill()`:
+
+```js
+const submitBtn = document.querySelector('input[type="submit"][value="Upload"]');
+if (submitBtn) {
+    submitBtn.click();
+    ...
+```
+
+If you ever want a manual confirm step back, wrap the `.click()` in
+a button/banner the user has to click first instead of firing it
+immediately.
 
 ---
 
@@ -503,12 +618,17 @@ If it says `true` when nothing is happening — reload the extension.
 
 ### The relay server
 
-If service codes aren't reaching Chrome for download renaming, check:
+If service codes aren't syncing, or Upload Proof can't find a file,
+check the console for:
 ```
-❌ Could not reach relay server:     → server.js isn't running,
-                                        or something else is on
-                                        port 3737. Restart it.
+🔌 [Feature]Send disconnected — reconnecting in 3s
+❌ ServiceRelaySend WebSocket error
+❌ find-file failed: ...
 ```
+Any of these mean `server.js` isn't running, or something else is
+on port 3737. Restart it — features will auto-reconnect on their
+own once it's back up (each relay-connected feature retries every
+3 seconds).
 See Section 9 for how the relay is supposed to be running.
 
 ---
@@ -516,23 +636,53 @@ See Section 9 for how the relay is supposed to be running.
 ## 9. The Service Relay (Background)
 
 Edge (where Tradetech lives) and Chrome (where downloads land) are
-separate browser processes and can't share data directly. A tiny
-local Node.js server (`service-relay/server.js`) on port 3737 sits
-between them:
+separate browser processes and can't share data directly. A local
+Node.js server (`service-relay/server.js`), built on `ws` +
+`chokidar`, sits between them on port 3737 and does most of the
+real work itself now:
 
 ```
-Edge extension  → POST /service   (sends service code on change/load)
-Chrome background.js → GET /service (reads code before renaming a download)
+HTTP:
+  GET  /service     → current service code
+  GET  /renaming     → whether auto-rename is currently on
+  GET  /find-file    → find today's proof file for a service code
+                        (used by Upload Proof before opening the
+                        Support Document popup)
+  GET  /file          → stream a specific file's raw bytes back
+                        (used by Upload Proof to stage the file)
+
+WebSocket (ws://localhost:3737):
+  Broadcasts { type: "service" }, { type: "renaming" }, and
+  { type: "init" } (on connect) to every open tab/extension so
+  the service code and the Rename ON/OFF state stay in sync
+  across Edge, Chrome, and every open Tradetech tab at once.
+  { type: "merge-download" } from merge-download-signal.js
+  triggers a 3-second-delayed cleanup pass.
 ```
 
-Download rename format: `{SERVICE_CODE}-{MMDDYY}.{ext}`
-Example: `MEDEX-E-070326.png`
+**Automatic renaming** — `chokidar` watches the Downloads folder
+(`WATCH_FOLDER` in server.js, currently `C:\Users\DELL\Downloads`)
+for new files matching `WATCH_EXTS`, and renames them to:
+```
+{SERVICE_CODE}-{MMDDYY}.{ext}
+{SERVICE_CODE}-{MMDDYY}-2.{ext}, -3.{ext}, ... on repeat downloads
+```
+Example: `MEDEX-E-070326.png`. This is skipped entirely if the
+Rename Toggle button has been switched OFF.
+
+**Merge cleanup** (`runMergeCleanup()`) — triggered by the Merge
+Download Signal feature after downloading a merged image: deletes
+any of today's `screencapture-*` files, then collapses numbered
+duplicate downloads (`SERVICE-070326-2.png`, `-3.png`, etc.) down
+to a single clean `SERVICE-070326.png` by keeping only the
+highest-numbered one and renaming it.
 
 The server is meant to start automatically on login via
 `service-relay/start-hidden.vbs` (Windows Task Scheduler), running
 node silently with no visible terminal window. If downloads stop
-getting renamed, check that the server process is still alive
-before checking anything in the extension itself.
+getting renamed, or Upload Proof can't find a file, check that the
+server process is still alive before checking anything in the
+extension itself.
 
 ---
 

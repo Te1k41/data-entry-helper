@@ -17,16 +17,22 @@ what the extension is allowed to do and what code to run where.
   `background.js` as the extension's background service worker. This runs
   independently of any web page, in its own context, and stays alive only
   while needed (MV3 service workers are event-driven, not persistent).
-- `"permissions": ["downloads"]` — grants access to the `chrome.downloads`
-  API, needed so `background.js` can listen for and rename downloads.
+- `"permissions": ["downloads", "storage"]` — `downloads` grants access
+  to the `chrome.downloads` API (background.js's now-mostly-no-op
+  `onDeterminingFilename` listener needs the permission to register at
+  all); `storage` grants `chrome.storage.local`, which `upload-proof.js`
+  uses to pass the chosen filename from the main page to the Support
+  Document popup (two separate documents, so it can't just use a JS
+  variable).
 - `"host_permissions": ["http://localhost:3737/*"]` — allows the extension
-  (background script) to make network requests to the local relay server
-  without a CORS-related permission prompt.
-- `"content_scripts"` — defines code that gets injected directly into
-  matching web pages:
-  - `"matches"` — the extension only activates on `tradetech.net` and
-    `mergeimagesonline.com`. If Tradetech changes domains, this must be
-    updated or nothing will load.
+  to make network/WebSocket requests to the local relay server without a
+  CORS-related permission prompt.
+- `"content_scripts"` is an **array of two separate injection rules**:
+
+  **Block 1 — Tradetech + mergeimagesonline** (the main bundle):
+  - `"matches"` — `https://www.tradetech.net/*` and
+    `https://mergeimagesonline.com/*`. If either site changes domains,
+    this must be updated or nothing will load there.
   - `"js"` — **the load order array**. Files are executed top-to-bottom in
     this exact order, and later files can reference `const`s/functions
     defined in earlier files (because they share the same page's global
@@ -37,10 +43,24 @@ what the extension is allowed to do and what code to run where.
     on the page, not just the top-level document. This is a **known
     source of the "loads 3x" bug** noted in memory — if Tradetech's page
     has nested iframes, `console.log("🚀 ETA-to-ETD Extension Loaded")`
-    (and everything else) fires once per frame.
+    (and everything else) fires once per frame. It's also *load-bearing*
+    for `upload-proof.js`, since the Support Document popup and the
+    `FILE1` input it needs to reach live in their own frame/window
+    context that this script must also run in.
   - `"run_at": "document_idle"` — waits until the page is basically done
     loading (DOM parsed, most resources fetched) before injecting, so
     form fields actually exist when `init()` runs.
+
+  **Block 2 — every other site (Rename Toggle bundle)**:
+  - `"matches": ["<all_urls>"]` with `"exclude_matches": ["https://www.tradetech.net/*"]`
+    — runs everywhere EXCEPT Tradetech, so the standalone Rename ON/OFF
+    button doesn't collide with Tradetech's own set of buttons.
+  - `"js"` — just `utils/button.js`, `features/rename-toggle.js`, and
+    `rename-toggle-init.js`. Deliberately minimal — this bundle only
+    needs `createButton` and the WebSocket relay connection, nothing
+    from the Tradetech-specific feature set.
+  - No `all_frames` key here (defaults to top frame only) and no
+    `run_at` override (defaults to `document_idle`).
 
 ---
 
@@ -112,65 +132,58 @@ interface — most features don't need it).
 
 ---
 
-## background.js — download renaming
+## src/background.js — relay state sync
 
 Runs in its own isolated worker context (not on the Tradetech page), so
-it can't see page DOM — it can only use `chrome.*` APIs and `fetch`.
+it can't see page DOM — it can only use `chrome.*` APIs, `fetch`, and
+`WebSocket`. **Renaming itself moved server-side** (see `server.js`
+below) — this file no longer builds filenames at all; it just keeps
+a local in-memory mirror of relay state via WebSocket in case anything
+in the extension ever needs to read it.
 
 ```js
-let lastServiceCode = "";
+let lastServiceCode  = "";
+let renamingEnabled  = true;
+let ws               = null;
 ```
-Caches the most recently fetched service code in memory. Reset every
-time the service worker restarts (MV3 workers are short-lived).
+In-memory mirror of relay state. Reset every time the service worker
+restarts (MV3 workers are short-lived, so this isn't persisted).
 
 ```js
-async function fetchServiceCode() {
-    try {
-        const res = await fetch("http://localhost:3737/service");
-        const data = await res.json();
-        lastServiceCode = data.code || "";
-        ...
-    } catch (err) {
-        console.error("❌ Could not reach relay server:", err);
-    }
+function connectWebSocket() {
+    ws = new WebSocket("ws://localhost:3737");
+    ws.addEventListener("open",  () => console.log("🔌 Background connected to relay"));
+    ws.addEventListener("message", (event) => { /* parses type: init/service/renaming */ });
+    ws.addEventListener("close", () => setTimeout(connectWebSocket, 3000));
+    ws.addEventListener("error", () => console.error("❌ WebSocket error — will retry"));
 }
+connectWebSocket();
 ```
-`GET`s the current service code from the local relay server
-(`server.js`). Falls back to `""` if the server responds without a
-`code` field. Errors (relay not running) are caught and logged rather
-than crashing the listener.
+Opens a persistent WebSocket to the relay server and keeps `ws`
+updated with whatever the server broadcasts:
+- `type: "init"` (sent once on connect) — seeds `lastServiceCode` and
+  `renamingEnabled` from the server's current state.
+- `type: "service"` — updates `lastServiceCode` whenever any tab
+  changes the service code.
+- `type: "renaming"` — updates `renamingEnabled` whenever the Rename
+  Toggle button is flipped from any tab.
+- On `close`, reconnects automatically after 3 seconds — this is what
+  makes every relay-connected feature in this extension self-healing
+  if the local server is restarted.
 
 ```js
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
-    fetchServiceCode().then(() => {
-        const today = new Date();
-        const mm = String(today.getMonth() + 1).padStart(2, "0");
-        const dd = String(today.getDate()).padStart(2, "0");
-        const yy = String(today.getFullYear()).slice(-2);
-        const dateStr = `${mm}${dd}${yy}`;
-
-        const extension = downloadItem.filename.split(".").pop();
-        const newFilename = `${lastServiceCode}-${dateStr}.${extension}`;
-
-        suggest({ filename: newFilename });
-    });
-
+    // server-side watcher handles renaming now
+    suggest({ filename: downloadItem.filename });
     return true;
 });
 ```
-Chrome fires `onDeterminingFilename` right before saving any download,
-and gives the listener a chance to override the filename via `suggest()`.
-- Builds today's date as `MMDDYY` inline (note: this duplicates logic
-  that already exists in `DateUtils.todayMMDDYY()` in `date.js` — but
-  `date.js` isn't loaded into the background worker context, since it's
-  only listed in `content_scripts`, so it has to be reimplemented here).
-- Grabs the file extension by splitting on `.` and taking the last piece.
-- Builds the new name as `{SERVICE_CODE}-{MMDDYY}.{ext}`.
-- **`return true` is critical** — it tells Chrome "I'm going to call
-  `suggest()` asynchronously, wait for me" (because `fetchServiceCode()`
-  is a `Promise`). Without it, Chrome would proceed with the default
-  filename immediately since the listener returns before `suggest()` is
-  ever called.
+Still registered (Chrome requires *something* to answer this event if
+`"downloads"` permission is granted), but it's now a no-op that just
+confirms the original filename — actual renaming happens after the
+fact via `chokidar` watching the Downloads folder in `server.js`.
+`return true` is kept for consistency even though `suggest()` is
+called synchronously now.
 
 ---
 
@@ -488,15 +501,172 @@ Only relevant on `mergeimagesonline.com` (per manifest matches).
   way. No `handle()` logic needed — this is a one-time, load-time action.
 
 ### service-relay-send.js — `ServiceRelaySend`
-The Tradetech-side half of the download-renaming system (paired with
-`background.js`).
-- **`sendServiceCode()`** — reads the `service` field's value and
-  `POST`s it as JSON (`{ code: value }`) to
-  `http://localhost:3737/service`. Logs success or a connection failure
-  (relay server not running).
-- **`init()`** — sends the current value once on page load.
+The Tradetech-side half of the relay system — now WebSocket-based
+rather than a one-shot HTTP `POST`.
+- **`connect()`** — opens `ws://localhost:3737`. On `open`, immediately
+  calls `sendServiceCode()` so a fresh connection (including a
+  reconnect) always announces the current value. On `close`, schedules
+  a reconnect attempt after 3 seconds — this is what makes the feature
+  self-healing if the relay server restarts.
+- **`sendServiceCode()`** — reads the `service` field's value; if it's
+  non-empty and the socket is open, sends
+  `{ type: "service", code: value }` over the WebSocket. Silently does
+  nothing if the field is missing/empty or the socket isn't ready yet
+  (rather than queuing — the next real change or reconnect will send it).
+- **`init()`** — calls `connect()`, then also sends the current value
+  once after a 1-second delay (belt-and-suspenders in case the `open`
+  handler's immediate send races with the socket still connecting).
 - **`handle(event)`** — re-sends any time the `service` field itself
   changes.
+
+### merge-download-signal.js — `MergeDownloadSignal`
+Tells the relay server to run its merge cleanup pass after a merged
+image is downloaded from mergeimagesonline.com.
+- **`ws` / `connect()`** — same self-reconnecting WebSocket pattern as
+  `ServiceRelaySend`, but with its own independent connection (each
+  relay-connected feature keeps its own socket rather than sharing one).
+- **`signal()`** — if the socket is open, sends
+  `{ type: "merge-download" }` to the server, which schedules
+  `runMergeCleanup()` after a 3-second delay (see `server.js` below).
+- **`init()`** — connects immediately, and adds a `click` listener on
+  `document` that watches for clicks on any `<button>` whose text is
+  exactly `"Download Merged Image"`. When found, waits 2 seconds (to
+  give the browser time to actually finish writing the file to disk)
+  before calling `signal()`.
+- Note: this file defines `init()` twice — the second definition
+  (which does the real work: connect + click listener) silently
+  overwrites the first (connect-only) one, since object literals just
+  keep the last key. Harmless here since the two versions don't
+  conflict, but worth cleaning up if this file is touched again.
+- **`handle()`** — intentionally empty; entirely click-driven.
+
+### upload-proof.js — `UploadProof`
+Automates finding, staging, and submitting the day's proof-of-delivery
+file into Tradetech's Support Document popup. The **same script and
+the same feature object** runs in two different contexts and branches
+on which one it's in:
+
+- **`init()`** — checks for `input[name="FILE1"]`. That field only
+  exists inside the Support Document **popup**, not the main page, so
+  its presence is the signal for which role to play:
+  - Popup found → calls `tryAutoFill(fileInput)` and returns.
+  - Not found (main page) → creates the "📤 Upload Proof" button.
+- **`findSupportDocsButton()`** — Tradetech's Support Document button
+  can live in a different frame than whichever frame this content
+  script instance happens to be running in (`onclick="parent.fr1.supportDocs()"`
+  is the tell). Tries, in order: (1) the current frame, (2) a
+  known dynamically-written frame named `"fr2"`, (3) `window.top`'s own
+  document, (4) every remaining frame under `window.top` as a fallback
+  — each wrapped in its own `try/catch` since cross-origin or
+  not-yet-loaded frames throw when accessed.
+- **`startUpload()`** (main page) — reads the `service` field, asks the
+  relay's `/find-file` endpoint for matching proof files, picks the
+  most recent (`files.sort().pop()`), stores the chosen filename in
+  `chrome.storage.local` under `pendingUpload` (this is how the value
+  crosses from the main page's script instance into the popup's —
+  they're separate documents and can't share a JS variable), then
+  finds and clicks the Support Document button to open the popup.
+- **`tryAutoFill(fileInput)`** (popup) — reads `pendingUpload` back out
+  of `chrome.storage.local`; if there isn't one, this popup opened for
+  some other reason and the feature backs off entirely. Otherwise
+  fetches the actual file bytes from the relay's `/file` endpoint,
+  wraps them in a `File` via `DataTransfer` (the only way to
+  programmatically set `<input type="file">`'s `.files`), dispatches a
+  `change` event so Tradetech's own JS notices the file, clears
+  `pendingUpload` so a stale value can't leak into a future unrelated
+  popup open, then **auto-submits immediately**:
+  ```js
+  const submitBtn = document.querySelector('input[type="submit"][value="Upload"]');
+  if (submitBtn) {
+      submitBtn.click();
+      showTemporaryBanner({ title: "✅ Upload submitted", message: pendingUpload });
+  } else {
+      showBanner({ title: "⚠ Upload proof staged, not submitted", message: ... });
+  }
+  ```
+  No confirmation click is required — the green banner (auto-clearing,
+  via `showTemporaryBanner` from `banner.js`) is purely informational.
+  If the submit button can't be found, a persistent warning banner is
+  shown instead of silently doing nothing, so a broken selector doesn't
+  go unnoticed. (Earlier versions of this feature staged the file and
+  then waited for the user to click a "Confirm Upload" button in a
+  banner before submitting — that step was removed in favor of
+  submitting immediately.)
+- **`handle()` / `handleBlur()`** — both empty; entirely button/popup
+  driven, no auto-trigger on field changes.
+
+### keyboard-navigation.js — `KeyboardFieldNav`
+Lets arrow keys and Tab move between SP*/SV* fields like a spreadsheet,
+instead of relying on Tradetech's own (unreliable) tab order.
+- Runs off its **own `keydown` listener** registered in `init()` (in
+  the capture phase), not the shared `change`/`blur` bus in `main.js`
+  — it needs to intercept the key before the browser's default caret
+  movement or tab order happens.
+- **`onKeyDown(event)`** — bails unless the target is a named
+  `<input>` matching `/^(SP|SV)(\d+)_(.+)$/` (and isn't a hidden `PV_`
+  duplicate), then dispatches on `event.key`:
+  - `ArrowUp` / `ArrowDown` → `moveVertical()` — same field name,
+    adjacent row number, zero-padding preserved via the original row
+    string's width.
+  - `ArrowLeft` → only if `caretAtStart(target)` (cursor at position 0
+    with nothing selected) → `moveHorizontal(..., -1, ...)`.
+  - `ArrowRight` → only if `caretAtEnd(target)` → `moveHorizontal(..., 1, ...)`.
+    This guard is what lets arrow keys still move the text cursor
+    normally *inside* a field's value — the feature only takes over
+    once you're already at the edge.
+  - `Tab` → `handleTab()`.
+- **`handleTab()`** — only applies to `SP` rows (the arrival/depart
+  pair). Forces an explicit cycle rather than trusting the browser's
+  tab order (which doesn't reliably land where expected, since hidden
+  `PV_` fields can sit in between rows):
+  ```
+  Tab       on arrival_date (row N)   → depart_date   (row N)
+  Tab       on depart_date  (row N)   → arrival_date  (row N+1)
+  Shift+Tab on depart_date  (row N)   → arrival_date  (row N)
+  Shift+Tab on arrival_date (row N)   → depart_date   (row N-1)
+  ```
+  Every other field is left alone — normal browser tab order applies.
+- **`focusField(field, event)`** — the shared landing helper: calls
+  `event.preventDefault()`, then `.focus()` and `.select()` — every
+  jump goes through this, which is why landing on a field also selects
+  its full text (like landing on a spreadsheet cell), so typing
+  immediately overwrites it.
+- **`moveHorizontal()`** — doesn't use a hardcoded field order. Instead
+  `getRowFieldsInVisualOrder()` collects every field in that row and
+  sorts them by `getBoundingClientRect().left` — actual left-to-right
+  position on the page — so this keeps working even if Tradetech
+  reorders columns later.
+- **`handle(_event)`** — empty; this feature's real logic lives in its
+  own `keydown` listener, not the shared `change` bus. Present only to
+  satisfy the `FEATURES` interface in `main.js`.
+
+### rename-toggle.js — `RenameToggle` (all-sites bundle, not in `FEATURES`)
+A standalone ON/OFF button for the relay's automatic download-renaming,
+injected on every site except Tradetech (see the second
+`content_scripts` block in `manifest.json`). Bootstrapped directly by
+`rename-toggle-init.js` (`RenameToggle.init();`) rather than through
+the `FEATURES` array in `main.js`, since it belongs to a completely
+separate content script injection.
+- **`connect()`** — same self-reconnecting WebSocket pattern as the
+  other relay features. On `message`, handles `type: "init"` (seeds
+  `enabled` from the server's current `renamingEnabled` state) and
+  `type: "renaming"` (updates `enabled` whenever ANY tab/browser flips
+  the toggle — this is what keeps the button's label in sync
+  everywhere at once).
+- **`init()`** — connects, then waits for the socket's `open` event,
+  then waits an *additional* 200ms before creating the button — this
+  delay gives the server's `init` message (sent immediately on
+  connect) time to arrive and set the correct initial `enabled` state
+  before the button's label is first rendered, so it doesn't flash the
+  wrong state on load.
+- **`createToggleButton()`** — creates the "📁 Rename: ON/OFF" button.
+  Clicking it flips `enabled` locally, immediately updates its own
+  label, and — if the socket is open — broadcasts
+  `{ type: "renaming", enabled }` so the server (and every other
+  connected tab/browser) picks up the change too.
+- **`handle()` / `handleBlur()`** — both empty; this feature doesn't
+  belong to the Tradetech `FEATURES` array at all, so these exist only
+  in case something ever calls them defensively.
 
 ### schedule-cascade.js — `ScheduleCascade`
 Lets the user "snapshot" the current spacing between ports, then
@@ -532,41 +702,97 @@ stay the same.
 
 ---
 
-## server.js — the local relay server
+## service-relay/server.js — the local relay server
 
-A standalone Node.js HTTP server (run separately from the browser, not
-part of the extension bundle itself) that exists purely because Edge
-(where Tradetech is used) and Chrome (where downloads land) can't share
-in-memory state directly.
+A standalone Node.js server (run separately from the browser, not part
+of the extension bundle itself), built on `http`, `ws`, and `chokidar`.
+It exists because Edge (where Tradetech is used) and Chrome (where
+downloads land) can't share in-memory state directly — and it's grown
+from a simple service-code relay into doing the actual download
+renaming and cleanup work itself.
 
-- `let currentServiceCode = ""` — the entire "database": one string, held
-  in memory, lost on server restart.
-- CORS headers (`Access-Control-Allow-Origin: *`, etc.) are set on every
-  response so any browser extension context can call this server without
-  being blocked by cross-origin restrictions.
-- Handles `OPTIONS` preflight requests by responding `204 No Content`
-  immediately (required by CORS for non-simple requests like POST with a
-  JSON body).
-- `POST /service` — reads the request body as a stream (`req.on("data"...)`,
-  concatenating chunks, then `req.on("end"...)` once the body is fully
-  received), parses it as JSON, and stores the `code` field into
-  `currentServiceCode`. Responds with `{ success: true }` on success, or
-  `400 Invalid request` if the JSON is malformed.
-- `GET /service` — returns the current stored code as
-  `{ code: currentServiceCode }`.
+- **State** — `currentServiceCode` (string) and `renamingEnabled`
+  (bool), both held in memory only and lost on restart. `PORT = 3737`.
+- **`WATCH_FOLDER`** — hardcoded to `C:\Users\DELL\Downloads`. This is
+  machine-specific; it must be updated if this ever runs on a different
+  computer or user account.
+- **`WATCH_EXTS`** — `.jpg .jpeg .png .xlsx .xls .pdf`; only files with
+  these extensions are auto-renamed by the watcher.
+
+**HTTP endpoints** (all with permissive CORS headers, and `OPTIONS`
+preflight answered with a bare `204`):
+- `GET /service` → `{ code: currentServiceCode }`
+- `GET /renaming` → `{ enabled: renamingEnabled }`
+- `GET /find-file?service=X` — builds today's `MMDDYY`, escapes `X` for
+  regex safety, and matches filenames like `X-070326.png` or
+  `X-070326-2.png` in `WATCH_FOLDER`. Returns `{ files: [...] }`. Used
+  by `upload-proof.js` to find today's proof file for a service code.
+- `GET /file?name=X` — `path.basename(name)` strips any directory
+  components first (prevents path traversal), then streams the file's
+  raw bytes back with `res.writeHead` + `fs.createReadStream(...).pipe(res)`.
+  Used by `upload-proof.js` to fetch the actual file to stage into
+  Tradetech's upload input.
 - Anything else → `404 Not found`.
-- Listens on port `3737` (matches the `host_permissions` entry in
-  `manifest.json` and the URL used in `background.js` and
-  `service-relay-send.js`).
-- Per the memory notes, this is launched silently on Windows startup via
-  a `start-hidden.vbs` script through Task Scheduler, so it's always
-  running in the background without a visible terminal window.
+
+**WebSocket** (`new WebSocket.Server({ server })` — shares the same
+HTTP server/port rather than binding a second port):
+- On `connection`, immediately sends `{ type: "init", serviceCode, renamingEnabled }`
+  so a freshly-connected tab/browser can sync to current state without
+  waiting for the next change.
+- `type: "service"` messages update `currentServiceCode` and are
+  re-broadcast to every other connected client via `broadcast()`.
+- `type: "renaming"` messages update `renamingEnabled` and are likewise
+  rebroadcast — this is what keeps the Rename Toggle button's label in
+  sync across every open tab/browser.
+- `type: "merge-download"` doesn't update any state directly — it just
+  schedules `runMergeCleanup()` after a 3-second delay (giving the
+  browser time to finish writing the download to disk first).
+- `broadcast(data)` — a small helper that `JSON.stringify`s once and
+  sends to every client whose `readyState === WebSocket.OPEN`.
+
+**`runMergeCleanup()`** — triggered by `MergeDownloadSignal`:
+1. Deletes any file in `WATCH_FOLDER` starting with `"screencapture-"`
+   whose birth time is today (compares year/month/date individually
+   rather than a raw timestamp diff, so it's not sensitive to time of
+   day).
+2. Builds a regex for `{currentServiceCode}-{today}-{N}.{ext}` and
+   collects every numbered duplicate matching it.
+3. If any exist, sorts them by number, keeps only the highest-numbered
+   one, deletes the rest, then renames the survivor to the clean
+   `{SERVICE}-{MMDDYY}.{ext}` form (deleting any pre-existing file at
+   that clean path first, so the rename doesn't fail).
+
+**File watcher** — `chokidar.watch(WATCH_FOLDER, { depth: 0, ignoreInitial: true, awaitWriteFinish: {...} })`:
+- `awaitWriteFinish` waits for a file to stop growing (500ms stability
+  window, polled every 100ms) before firing `add` — prevents renaming a
+  half-downloaded file mid-write.
+- On `add`: skips files whose name already looks renamed (matches
+  `/^.+-\d{6}(-\d+)?$/`, i.e. already ends in a 6-digit date, optionally
+  with a `-N` suffix) and skips extensions not in `WATCH_EXTS`.
+- If `renamingEnabled` is `false` (Rename Toggle switched off), logs and
+  skips — this is the actual enforcement point for that toggle.
+- Otherwise, after a 300ms delay, builds `{SERVICE}-{MMDDYY}.{ext}`, and
+  if that name is already taken, tries `-2`, `-3`, etc. until it finds
+  a free one, then renames via `fs.rename`.
+- A separate `watcher.on("error", ...)` handler logs watcher errors
+  without crashing the whole server — the HTTP/WebSocket side keeps
+  working even if the filesystem watch itself hiccups.
+
+Listens on port `3737` (matches the `host_permissions` entry in
+`manifest.json` and the URL used everywhere else). Per the notes below,
+this is launched silently on Windows startup via `start-hidden.vbs`
+through Task Scheduler, so it's always running in the background
+without a visible terminal window.
+
+**Dependencies** (`service-relay/package.json`): `ws`, `chokidar`. Run
+`npm install` inside `service-relay/` after cloning, before first run.
 
 ---
 
-## our_memory.md — project journal
+## Note on this document
 
-Not code — a running log of context, decisions, and TODOs kept between
-work sessions. Source of truth for anything not obvious from the code
-itself (e.g. why the relay server exists, workflow steps, debugging
-history). Kept up to date as the extension evolves.
+An earlier version of this file referenced an `our_memory.md` "project
+journal" — that file isn't present in the current repository, so
+anything not obvious from the code itself should be captured directly
+in this file or in `Readme.txt` going forward, rather than assuming a
+separate journal exists.
