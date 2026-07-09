@@ -269,6 +269,14 @@ const PortHighlighting = {
 
     // Re-run the whole scan whenever a port name, port code, the
     // service field, or a first_us_port/first_eu_port field changes.
+    //
+    // Port CODE changes get a follow-up: Tradetech's own page
+    // auto-fills the matching port NAME field via an async lookup
+    // after you type/change a code, and does so by setting .value
+    // directly — no real "change" event fires for that, so we'd never
+    // hear about it otherwise. Instead of guessing a delay, we poll
+    // that specific row's name field until it actually has a value
+    // (or we give up), then re-scan.
     handle(event) {
         const { name } = event.target;
         if (!name) return;
@@ -279,6 +287,44 @@ const PortHighlighting = {
             name === "service"             ||
             /^first_(us|eu)_port(_desc)?$/.test(name);
 
-        if (relevant) this.run();
+        if (!relevant) return;
+
+        this.run();
+
+        const codeMatch = name.match(/^SP(\d+)_port_code$/);
+        if (codeMatch) this.waitForNameThenRescan(codeMatch[1]);
+    },
+
+    // Polls SP{row}_port_name every 100ms (up to 5s) until it has a
+    // non-empty value, then re-runs the scan. If the code field was
+    // cleared (no code entered), there's nothing to wait for and this
+    // exits immediately.
+    waitForNameThenRescan(row) {
+        clearInterval(this._recheckTimer);
+
+        const codeField = document.querySelector(`input[name="SP${row}_port_code"]`);
+        if (!codeField || !codeField.value.trim()) return;
+
+        const nameField = document.querySelector(`input[name="SP${row}_port_name"]`);
+        if (!nameField) return;
+
+        let attempts = 0;
+        const maxAttempts = 50; // 50 × 100ms = 5s ceiling
+
+        this._recheckTimer = setInterval(() => {
+            attempts++;
+
+            if (nameField.value.trim()) {
+                clearInterval(this._recheckTimer);
+                console.log(`✅ SP${row}_port_name populated ("${nameField.value.trim()}") — rescanning`);
+                this.run();
+                return;
+            }
+
+            if (attempts >= maxAttempts) {
+                clearInterval(this._recheckTimer);
+                console.warn(`⚠ SP${row}_port_name still empty after 5s — giving up on rescan`);
+            }
+        }, 100);
     }
 };
