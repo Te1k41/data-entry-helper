@@ -690,7 +690,7 @@ extension itself.
 ╔══════════════════════════════════════════════════════╗
 ║                                                      ║
 ║   Built with patience, console.log, and a lot of     ║
-║   "yall trippin dawg" moments.                       ║
+║   credits.                       ║
 ║                                                      ║
 ║   When in doubt: refresh the extension first.        ║
 ║                                                      ║

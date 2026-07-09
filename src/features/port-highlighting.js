@@ -177,11 +177,16 @@ const PortHighlighting = {
     if (!targetField) continue;
 
     // Get the port_name field directly above this row (for comparison).
-    const aboveField = portNameFields.find(f => {
-        const match = f.name.match(/^SP(\d+)_port_name$/);
-        if (!match) return false;
-        return parseInt(match[1], 10) < rowNum;
-    });
+    // NOTE: portNameFields is sorted ascending by row, so the row
+    // truly adjacent to rowNum is the LAST one with row < rowNum —
+    // not the FIRST one (which would always be SP001, regardless of
+    // reordering, deletions, or re-adding a port at a new row number).
+    const aboveField = portNameFields
+        .filter(f => {
+            const match = f.name.match(/^SP(\d+)_port_name$/);
+            return match && parseInt(match[1], 10) < rowNum;
+        })
+        .pop();
 
     if (!aboveField || !aboveField.value.trim()) {
         console.log(`  ⚠ no port above SP${rowNum} — skipping priority highlight`);
