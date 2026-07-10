@@ -57,6 +57,7 @@ const RenameToggle = {
     createToggleButton() {
         createButton({
             id:      "tt-rename-toggle",
+            position: "fixed",
             label:   `📁 Rename: ${this.enabled ? "ON" : "OFF"}`,
             top:     "20px",
             left:    "20px",
