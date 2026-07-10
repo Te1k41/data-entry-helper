@@ -30,6 +30,17 @@ const RenameToggle = {
 
                 if (data.type === "init") {
                     this.enabled = data.renamingEnabled !== false;
+
+                    // On mergeimagesonline.com, always force renaming back
+                    // ON whenever this page loads/reconnects (e.g. a
+                    // reload after a merge session), regardless of
+                    // whatever state was left on from before.
+                    if (location.hostname === "mergeimagesonline.com" && !this.enabled) {
+                        this.enabled = true;
+                        this.broadcastEnabled();
+                        console.log("📁 mergeimagesonline.com loaded — forcing Rename: ON");
+                    }
+
                     this.updateButton();
                 }
 
@@ -54,6 +65,17 @@ const RenameToggle = {
         if (btn) btn.textContent = `📁 Rename: ${this.enabled ? "ON" : "OFF"}`;
     },
 
+    // Tells the relay server (and every other connected tab/browser)
+    // about the current enabled state.
+    broadcastEnabled() {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type:    "renaming",
+                enabled: this.enabled
+            }));
+        }
+    },
+
     createToggleButton() {
         createButton({
             id:      "tt-rename-toggle",
@@ -63,14 +85,7 @@ const RenameToggle = {
             left:    "20px",
             onClick: () => {
                 this.enabled = !this.enabled;
-
-                if (this.ws?.readyState === WebSocket.OPEN) {
-                    this.ws.send(JSON.stringify({
-                        type:    "renaming",
-                        enabled: this.enabled
-                    }));
-                }
-
+                this.broadcastEnabled();
                 this.updateButton();
             }
         });
