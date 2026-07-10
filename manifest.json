@@ -42,6 +42,8 @@
             "src/features/merge-download-signal.js",
             "src/features/upload-proof.js",
             "src/features/keyboard-navigation.js",
+            "src/features/auto-nav-schedules.js",
+            "src/features/due-service-scanner.js",
             "src/main.js"
         ],
         "all_frames": true,

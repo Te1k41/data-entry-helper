@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>tt-services-dashboard</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body>
+<pre class="banner">╔══════════════════════════════════════════╗
+║  SERVICES DUE FOR UPDATE — TT DASHBOARD   ║
+╚══════════════════════════════════════════╝</pre>
+<div id="asOf">loading…</div>
+<main>
+    <div id="stats"></div>
+    <div id="charts"></div>
+    <div id="controls">
+        <button onclick="load()">Refresh</button>
+        <button onclick="clearFilters()">Clear Filters</button>
+        <span id="count"></span>
+    </div>
+    <div id="content"></div>
+</main>
+
+<script src="/dashboard/dashboard.js"></script>
+</body>
+</html>

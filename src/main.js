@@ -37,7 +37,8 @@ const FEATURES = [
     MergeDownloadSignal,
     UploadProof,
     KeyboardFieldNav,
-    
+    AutoNavSchedules,
+    DueServiceScanner,
 
     // Add new features here ↓
     // MyNewFeature,
