@@ -1,6 +1,7 @@
 let allServices = [];
 let sortKey      = 'nextUpdateDate';
 let sortAsc      = true;
+let showOnlyNearestSplit = true; // default view: just the nearest-days split, not the full list
 const filters    = { service: '', carrier: '', nextUpdateDate: '' };
 
 const COLUMNS = [
@@ -35,6 +36,11 @@ function clearFilters() {
     render();
 }
 
+function toggleNearestSplit() {
+    showOnlyNearestSplit = !showOnlyNearestSplit;
+    render();
+}
+
 function setSort(key) {
     const col = COLUMNS.find(c => c.key === key);
     if (!col || col.sortable === false) return;
@@ -57,7 +63,10 @@ async function markDone(record) {
     load();
 }
 
-let historyPoints = [];
+let historyPoints   = [];
+let activityPoints  = [];
+let activityStreak  = 0;
+let nearestSplit    = [];
 
 async function load() {
     const res  = await fetch('/due-services');
@@ -75,6 +84,24 @@ async function load() {
         historyPoints = histData.points || [];
     } catch (e) {
         historyPoints = [];
+    }
+
+    try {
+        const actRes = await fetch('/due-services/activity');
+        const actData = await actRes.json();
+        activityPoints = actData.points || [];
+        activityStreak = actData.streak || 0;
+    } catch (e) {
+        activityPoints = [];
+        activityStreak = 0;
+    }
+
+    try {
+        const nsRes = await fetch('/due-services/nearest-split');
+        const nsData = await nsRes.json();
+        nearestSplit = nsData.services || [];
+    } catch (e) {
+        nearestSplit = [];
     }
 
     render();
@@ -189,31 +216,80 @@ function renderHistogram() {
 }
 
 function renderTrendChart() {
-    if (historyPoints.length < 2) {
+    const scannedPoints = historyPoints.filter(p => !p.noScan);
+
+    if (scannedPoints.length < 2) {
         return `<div class="chartPanel wide">
-            <h2>trend (across scans)</h2>
-            <div id="noHistory">-- need at least 2 scans of history to show a trend --</div>
+            <h2>trend, last 30 days</h2>
+            <div id="noHistory">-- need at least 2 days of scans to show a trend --</div>
         </div>`;
     }
 
-    const max = Math.max(1, ...historyPoints.map(p => p.total));
-    const bars = historyPoints.map(p =>
-        `<div class="trendBar ${p.overdue > 0 ? 'hasOverdue' : ''}" style="height:${Math.round((p.total / max) * 100)}%" title="${new Date(p.asOf).toLocaleString()}: ${p.total} total, ${p.overdue} overdue"></div>`
-    ).join('');
+    const max = Math.max(1, ...scannedPoints.map(p => p.total));
+
+    const bars = historyPoints.map(p => {
+        if (p.noScan) {
+            return `<div class="trendBar noScan" style="height:2%" title="${p.date}: no scan"></div>`;
+        }
+        return `<div class="trendBar ${p.overdue > 0 ? 'hasOverdue' : ''}" style="height:${Math.round((p.total / max) * 100)}%" title="${p.date}: ${p.total} total, ${p.overdue} overdue"></div>`;
+    }).join('');
+
+    const labels = historyPoints.map((p, i) => {
+        // label every ~5th day to avoid crowding 30 labels together
+        const show = i % 5 === 0 || i === historyPoints.length - 1;
+        const d = p.date.slice(5); // "MM-DD"
+        return `<span>${show ? d : ''}</span>`;
+    }).join('');
 
     return `<div class="chartPanel wide">
-        <h2>total queue size, last ${historyPoints.length} scans</h2>
+        <h2>total queue size, last 30 days</h2>
         <div class="trendLine">${bars}</div>
+        <div class="histLabels">${labels}</div>
+    </div>`;
+}
+
+function renderActivityChart() {
+    const totalDone = activityPoints.reduce((sum, p) => sum + p.count, 0);
+
+    if (totalDone === 0) {
+        return `<div class="chartPanel wide">
+            <h2>daily throughput -- last 30 days</h2>
+            <div id="noHistory">-- no "Mark Done" activity logged yet --</div>
+        </div>`;
+    }
+
+    const max = Math.max(1, ...activityPoints.map(p => p.count));
+    const bars = activityPoints.map(p =>
+        `<div class="histBar activityBar ${p.isWeekend ? 'weekend' : ''}" style="height:${Math.round((p.count / max) * 100) || 2}%" title="${p.date}${p.isWeekend ? ' (weekend)' : ''}: ${p.count} done"></div>`
+    ).join('');
+
+    const labels = activityPoints.map((p, i) => {
+        const show = i % 5 === 0 || i === activityPoints.length - 1;
+        return `<span>${show ? p.date.slice(5) : ''}</span>`;
+    }).join('');
+
+    const streakLabel = activityStreak > 0
+        ? `<span class="streak">🔥 ${activityStreak} day streak</span>`
+        : '';
+
+    return `<div class="chartPanel wide">
+        <h2>daily throughput -- last 30 days ${streakLabel}</h2>
+        <div class="histogram">${bars}</div>
+        <div class="histLabels">${labels}</div>
     </div>`;
 }
 
 function render() {
     const counts = renderStats();
 
+    const splitBtn = document.getElementById('splitToggleBtn');
+    if (splitBtn) splitBtn.textContent = showOnlyNearestSplit ? 'Show All' : 'Show Nearest Split';
+
     document.getElementById('charts').innerHTML =
         renderStatusChart(counts) +
         renderCarrierChart() +
         renderHistogram() +
+        renderActivityChart() +
         renderTrendChart();
 
     const content = document.getElementById('content');
@@ -224,16 +300,29 @@ function render() {
         return;
     }
 
+    // If the "nearest split" view is on (default), restrict the pool
+    // to just the record IDs in nearestSplit BEFORE the usual text
+    // filters/sort apply — this is what makes the count read like
+    // "60 / 286" by default, instead of always showing everything.
+    const nearestRecordIds = new Set(nearestSplit.map(s => s.record));
+    const pool = showOnlyNearestSplit
+        ? allServices.filter(s => nearestRecordIds.has(s.record))
+        : allServices;
+
     // Filter (case-insensitive "contains", Excel-style quick filter)
-    let filtered = allServices.filter(s => {
+    let filtered = pool.filter(s => {
         if (filters.service && !(s.service || '').toLowerCase().includes(filters.service.toLowerCase())) return false;
         if (filters.carrier && !(s.carrier || '').toLowerCase().includes(filters.carrier.toLowerCase())) return false;
         if (filters.nextUpdateDate && !(s.nextUpdateDate || '').toLowerCase().includes(filters.nextUpdateDate.toLowerCase())) return false;
         return true;
     });
 
-    // Sort
+    // Sort — "done" items always sink to the bottom no matter which
+    // column/direction is active; the chosen sort only decides ordering
+    // WITHIN the not-done group and WITHIN the done group separately.
     filtered.sort((a, b) => {
+        if (!!a.done !== !!b.done) return a.done ? 1 : -1;
+
         let va, vb;
         if (sortKey === 'nextUpdateDate') {
             va = daysUntil(a.nextUpdateDate) ?? 9999;

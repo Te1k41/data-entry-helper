@@ -7,7 +7,7 @@
 </head>
 <body>
 <pre class="banner">╔══════════════════════════════════════════╗
-║  SERVICES DUE FOR UPDATE — TT DASHBOARD   ║
+║  SERVICES DUE FOR UPDATE — TT DASHBOARD  ║
 ╚══════════════════════════════════════════╝</pre>
 <div id="asOf">loading…</div>
 <main>
@@ -16,6 +16,7 @@
     <div id="controls">
         <button onclick="load()">Refresh</button>
         <button onclick="clearFilters()">Clear Filters</button>
+        <button id="splitToggleBtn" onclick="toggleNearestSplit()">Show All</button>
         <span id="count"></span>
     </div>
     <div id="content"></div>

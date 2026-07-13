@@ -60,8 +60,16 @@ const server = http.createServer((req, res) => {
         return dueServicesRoutes.handleGetDueServices(req, res);
     }
 
+    if (req.method === "GET" && req.url === "/due-services/nearest-split") {
+        return dueServicesRoutes.handleGetNearestSplit(req, res);
+    }
+
     if (req.method === "GET" && req.url === "/due-services/history") {
         return dueServicesRoutes.handleGetHistory(req, res);
+    }
+
+    if (req.method === "GET" && req.url === "/due-services/activity") {
+        return dueServicesRoutes.handleGetActivity(req, res);
     }
 
     if (req.method === "GET" && req.url === "/dashboard") {

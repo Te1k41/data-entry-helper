@@ -2,13 +2,15 @@
 //  FEATURE: Due Service Scanner
 //  Once you land on the search page (either on your own,
 //  or via AutoNavSchedules clicking through from login),
-//  automatically fills Assigned To with your name, sets
-//  the Next Update Date filter to "due soon", runs the
-//  search, then parses the results table and posts it to
-//  the relay server so the dashboard at
-//  http://localhost:3737/dashboard can show it with direct
-//  links to each carrier's schedule/route map. Runs at
-//  most once per browser tab session.
+//  automatically fills Assigned To with your name and runs
+//  the search with NO date filter — every service assigned
+//  to you comes back, not just a "due soon" slice. The full,
+//  UNTRIMMED result is parsed and posted straight to the
+//  relay server as-is. Deciding how many services actually
+//  get kept (and which ones) is the SERVER's job — see
+//  service-relay/due-services-trim.js — not the extension's,
+//  so that logic can be tuned without redeploying this file.
+//  Runs at most once per browser tab session.
 //
 //  NOTE: this feature was built from a pasted HTML sample
 //  of the results table and the two filter fields, not a
@@ -20,12 +22,9 @@
 
 const DueServiceScanner = {
 
-    ASSIGNED_TO_NAME:   "tienduongTTI",
-    DEFAULT_DAYS_AHEAD: 7,   // starting "due soon" window
-    MAX_RESULTS:        50,  // narrow the window by 1 day if results exceed this
+    ASSIGNED_TO_NAME: "tienduongTTI",
 
     FLAG_AUTO_SEARCH_RUN: "tt_dueScanAutoSearchRun",
-    FLAG_DAYS_AHEAD:      "tt_dueScanDaysAhead",
     FLAG_AUTO_SCAN_DONE:  "tt_dueScanAutoScanDone",
 
     init() {
@@ -63,15 +62,6 @@ const DueServiceScanner = {
         });
     },
 
-    getDaysAhead() {
-        const stored = sessionStorage.getItem(this.FLAG_DAYS_AHEAD);
-        return stored !== null ? parseInt(stored, 10) : this.DEFAULT_DAYS_AHEAD;
-    },
-
-    setDaysAhead(days) {
-        sessionStorage.setItem(this.FLAG_DAYS_AHEAD, String(days));
-    },
-
     fillAssignedToAndSearch() {
         const assignedField = document.querySelector('input[name="s_assignedTo"]');
         if (assignedField && !assignedField.value.trim()) {
@@ -80,15 +70,18 @@ const DueServiceScanner = {
             console.log(`👤 Auto-filled Assigned To: ${this.ASSIGNED_TO_NAME}`);
         }
 
-        this.runSearch(this.getDaysAhead());
+        this.runSearch();
     },
 
-    // Sets the two filter fields to "on or before {today + daysAhead}"
-    // — always ":le:" ("On or Before"), never any other operator — then
-    // waits for all fields to actually hold their expected values
-    // before clicking Search (rather than clicking immediately and
-    // hoping nothing raced with the page's own onchange handlers).
-    runSearch(daysAhead) {
+    // Blanking the date field turned out NOT to mean "no filter" —
+    // Tradetech apparently falls back to showing just the nearest single
+    // day's services when the field is empty (confirmed: blank returned
+    // exactly the nearest day's count, nothing more). Instead, we set an
+    // explicit "On or Before" filter with a date far enough in the
+    // future (10 years out) that it functionally includes every
+    // service, without relying on blank-field behavior Tradetech
+    // doesn't actually support the way we assumed.
+    runSearch() {
         const opSelect      = document.querySelector('select[name="s_next_update_datet_s"]');
         const dateInput     = document.querySelector('input[name="s_next_update_datet"]');
         const assignedField = document.querySelector('input[name="s_assignedTo"]');
@@ -103,30 +96,28 @@ const DueServiceScanner = {
             return;
         }
 
-        this.setDaysAhead(daysAhead);
-
-        const target = new Date();
-        target.setDate(target.getDate() + daysAhead);
-        const mm = String(target.getMonth() + 1).padStart(2, "0");
-        const dd = String(target.getDate()).padStart(2, "0");
-        const yy = String(target.getFullYear()).slice(-2);
+        const farFuture = new Date();
+        farFuture.setFullYear(farFuture.getFullYear() + 10);
+        const mm = String(farFuture.getMonth() + 1).padStart(2, "0");
+        const dd = String(farFuture.getDate()).padStart(2, "0");
+        const yy = String(farFuture.getFullYear()).slice(-2);
         const expectedDate = `${mm}/${dd}/${yy}`;
 
-        opSelect.value  = ":le:"; // "On or Before" — the only operator this feature ever uses
+        opSelect.value  = ":le:"; // "On or Before"
         dateInput.value = expectedDate;
 
         opSelect.dispatchEvent(new Event("change", { bubbles: true }));
         dateInput.dispatchEvent(new Event("change", { bubbles: true }));
 
-        console.log(`🔎 Searching for services due on or before ${expectedDate} (${daysAhead}d window)`);
+        console.log(`🔎 Searching ALL services assigned to me (on or before ${expectedDate}, effectively everything)`);
 
         this.waitForFieldsThenSubmit({ opSelect, dateInput, assignedField, assignedIdField, expectedDate });
     },
 
     // Polls the filter fields (every 150ms, up to ~5s — a bit longer than
-    // before, since the assignedToId lookup is a real network round trip,
-    // not just a same-tick DOM update) until each one actually holds the
-    // expected value. Crucially, this doesn't just check that the visible
+    // a same-tick DOM update, since the assignedToId lookup is a real
+    // network round trip) until each one actually holds the expected
+    // value. Crucially, this doesn't just check that the visible
     // s_assignedTo TEXT is non-blank — it waits for the async-resolved
     // s_assignedToId hidden field too, since that's what actually drives
     // the search filter. Without this, the search could fire before
@@ -162,6 +153,7 @@ const DueServiceScanner = {
                 );
                 this.submitSearch(dateInput);
             }
+
         }, 150);
     },
 
@@ -194,11 +186,8 @@ const DueServiceScanner = {
     // sample page: [#, Record, Edit, Preview, Data Tracking, Proof Log,
     // Service, Vessel Operator, Assigned To, Created, Active?,
     // Last Updated, Proofed, Next Update Date, Expire Date, ...].
-    //
-    // If the result set is too large (> MAX_RESULTS), narrows the
-    // "on or before" window by one day and re-searches instead of
-    // posting — repeating until the count fits, or until the window
-    // reaches 0 days (today only) and can't be narrowed further.
+    // Posts the FULL parsed list as-is — no trimming here, the relay
+    // server decides how many/which services actually get kept.
     scanAndReport() {
         const recordInputs = document.querySelectorAll('input[name$="_REC"]');
         const services = [];
@@ -221,30 +210,12 @@ const DueServiceScanner = {
             }
         });
 
-        console.log(`📋 Due Service Scanner: parsed ${services.length} row(s)`);
-
-        const currentDays = this.getDaysAhead();
-
-        if (services.length > this.MAX_RESULTS && currentDays > 0) {
-            const narrowerDays = currentDays - 1;
-            console.warn(
-                `⚠ ${services.length} results exceeds the ${this.MAX_RESULTS} cap — ` +
-                `narrowing window from ${currentDays}d to ${narrowerDays}d and re-searching`
-            );
-            this.runSearch(narrowerDays);
-            return; // don't post this oversized batch — wait for the narrower re-search
-        }
-
-        if (services.length > this.MAX_RESULTS) {
-            console.warn(
-                `⚠ Still ${services.length} results at 0d (today only) — can't narrow further, posting as-is`
-            );
-        }
+        console.log(`📋 Due Service Scanner: parsed ${services.length} total assigned service(s) — posting as-is`);
 
         // Mark the auto-scan flow as finalized BEFORE posting — this is
-        // what stops future results-page visits (or narrowing retries
-        // that already finished) from auto-scanning again. Manual
-        // re-scans after this point only happen via the button.
+        // what stops future results-page visits from auto-scanning
+        // again. Manual re-scans after this point only happen via the
+        // "🔄 Scan & Save" button.
         sessionStorage.setItem(this.FLAG_AUTO_SCAN_DONE, "1");
 
         fetch("http://localhost:3737/due-services", {
@@ -253,7 +224,7 @@ const DueServiceScanner = {
             body:    JSON.stringify({ services })
         })
         .then(res => res.json())
-        .then(data => console.log(`✅ Posted ${data.count} service(s) to relay — view at http://localhost:3737/dashboard`))
+        .then(data => console.log(`✅ Posted — relay kept ${data.count} service(s) after its own trimming — view at http://localhost:3737/dashboard`))
         .catch(err => console.error("❌ Could not reach relay server:", err));
     },
 
