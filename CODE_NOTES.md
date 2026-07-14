@@ -228,16 +228,72 @@ so they propagate up to `document` and trigger both Tradetech's own
 listeners and this extension's own delegated listener in `main.js`. This
 is the **only** approved way any feature should write into a field.
 
-### banner.js — `showBanner` / `removeBanner`
+### banner.js — `showBanner` / `removeBanner` + everything built on top
+
+**The base layer:**
 - **`showBanner({ title, message })`** — first calls `removeBanner()` to
   guarantee only one banner ever exists at a time (prevents stacking
   duplicates). Builds a `<div id="tt-banner">` with a title line and a
-  message line, styles it inline via `cssText` (fixed position, top-right,
-  yellow background, monospace, drop-shadow "sticker" look), and appends
-  it to `<body>`.
+  message line, styles it inline via `cssText` (fixed position, top-right
+  at `top: 52px` — shifted down from the original `16px` to leave room
+  for the notification hide/show toggle above it — yellow background,
+  monospace, drop-shadow "sticker" look), and appends it to `<body>`.
 - **`removeBanner()`** — `document.getElementById("tt-banner")?.remove()`
   — optional chaining means this is safe to call even if no banner
   currently exists (no error, just does nothing).
+
+**Warning registry** (`activeWarnings`, `setWarning`, `renderWarnings`,
+`showCombinedBanner`) — lets multiple independent features (SP001
+mismatch, missing vessel dates, missing port dates) each own one
+warning slot by key, without stomping on each other:
+```js
+setWarning("sp001-mismatch", { title, message })  // problem found
+setWarning("sp001-mismatch", null)                // problem cleared
+```
+`renderWarnings()` shows nothing if `activeWarnings` is empty, the
+single warning directly if there's exactly one, or `showCombinedBanner()`
+(one banner, each issue as its own block) if there are two or more.
+
+**Success banner** (`showTemporaryBanner`, `#tt-success-banner`, green) —
+a one-off confirmation (e.g. "Snapshot saved") that auto-clears after
+`durationMs` (default 3000ms) via `successBannerTimer`. Its top position
+(`getSuccessBannerTop()`) is computed from the WARNING banner's actual
+`getBoundingClientRect()` each time it's shown, so it always stacks
+directly below it — the calc treats a `display:none` warning banner
+(hidden via the notifications toggle) the same as an absent one,
+falling back to a fixed `52px` rather than reading a zero-size rect.
+
+**Info banner** (`setInfoBanner`, `#tt-info-banner`, blue, centered) —
+a *persistent* status indicator, not a one-off. Used by
+`validation.js` for "⚓ Basing on: [vessel name]". Deliberately
+`pointer-events: none` and semi-transparent (`rgba` background/border,
+no drop shadow) — if it ever visually overlaps a real form field, the
+field always wins, both visually (content shows through) and
+functionally (clicks/typing pass straight through the banner). Text
+inside has a `text-shadow` halo (repeated blur using the banner's own
+background color) so it stays legible even where transparency lets
+page content show through underneath it.
+
+**Suggestion banner** (`setSuggestionBanner`, `#tt-suggestion-banner`,
+purple, right side) — used by `vessel-recommendation.js`. Same
+stacking pattern as the success banner (positioned via
+`getSuggestionBannerTop()`, same hidden-warning-banner fallback), kept
+as a fully separate element/color from the info banner so "here's what
+I'm computing from" (info, centered) and "here's what I'm suggesting"
+(suggestion, right side) never visually blend into one thing.
+
+**Notification hide/show toggle** (`createNotificationToggle`,
+`toggleNotificationVisibility`, `applyNotificationVisibility`) — a
+single always-present small button, fixed `top: 16px; right: 16px`
+(above the whole banner stack), that hides/shows all four banner types
+at once. State (`notificationsHidden`) persists via `localStorage`
+across reloads. Crucially this does NOT stop banners from updating —
+`applyNotificationVisibility()` is called at the end of every single
+banner-creation function (`showBanner`, `setInfoBanner`,
+`setSuggestionBanner`, `showTemporaryBanner`, `showCombinedBanner` — 5
+call sites, all funneling through the same one function), so content
+keeps refreshing normally underneath while hidden, and clicking "Show"
+always reveals current, not stale, information.
 
 ### button.js — `createButton`
 ```js
@@ -270,6 +326,35 @@ somehow runs twice (e.g. the multi-frame injection bug).
   - If it *was* a drag, the new position is saved to `localStorage` so
     it persists, and `onClick()` is **not** fired (so dragging a button
     doesn't accidentally trigger its action).
+
+### toolbar.js — `Toolbar`
+Replaces individual `createButton()` calls for every Tradetech-page
+feature button (7 of them used to float independently around the
+page — Fix Vessel Dates, Direction toggle, Snapshot/Cascade, Scan &
+Save, Rearrange Vessels, Upload Proof — now they all live inside one
+collapsible panel). `rename-toggle.js` does NOT use this — it's a
+separate content script bundle (all sites except Tradetech) and
+keeps its own independent `createButton()` call.
+- **`Toolbar.register({ id, label, onClick })`** — called from a
+  feature's `init()` instead of `createButton()`. Adds the action to
+  an internal `_actions` array and re-renders. Guards against
+  duplicate registration by `id` (same defensive reasoning as
+  `createButton`'s multi-frame guard).
+- **`Toolbar.updateLabel(id, newLabel)`** — for toggle-style buttons
+  (e.g. Direction: ON/OFF) to update their own text after a click,
+  without needing to re-register.
+- **`_ensurePanel()`** — builds the actual panel `<div>` once (header
+  + list container), restoring saved collapsed state and position
+  from `localStorage` (`tt-toolbar-collapsed`, `tt-toolbar-pos`) —
+  same persistence pattern as `createButton`'s per-button position.
+- **`_wireDragAndCollapse()`** — same drag-vs-click distinction as
+  `createButton` (4px movement threshold), but a click toggles
+  collapsed/expanded instead of firing an action, and a drag moves
+  the whole panel instead of one button.
+- **`_render()`** — clears and rebuilds the action list every time
+  `register()` or `updateLabel()` is called, from the current
+  `_actions` array. Simple and correct rather than optimized —
+  there are at most ~7 actions, so full re-render is cheap.
 
 ---
 
@@ -395,10 +480,21 @@ The most complex feature — highlights the port row where the shipment's
   4. **Priority pass**: for each key in `PRIORITY_PORT_KEYS` (`us`,
      `eu`), reads the corresponding `first_xx_port` field's code, finds
      the SP row whose `_port_code` matches that value, gets that row's
-     `_port_name` field and the port name field immediately above it,
-     and — only if that represents a genuine category transition (not
-     `OTHER`, not the same category as the port above) — highlights it
-     and returns immediately, skipping the generic scan entirely.
+     `_port_name` field and the port name field of the **truly adjacent
+     row above it** (the last row with a smaller row number — not
+     necessarily the physically nearest DOM element, since rows can be
+     reordered/deleted/re-added), and — only if that represents a
+     genuine category transition (not `OTHER`, not the same category as
+     the port above) — highlights it and returns immediately, skipping
+     the generic scan entirely.
+     > **Bug fix note:** this "adjacent row" lookup used to be
+     > `portNameFields.find(row < rowNum)`, which — since the array is
+     > sorted ascending — always returned **SP001**, regardless of what
+     > row was actually adjacent. It worked by coincidence whenever
+     > SP001 happened to match the true adjacent port's category, but
+     > broke visibly after reordering ports or deleting-then-re-adding
+     > a port (which shifts row numbers around). Fixed to grab the
+     > **last** row before `rowNum` (`.filter(...).pop()`) instead.
   5. **Generic scan** (only reached if no priority match): walks every
      consecutive pair of port fields, computes both categories, and
      collects every pair where the category actually changes (and the
@@ -454,15 +550,44 @@ Powers the "🛠 Fix Vessel Dates" button.
 
 ### vessel-no-date.js — `DetectVesselNoDate`
 Flags any vessel that has a name but no departure date.
-- **`check()`** — for every `SV*_vessel_name` field with a value: clears
-  any previous red highlight, finds the matching `SV*_depart_date`
-  field, and if that date field is missing or empty, adds the vessel's
-  name to a `missing` list and applies a red outline/background to the
-  name field.
+- **`check()`** — for every `SV*_vessel_name` field with a value: finds
+  the matching `SV*_depart_date` field, and if that date field is
+  missing or empty, adds the vessel's name to a `missing` list and
+  applies a red outline/background to the name field.
+  > **Bug fix note:** this used to unconditionally clear EVERY vessel
+  > field's outline/background at the top of the loop, on every run.
+  > That silently wiped out styling other features apply to the SAME
+  > fields — the blue "basing on" highlight (`validation.js`) and the
+  > purple "suggested" highlight (`vessel-recommendation.js`) — any
+  > time this feature happened to run afterward. Fixed to only clear
+  > a field if it carries THIS feature's own `data-tt-vessel-no-date-
+  > flagged` marker from a previous run, never touching fields it
+  > never styled itself. Same pattern now used by `port-no-date.js`,
+  > `validation.js`'s basing-on highlight, and
+  > `vessel-recommendation.js`'s suggestion highlight — if you add a
+  > new feature that colors a form field, copy this pattern rather
+  > than writing a fresh "clear everything first" loop.
 - After scanning everything, shows a banner listing all missing-date
   vessels if any were found, or removes the banner if the list is empty.
 - Runs once via `init()` and again any time a vessel name or vessel
   departure date field changes (`handle()`).
+
+### port-no-date.js — `DetectPortNoDate`
+The port-side equivalent of `vessel-no-date.js` above — same
+"only clear what I flagged myself" pattern, applied to
+`SP*_port_name` fields instead of `SV*_vessel_name`.
+- **`check()`** — for every `SP*_port_name` field with a value: finds
+  the matching `SP*_arrival_date` AND `SP*_depart_date` fields. Only
+  flags the port if **BOTH** are missing (a port with just one of the
+  two set — e.g. a final port with no departure — is normal and
+  shouldn't warn). Applies red outline/background, marks the field
+  with `data-tt-port-no-date-flagged`.
+- This is the feature whose ORIGINAL unfixed version (before the same
+  marker-based fix was applied) was the actual root cause of a real
+  "port-highlighting stopped working" bug report — it was
+  unconditionally wiping `port-highlighting.js`'s orange highlight off
+  SP001 every time it ran afterward in the feature list, since SP001
+  usually does have valid dates and nothing ever restored the color.
 
 ### vessel-to-be-announced.js — `VesselTBA`
 A typing shortcut for placeholder vessels.
@@ -696,93 +821,248 @@ stay the same.
 - **`handle()`** — intentionally empty; this feature is entirely
   button-driven, never auto-triggered by field changes.
 
+### vessel-recommendation.js — `VesselRecommendation`
+Suggests up to 2 vessels near a "base date" — fully automatic (no
+button), running on `init()` and on relevant field changes, PLUS
+triggered directly by `ScheduleCascade.storeDiffs()` at the moment
+fresh diffs are saved (that's a button click internal to a different
+feature, not a field-change event this one would otherwise ever hear).
+- **Two base-date cases**, decided by which port `PortHighlighting.
+  currentHighlightField` currently points to:
+  - **Case 1 (highlighted port is SP001)** — base date = today. If
+    SP002's category (via `PortHighlighting.getPortCategory()`) is a
+    DIFFERENT special category (USA/Japan/EU_UK) than SP001's,
+    restrict to future-only (today → +7 days); otherwise allow both
+    past and future (today ±7 days).
+  - **Case 2 (highlighted port is anywhere else)** — base date =
+    today minus the stored DEPART diff (from `ScheduleCascade.diffs`)
+    of the row directly ABOVE the highlighted one. Always future-only.
+    If no diff is stored yet for that row (Snapshot Diffs hasn't been
+    clicked), quietly does nothing rather than showing an alarming
+    "no data" banner on every keystroke.
+- **Candidate selection** — every `SV*_depart_date` with a value in
+  the computed window, sorted by absolute distance from the base
+  date, top 2 kept. Each labeled `Past`/`Future`/`Today` — but
+  `"Today"` is ONLY used when the base date genuinely IS today's real
+  calendar date (Case 1). Case 2's base date is a calculated target,
+  often NOT today, so an exact match there is labeled `"On base
+  date"` instead — using "Today" there would be actively misleading,
+  not just imprecise (this was a real reported bug: a Case 2 vessel
+  8 days in the past was showing as "Today (07/06/26)"). The banner
+  title always shows the actual base date too, so there's never
+  ambiguity about what the labels are relative to.
+- **Highlighting** — the top candidates' vessel name fields get a
+  purple outline/background (`data-tt-suggested` marker, same
+  "only clear what I flagged" pattern as `vessel-no-date.js`).
+- Posts results via `setSuggestionBanner()` (right side, purple) —
+  see `banner.js`'s notes above.
+
+### rearrange-vessels.js — `RearrangeVessels`
+Manual button ("🔀 Rearrange Vessels", now living in the shared
+toolbar). Physically reorders the vessel table's `<tr>` ROWS by
+departure date — not a values-swap. This was a deliberate design
+choice: moving the actual DOM row means any hidden fields inside that
+row (vessel IDs, etc. that this codebase doesn't necessarily know
+about) travel with it automatically, since it's the same element just
+relocated — a values-swap approach would risk a row visually showing
+one vessel's name while secretly still carrying a different vessel's
+hidden ID underneath.
+- **`rearrange()`** — collects every `SV*_vessel_name` field (not
+  `PV_`), pairs each with its parsed depart date (or `null`) and its
+  `<tr>` via `.closest("tr")`. Stable sort: dated rows ascending
+  first, undated rows pushed to the end in their ORIGINAL relative
+  order (tie-broken by an `index` field captured before sorting).
+- **The actual move**: `parent.appendChild(row.tr)` called in sorted
+  order. `appendChild` on a node ALREADY in the DOM **moves** it
+  rather than cloning/duplicating it — calling it once per row, in
+  the desired final order, leaves the parent's children in exactly
+  that order when done.
+- Manual-only, never automatic — reordering rows is more invasive
+  than anything else this extension does, so it's deliberately not
+  wired to any field-change event.
+
 ---
 
 ## boundary.js — see "core/boundary.js" above (same file)
 
 ---
 
-## service-relay/server.js — the local relay server
+## service-relay/ — the local relay server (now modular)
 
-A standalone Node.js server (run separately from the browser, not part
-of the extension bundle itself), built on `http`, `ws`, and `chokidar`.
-It exists because Edge (where Tradetech is used) and Chrome (where
-downloads land) can't share in-memory state directly — and it's grown
-from a simple service-code relay into doing the actual download
-renaming and cleanup work itself.
+Used to be one ~600-line `server.js`. Now split by responsibility —
+`server.js` itself is just wiring (create the HTTP server, route to
+the right handler, attach WebSocket, start the watcher), around 85
+lines. Same overall purpose as before: Edge (where Tradetech is used)
+and Chrome (where downloads land) can't share in-memory state
+directly, so this sits between them on port 3737 — but it's grown
+into a whole due-services/dashboard system on top of that original
+service-code-relay purpose.
 
-- **State** — `currentServiceCode` (string) and `renamingEnabled`
-  (bool), both held in memory only and lost on restart. `PORT = 3737`.
-- **`WATCH_FOLDER`** — hardcoded to `C:\Users\DELL\Downloads`. This is
-  machine-specific; it must be updated if this ever runs on a different
-  computer or user account.
-- **`WATCH_EXTS`** — `.jpg .jpeg .png .xlsx .xls .pdf`; only files with
-  these extensions are auto-renamed by the watcher.
+### config.js
+`PORT` (3737), `WATCH_FOLDER` (`C:\Users\DELL\Downloads` —
+machine-specific, edit here if this runs on a different computer),
+`WATCH_EXTS`, `DATA_FOLDER` (`D:\Tradetech services`),
+`HISTORY_FOLDER`, `DUE_SERVICES_FILE`, `ACTIVITY_LOG_FILE`,
+`CURRENT_BATCH_FILE`. The one file to touch for any path change.
 
-**HTTP endpoints** (all with permissive CORS headers, and `OPTIONS`
-preflight answered with a bare `204`):
-- `GET /service` → `{ code: currentServiceCode }`
-- `GET /renaming` → `{ enabled: renamingEnabled }`
-- `GET /find-file?service=X` — builds today's `MMDDYY`, escapes `X` for
-  regex safety, and matches filenames like `X-070326.png` or
-  `X-070326-2.png` in `WATCH_FOLDER`. Returns `{ files: [...] }`. Used
-  by `upload-proof.js` to find today's proof file for a service code.
-- `GET /file?name=X` — `path.basename(name)` strips any directory
-  components first (prevents path traversal), then streams the file's
-  raw bytes back with `res.writeHead` + `fs.createReadStream(...).pipe(res)`.
-  Used by `upload-proof.js` to fetch the actual file to stage into
-  Tradetech's upload input.
-- Anything else → `404 Not found`.
+### relay-state.js
+Just `{ currentServiceCode: "", renamingEnabled: true }` — a plain
+mutable object (not getters/setters), exported once and shared by
+reference. `relay-socket.js`, `routes/relay.js`,
+`download-watcher.js`, and `merge-cleanup.js` all `require()` this
+same object and read/write its properties directly.
 
-**WebSocket** (`new WebSocket.Server({ server })` — shares the same
-HTTP server/port rather than binding a second port):
-- On `connection`, immediately sends `{ type: "init", serviceCode, renamingEnabled }`
-  so a freshly-connected tab/browser can sync to current state without
-  waiting for the next change.
-- `type: "service"` messages update `currentServiceCode` and are
-  re-broadcast to every other connected client via `broadcast()`.
-- `type: "renaming"` messages update `renamingEnabled` and are likewise
-  rebroadcast — this is what keeps the Rename Toggle button's label in
-  sync across every open tab/browser.
-- `type: "merge-download"` doesn't update any state directly — it just
-  schedules `runMergeCleanup()` after a 3-second delay (giving the
-  browser time to finish writing the download to disk first).
-- `broadcast(data)` — a small helper that `JSON.stringify`s once and
-  sends to every client whose `readyState === WebSocket.OPEN`.
+### relay-socket.js
+Owns the WebSocket server (`new WebSocket.Server({ server })` —
+shares the HTTP server/port). On `connection`, sends
+`{ type: "init", serviceCode, renamingEnabled }` immediately so a
+fresh tab syncs without waiting for the next change. Handles
+`type: "service"` / `"renaming"` (update `relay-state` + rebroadcast
+to every other client) and `type: "merge-download"` (schedules
+`runMergeCleanup()` after a 3s delay).
 
-**`runMergeCleanup()`** — triggered by `MergeDownloadSignal`:
-1. Deletes any file in `WATCH_FOLDER` starting with `"screencapture-"`
-   whose birth time is today (compares year/month/date individually
-   rather than a raw timestamp diff, so it's not sensitive to time of
-   day).
-2. Builds a regex for `{currentServiceCode}-{today}-{N}.{ext}` and
-   collects every numbered duplicate matching it.
-3. If any exist, sorts them by number, keeps only the highest-numbered
-   one, deletes the rest, then renames the survivor to the clean
-   `{SERVICE}-{MMDDYY}.{ext}` form (deleting any pre-existing file at
-   that clean path first, so the rename doesn't fail).
+### download-watcher.js
+The `chokidar.watch(WATCH_FOLDER, { awaitWriteFinish: {...} })`
+logic. Skips already-renamed files (regex `/^.+-\d{6}(-\d+)?$/`) and
+extensions not in `WATCH_EXTS`. Skips entirely if
+`relayState.renamingEnabled` is false — this is the actual
+enforcement point for the Rename Toggle. Otherwise builds
+`{SERVICE}-{MMDDYY}.{ext}`, trying `-2`, `-3`, ... if that name's
+taken, after a 300ms settle delay.
 
-**File watcher** — `chokidar.watch(WATCH_FOLDER, { depth: 0, ignoreInitial: true, awaitWriteFinish: {...} })`:
-- `awaitWriteFinish` waits for a file to stop growing (500ms stability
-  window, polled every 100ms) before firing `add` — prevents renaming a
-  half-downloaded file mid-write.
-- On `add`: skips files whose name already looks renamed (matches
-  `/^.+-\d{6}(-\d+)?$/`, i.e. already ends in a 6-digit date, optionally
-  with a `-N` suffix) and skips extensions not in `WATCH_EXTS`.
-- If `renamingEnabled` is `false` (Rename Toggle switched off), logs and
-  skips — this is the actual enforcement point for that toggle.
-- Otherwise, after a 300ms delay, builds `{SERVICE}-{MMDDYY}.{ext}`, and
-  if that name is already taken, tries `-2`, `-3`, etc. until it finds
-  a free one, then renames via `fs.rename`.
-- A separate `watcher.on("error", ...)` handler logs watcher errors
-  without crashing the whole server — the HTTP/WebSocket side keeps
-  working even if the filesystem watch itself hiccups.
+### merge-cleanup.js
+`runMergeCleanup()` — triggered via the WebSocket `merge-download`
+message. Deletes today's `screencapture-*` files, then collapses
+numbered duplicate downloads down to one clean
+`{SERVICE}-{MMDDYY}.{ext}` by keeping only the highest-numbered one.
 
-Listens on port `3737` (matches the `host_permissions` entry in
-`manifest.json` and the URL used everywhere else). Per the notes below,
-this is launched silently on Windows startup via `start-hidden.vbs`
-through Task Scheduler, so it's always running in the background
-without a visible terminal window.
+### due-date-utils.js
+Tradetech's `"DD-MON-YYYY"` format (e.g. `"11-JUL-2026"`) —
+`parseTTDate()` / `formatTTDate()`. Used everywhere the due-services
+system needs to compare or generate dates, including
+`due-services-trim.js` and the mark-done/undo-done handlers.
+
+### carrier-links.js
+Just data — `{ CODE: { schedule: [...], routeMap: [...] } }` for
+every carrier code seen in Kai's assigned services. Some carriers
+have multiple links (different trade lanes); the dashboard renders
+one link per array entry.
+
+### due-services-store.js
+The FULL scanned list, in memory + persisted to disk. Exposes
+`getAll()`/`setAll()`/`findByRecord()` rather than a raw exported
+array, since the whole list gets wholesale-replaced on every scan
+(not just mutated). **`save()`** writes `due-services.json`
+(overwritten every time) AND `history/due-services-YYYY-MM-DD.json`
+— **one file per calendar day**, overwritten if you rescan again the
+same day (this used to be one file per SCAN, piling up fast — fixed
+to stop that). **`loadFromDisk()`** runs once on server startup so
+the dashboard isn't empty after a restart.
+
+### activity-log-store.js
+Append-only log of `{ record, service, at: ISOString }` — one entry
+per "Mark Done" click. Powers the dashboard's daily-throughput chart
+and streak counter. Deliberately separate from `due-services-store`
+since this needs to track real EVENTS over time, not current state.
+
+### current-batch-store.js
+Owns the **persisted** "current batch" — this is what makes the
+dashboard's default view a snapshot rather than a live recalculation.
+- **`getCurrentBatch(allServices)`** — loads the stored batch (if
+  any), refreshes each record's live done-status from `allServices`
+  (dropping any that no longer exist), and checks if it's now fully
+  done. If not fully done (and not empty), returns it AS-IS — same
+  batch, just current done-flags. Only computes a fresh batch via
+  `advanceToNextBatch()` if there's no batch yet, or the existing one
+  is 100% done.
+- **`advanceToNextBatch(allServices)`** — filters OUT already-done
+  services first (completed work shouldn't be re-selected into a new
+  batch), calls `computeBatch()` on what's left, saves the result's
+  record IDs to `current-batch.json`. Also the manual "Next Batch"
+  button's handler — same function, called regardless of whether the
+  current batch is actually done yet.
+
+### due-services-trim.js
+`computeBatch(services)` — the actual "which services form the next
+batch" business logic, called ONLY by `current-batch-store.js` when a
+new batch needs computing (not live on every dashboard load):
+1. Groups by due date, nearest first (`groupByDay`).
+2. **If the 2 nearest days COMBINED have ≥ 50 services** —
+   `splitByPriority()`: take the AVERAGE of the two counts as the
+   total, filled by priority — the nearest day gets taken first (up
+   to its own size or the average, whichever's smaller), whatever's
+   left of the average comes from the second day. E.g. day1=20,
+   day2=40 → average=30 → day1 gives all 20, day2 fills the
+   remaining 10. This went through several iterations before landing
+   here — earlier versions tried "split evenly" and "include
+   everything from both days," both were explicitly rejected in favor
+   of this priority-fill-to-the-average version.
+3. **Otherwise** — keep whole days starting from the nearest one,
+   stopping BEFORE any day that would push the total over
+   `MAX_SERVICES` (40). A day's services are never split across this
+   cutoff — the result may land under 40, or slightly over 40 only if
+   a SINGLE day alone already exceeds it (can't do better without
+   splitting a day).
+
+### routes/relay.js
+`GET /service` → `{ code }`, `GET /renaming` → `{ enabled }` — thin
+read-only wrappers around `relay-state.js`.
+
+### routes/files.js
+`GET /find-file?service=X` — regex-matches today's proof file for a
+service code in `WATCH_FOLDER`. `GET /file?name=X` —
+`path.basename(name)` first (prevents path traversal), then streams
+the file back. Both used by `upload-proof.js`.
+
+### routes/due-services.js
+The biggest route file — POST/GET `/due-services`, mark-done,
+undo-done, current-batch, next-batch, history, activity. A few things
+worth knowing:
+- **`handlePostDueServices`** — merges the incoming FULL scan with
+  whatever's already stored, specifically to preserve `done`
+  overrides: if a service was marked done locally and Tradetech's
+  real date hasn't caught up to the local target yet, the local
+  override survives the merge; once Tradetech's real date matches or
+  passes it, the override is dropped and the real data is trusted
+  again. Nothing is ever trimmed from STORAGE here — trimming only
+  happens for the dashboard's batch VIEW, via
+  `current-batch-store.js`, kept deliberately separate after an
+  earlier version accidentally combined the two and silently
+  discarded 226 of 286 real services.
+- **`handleMarkDone`** — saves a `_preDoneSnapshot` on the entry
+  (previous `nextUpdateDate` + `done` state) the FIRST time an item
+  is marked done, so `handleUndoDone` can restore it exactly. Only
+  snapshots once — clicking Mark Done again on an already-done item
+  won't overwrite a real undo point.
+- **`handleGetHistory`** — reads `history/due-services-YYYY-MM-DD.json`
+  directly (one file per day, see `due-services-store.js` above),
+  builds exactly 30 points (today back 29 days), emitting
+  `{ noScan: true }` placeholders for days with no file — this is
+  what gives the dashboard's trend chart genuine gaps instead of
+  silently compressing the timeline.
+- **`handleGetActivity`** — aggregates `activity-log-store.js`'s raw
+  events into daily counts, plus a streak (consecutive days with ≥1
+  done, counting backwards from today). Weekends are explicitly
+  skipped in the streak count — they neither extend nor break it, so
+  a Friday→Monday run of activity still counts as unbroken.
+
+### routes/dashboard.js
+Serves `dashboard/index.html`, `style.css`, `dashboard.js` straight
+from disk on every request (not cached in memory at startup) — a
+deliberate choice so editing the dashboard's look/behavior just needs
+a browser refresh, no server restart.
+
+### dashboard/ (the actual dashboard UI)
+Dark/ASCII terminal aesthetic. `dashboard.js` fetches `/due-services`
+(full list, for the charts), `/due-services/current-batch` (the
+persisted batch, drives the default filtered table view — "Show All"
+toggles to everything), `/due-services/history`, and
+`/due-services/activity` on load. Filters apply on **Enter**, not
+live per-keystroke (an earlier live-filter version caused the input
+to lose focus every character, since `render()` rebuilds the whole
+table via `innerHTML` including the filter inputs themselves).
+Clicking a service name copies it to clipboard. "Mark Done" (green)
+swaps to "Undo" (amber) once a row is done.
 
 **Dependencies** (`service-relay/package.json`): `ws`, `chokidar`. Run
 `npm install` inside `service-relay/` after cloning, before first run.
