@@ -123,11 +123,9 @@ const VesselVoyageCorrection = {
     },
 
     init() {
-        createButton({
+        Toolbar.register({
         id:      "tt-fix-vessels-btn",
         label:   "🛠 Fix Vessel Dates",
-        top:     "312px",
-        left:    "30px",
         onClick: () => {
             console.log("🖱 Fix Vessel Dates clicked");
             this.fixVesselDates();

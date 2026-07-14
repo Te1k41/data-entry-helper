@@ -26,6 +26,7 @@
             "src/utils/date.js",
             "src/utils/banner.js",
             "src/utils/button.js",
+            "src/utils/toolbar.js",
             "src/utils/dom.js",
             "src/core/boundary.js",
             "src/features/notes.js",

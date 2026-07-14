@@ -15,14 +15,11 @@ const UploadProof = {
             return;
         }
 
-        // Main page: add the trigger button
-        createButton({
-            id:       "tt-upload-proof-btn",
-            label:    "📤 Upload Proof",
-            top:      "470px",
-            left:     "30px",
-            position: "absolute",
-            onClick:  () => this.startUpload()
+        // Main page: register the trigger in the shared toolbar
+        Toolbar.register({
+            id:      "tt-upload-proof-btn",
+            label:   "📤 Upload Proof",
+            onClick: () => this.startUpload()
         });
     },
 

@@ -56,6 +56,10 @@ const server = http.createServer((req, res) => {
         return dueServicesRoutes.handleMarkDone(req, res);
     }
 
+    if (req.method === "POST" && req.url === "/due-services/undo-done") {
+        return dueServicesRoutes.handleUndoDone(req, res);
+    }
+
     if (req.method === "GET" && req.url === "/due-services") {
         return dueServicesRoutes.handleGetDueServices(req, res);
     }

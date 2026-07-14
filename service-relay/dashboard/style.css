@@ -262,3 +262,8 @@
 
     .markDoneBtn { color: var(--green); border-color: var(--green); }
     .markDoneBtn:hover { background: var(--green); color: var(--bg); }
+    .undoBtn { color: var(--amber); border-color: var(--amber); }
+    .undoBtn:hover { background: var(--amber); color: var(--bg); }
+
+    .copyable { cursor: pointer; border-bottom: 1px dotted var(--dim); }
+    .copyable:hover { color: var(--cyan); border-bottom-color: var(--cyan); }

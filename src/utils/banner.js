@@ -41,6 +41,7 @@ function showBanner(options) {
     div.style.cssText = BANNER_STYLE;
 
     document.body.appendChild(div);
+    applyNotificationVisibility();
 }
 
 function removeBanner() {
@@ -57,7 +58,7 @@ const SUCCESS_GAP = 10; // px gap between the warning banner and this one
 
 function getSuccessBannerTop() {
     const warningBanner = document.getElementById("tt-banner");
-    if (!warningBanner) return "16px";
+    if (!warningBanner || warningBanner.style.display === "none") return "52px";
 
     const rect = warningBanner.getBoundingClientRect();
     return `${rect.bottom + SUCCESS_GAP}px`;
@@ -147,6 +148,7 @@ function setInfoBanner(info) {
     div.style.cssText = buildInfoStyle();
 
     document.body.appendChild(div);
+    applyNotificationVisibility();
 }
 
 // ── Suggestion banner (right side) ───────────────────────────
@@ -159,7 +161,7 @@ function setInfoBanner(info) {
 
 function getSuggestionBannerTop() {
     const warningBanner = document.getElementById("tt-banner");
-    if (!warningBanner) return "16px";
+    if (!warningBanner || warningBanner.style.display === "none") return "52px";
 
     const rect = warningBanner.getBoundingClientRect();
     return `${rect.bottom + SUCCESS_GAP}px`;
@@ -208,6 +210,7 @@ function setSuggestionBanner(info) {
     div.style.cssText = buildSuggestionStyle();
 
     document.body.appendChild(div);
+    applyNotificationVisibility();
 }
 
 // Shows a one-off green confirmation banner (e.g. "Snapshot saved",
@@ -234,6 +237,7 @@ function showTemporaryBanner(options, durationMs = 3000) {
     div.style.cssText = buildSuccessStyle();
 
     document.body.appendChild(div);
+    applyNotificationVisibility();
 
     successBannerTimer = setTimeout(() => {
         successBannerTimer = null;
@@ -245,7 +249,7 @@ function showTemporaryBanner(options, durationMs = 3000) {
 // look identical apart from their inner content.
 const BANNER_STYLE = `
     position: fixed;
-    top: 16px;
+    top: 52px;
     right: 16px;
     z-index: 999999;
     background: #fcff9e;
@@ -317,4 +321,61 @@ function showCombinedBanner(warnings) {
     div.style.cssText = BANNER_STYLE;
 
     document.body.appendChild(div);
+    applyNotificationVisibility();
 }
+
+// ── Hide/Show all notifications toggle ───────────────────────
+// A single small always-present button, top-right, ABOVE the whole
+// banner stack (which starts at top: 52px to leave room for it).
+// Hides/shows every banner type at once — the banners themselves
+// keep updating normally underneath, so un-hiding always shows
+// current, up-to-date content rather than something stale.
+
+const ALL_BANNER_IDS = ["tt-banner", "tt-success-banner", "tt-info-banner", "tt-suggestion-banner"];
+
+let notificationsHidden = localStorage.getItem("tt-notifications-hidden") === "1";
+
+function applyNotificationVisibility() {
+    ALL_BANNER_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = notificationsHidden ? "none" : "";
+    });
+}
+
+function toggleNotificationVisibility() {
+    notificationsHidden = !notificationsHidden;
+    localStorage.setItem("tt-notifications-hidden", notificationsHidden ? "1" : "0");
+    applyNotificationVisibility();
+
+    const btn = document.getElementById("tt-notif-toggle");
+    if (btn) btn.textContent = notificationsHidden ? "🔔 Show" : "🔕 Hide";
+}
+
+function createNotificationToggle() {
+    if (document.getElementById("tt-notif-toggle")) return;
+
+    const btn = document.createElement("button");
+    btn.id = "tt-notif-toggle";
+    btn.type = "button";
+    btn.textContent = notificationsHidden ? "🔔 Show" : "🔕 Hide";
+    btn.style.cssText = `
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 1000000;
+        background: #ffffff;
+        color: #000000;
+        border: 2px solid #000000;
+        border-radius: 0px;
+        padding: 4px 10px;
+        font-family: monospace;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+        cursor: pointer;
+        box-shadow: 2px 2px 0px #000000;
+    `;
+    btn.addEventListener("click", toggleNotificationVisibility);
+    document.body.appendChild(btn);
+}
+
+createNotificationToggle();

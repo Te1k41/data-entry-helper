@@ -69,6 +69,28 @@ async function markDone(record) {
     load();
 }
 
+async function undoDone(record) {
+    const res = await fetch('/due-services/undo-done', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ record })
+    });
+    if (!res.ok) {
+        console.warn('Nothing to undo for', record);
+        return;
+    }
+    load();
+}
+
+function copyService(serviceName, event) {
+    navigator.clipboard.writeText(serviceName).then(() => {
+        const el = event.target;
+        const original = el.textContent;
+        el.textContent = 'Copied!';
+        setTimeout(() => { el.textContent = original; }, 800);
+    }).catch(err => console.error('Clipboard copy failed:', err));
+}
+
 let historyPoints   = [];
 let activityPoints  = [];
 let activityStreak  = 0;
@@ -366,13 +388,17 @@ function render() {
             ? (days < 0 ? `overdue ${Math.abs(days)}d` : (days === 0 ? 'today' : `${days}d`))
             : '';
 
+        const actionBtn = status === 'done'
+            ? `<button class="markDoneBtn undoBtn" onclick="undoDone('${s.record}')">Undo</button>`
+            : `<button class="markDoneBtn" onclick="markDone('${s.record}')">Mark Done</button>`;
+
         html += `<tr class="${status}">
-            <td><span class="tag ${status}">${STATUS_LABEL[status]}</span>${s.service}</td>
+            <td><span class="tag ${status}">${STATUS_LABEL[status]}</span><span class="copyable" title="Click to copy" onclick="copyService('${s.service}', event)">${s.service}</span></td>
             <td>${s.carrier}</td>
             <td>${linksHtml(s.links.schedule, 'sched')}</td>
             <td>${linksHtml(s.links.routeMap, 'map')}</td>
             <td class="dateCell">${s.nextUpdateDate}${dayNote ? '<span class="dayNote">('+dayNote+')</span>' : ''}</td>
-            <td><button class="markDoneBtn" onclick="markDone('${s.record}')">Mark Done</button></td>
+            <td>${actionBtn}</td>
         </tr>`;
     }
 

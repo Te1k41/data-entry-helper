@@ -14,12 +14,9 @@
 const RearrangeVessels = {
 
     init() {
-        createButton({
+        Toolbar.register({
             id:      "tt-rearrange-vessels",
-            position: "fixed",
             label:   "🔀 Rearrange Vessels",
-            top:     "140px",
-            left:    "20px",
             onClick: () => this.rearrange()
         });
     },

@@ -10,15 +10,12 @@ const VDirection = {
     enabled: true,  // toggle state lives directly on the feature object
 
     init() {
-        createButton({
+        Toolbar.register({
             id:      "tt-voyage-direction-toggle",
             label:   "🧭 Direction: ON",
-            top:     "350px",
-            left:    "30px",
             onClick: () => {
                 this.enabled = !this.enabled;
-                const btn = document.getElementById("tt-voyage-direction-toggle");
-                if (btn) btn.textContent = `🧭 Direction: ${this.enabled ? "ON" : "OFF"}`;
+                Toolbar.updateLabel("tt-voyage-direction-toggle", `🧭 Direction: ${this.enabled ? "ON" : "OFF"}`);
                 console.log(`🧭 Voyage direction auto-suffix: ${this.enabled ? "ON" : "OFF"}`);
             }
         });

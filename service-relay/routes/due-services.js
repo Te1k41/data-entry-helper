@@ -122,6 +122,11 @@ function handleNextBatch(req, res) {
 // Dashboard's "Mark Done" button — sets a LOCAL override so the
 // dashboard shows this service as handled with a fresh 15-day-out
 // target date, without touching the real record on Tradetech itself.
+// Saves a snapshot of the PRE-done state on the entry itself so a
+// later "Undo" click can restore it exactly, including if you'd
+// re-scanned in between (the merge logic in handlePostDueServices
+// already knows how to preserve a `done` override — this snapshot
+// rides along with it the same way).
 async function handleMarkDone(req, res) {
     try {
         const { record } = await readBody(req);
@@ -131,6 +136,17 @@ async function handleMarkDone(req, res) {
             res.writeHead(404, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Record not found" }));
             return;
+        }
+
+        if (!entry.done) {
+            // Only snapshot on the FIRST mark-done — clicking it again
+            // on an already-done item (shouldn't normally happen from
+            // the UI, but just in case) won't overwrite a real undo
+            // point with an already-modified state.
+            entry._preDoneSnapshot = {
+                nextUpdateDate: entry.nextUpdateDate,
+                done:           entry.done || false
+            };
         }
 
         const target = new Date();
@@ -146,6 +162,44 @@ async function handleMarkDone(req, res) {
         res.end(JSON.stringify({ success: true, nextUpdateDate: entry.nextUpdateDate }));
     } catch (err) {
         console.error("❌ Bad /due-services/mark-done body:", err);
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
+    }
+}
+
+// Dashboard's "Undo" button — restores whatever the entry looked like
+// right before the most recent Mark Done click, using the snapshot
+// saved above. Only works once per mark-done (the snapshot is deleted
+// after a successful undo), and only if nothing's overwritten it
+// since (e.g. a fresh Tradetech scan that genuinely updated the date).
+async function handleUndoDone(req, res) {
+    try {
+        const { record } = await readBody(req);
+        const entry = store.findByRecord(record);
+
+        if (!entry) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Record not found" }));
+            return;
+        }
+
+        if (!entry._preDoneSnapshot) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Nothing to undo for this record" }));
+            return;
+        }
+
+        entry.nextUpdateDate = entry._preDoneSnapshot.nextUpdateDate;
+        entry.done           = entry._preDoneSnapshot.done;
+        delete entry._preDoneSnapshot;
+
+        store.save();
+        console.log(`↩️ Undid mark-done: record ${record} → restored ${entry.nextUpdateDate}`);
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true, nextUpdateDate: entry.nextUpdateDate, done: entry.done }));
+    } catch (err) {
+        console.error("❌ Bad /due-services/undo-done body:", err);
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Invalid JSON" }));
     }
@@ -270,6 +324,7 @@ module.exports = {
     handleGetCurrentBatch,
     handleNextBatch,
     handleMarkDone,
+    handleUndoDone,
     handleGetHistory,
     handleGetActivity,
 };

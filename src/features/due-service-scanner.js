@@ -52,12 +52,9 @@ const DueServiceScanner = {
     },
 
     createScanButton() {
-        createButton({
+        Toolbar.register({
             id:      "tt-due-scan-save",
-            position: "fixed",
             label:   "🔄 Scan & Save",
-            top:     "60px",
-            left:    "20px",
             onClick: () => this.scanAndReport()
         });
     },

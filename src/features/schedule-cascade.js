@@ -9,11 +9,9 @@ const ScheduleCascade = {
 
     init() {
         this.storeDiffs();
-        createButton({
+        Toolbar.register({
             id:      "tt-snapshot-diffs",
             label:   "📸 Snapshot Diffs",
-            top:     "390px",
-            left:    "30px",
             onClick: () => {
                 this.storeDiffs();
                 showTemporaryBanner({
@@ -23,11 +21,9 @@ const ScheduleCascade = {
             }
         });
 
-        createButton({
+        Toolbar.register({
             id:      "tt-cascade-dates",
             label:   "🌊 Cascade Dates",
-            top:     "430px",
-            left:    "30px",
             onClick: () => {
                 this.cascade();
             }
