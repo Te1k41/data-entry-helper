@@ -112,6 +112,12 @@ const ScheduleCascade = {
 
     this.diffs = newDiffs;
     console.log("📦 Diffs stored:", JSON.stringify(this.diffs));
+
+    // storeDiffs() only ever runs from this feature's own button click —
+    // there's no field-change event VesselRecommendation could otherwise
+    // hear to know fresh diff data just became available, so trigger it
+    // directly.
+    VesselRecommendation.suggest();
     },
 
     cascade() {

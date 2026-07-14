@@ -24,6 +24,7 @@ const DATA_FOLDER       = "D:\\Tradetech services";
 const HISTORY_FOLDER    = path.join(DATA_FOLDER, "history");
 const DUE_SERVICES_FILE = path.join(DATA_FOLDER, "due-services.json");
 const ACTIVITY_LOG_FILE = path.join(DATA_FOLDER, "activity-log.json");
+const CURRENT_BATCH_FILE = path.join(DATA_FOLDER, "current-batch.json");
 
 module.exports = {
     PORT,
@@ -33,4 +34,5 @@ module.exports = {
     HISTORY_FOLDER,
     DUE_SERVICES_FILE,
     ACTIVITY_LOG_FILE,
+    CURRENT_BATCH_FILE,
 };

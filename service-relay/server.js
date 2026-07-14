@@ -60,8 +60,12 @@ const server = http.createServer((req, res) => {
         return dueServicesRoutes.handleGetDueServices(req, res);
     }
 
-    if (req.method === "GET" && req.url === "/due-services/nearest-split") {
-        return dueServicesRoutes.handleGetNearestSplit(req, res);
+    if (req.method === "GET" && req.url === "/due-services/current-batch") {
+        return dueServicesRoutes.handleGetCurrentBatch(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/due-services/next-batch") {
+        return dueServicesRoutes.handleNextBatch(req, res);
     }
 
     if (req.method === "GET" && req.url === "/due-services/history") {

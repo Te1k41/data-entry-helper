@@ -261,6 +261,11 @@ const PortHighlighting = {
 
         if (highlightField) this.applyHighlight(highlightField);
         console.log(`🟡 Highlighted: ${highlightField?.name} (${highlightField?.value})`);
+
+        // Exposed so other features (e.g. vessel recommendation) can
+        // know which port is currently highlighted without re-running
+        // this whole scan themselves.
+        this.currentHighlightField = highlightField || null;
     },
 
     init() {

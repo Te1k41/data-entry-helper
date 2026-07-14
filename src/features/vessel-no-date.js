@@ -26,12 +26,16 @@ const DetectVesselNoDate = {
         const missing = [];  // ← collect flagged vessels here, BEFORE the loop
 
         for (const field of vesselFields) {
-            // Always clear the previous highlight first — including when
-            // the field is now empty. If we skip empty fields before
-            // this line, deleting a vessel name leaves a stale red
-            // outline behind forever since nothing ever un-highlights it.
-            field.style.outline         = "";
-            field.style.backgroundColor = "";
+            // Only clear styling THIS feature previously applied (marked
+            // via a data attribute) — never blindly reset every vessel
+            // field's outline/background, since other features (basing-on,
+            // vessel suggestions) also style these same fields and would
+            // get silently wiped out otherwise.
+            if (field.dataset.ttVesselNoDateFlagged) {
+                field.style.outline         = "";
+                field.style.backgroundColor = "";
+                delete field.dataset.ttVesselNoDateFlagged;
+            }
 
             if (!field.value.trim()) continue; // nothing to flag on an empty name
 
@@ -43,6 +47,7 @@ const DetectVesselNoDate = {
                 missing.push(field.value.trim());
                 field.style.outline         = "2px solid #cc0000";
                 field.style.backgroundColor = "#fff0f0";
+                field.dataset.ttVesselNoDateFlagged = "1";
             }
         }
 

@@ -1,19 +1,21 @@
 // ============================================================
 //  routes/due-services.js
-//  POST /due-services            — extension posts a fresh scan
-//  GET  /due-services            — dashboard reads current state + carrier links
-//  POST /due-services/mark-done  — dashboard's "Mark Done" button
-//  GET  /due-services/history    — trend data for the dashboard's history chart
+//  POST /due-services              — extension posts a fresh scan
+//  GET  /due-services               — dashboard reads FULL state + carrier links
+//  GET  /due-services/current-batch — dashboard's default view: the stored batch
+//  POST /due-services/next-batch    — manual "get me the next batch" button
+//  POST /due-services/mark-done     — dashboard's "Mark Done" button
+//  GET  /due-services/history       — trend data for the dashboard's history chart
 // ============================================================
 
 const fs   = require("fs");
 const path = require("path");
 const { HISTORY_FOLDER } = require("../config");
 const { parseTTDate, formatTTDate } = require("../due-date-utils");
-const { trimToNearestDays } = require("../due-services-trim");
 const CARRIER_LINKS = require("../carrier-links");
 const store = require("../due-services-store");
 const activityLog = require("../activity-log-store");
+const currentBatchStore = require("../current-batch-store");
 
 function readBody(req) {
     return new Promise((resolve, reject) => {
@@ -88,20 +90,33 @@ function handleGetDueServices(req, res) {
     res.end(JSON.stringify({ asOf: store.getAsOf(), services: enriched }));
 }
 
-// Dashboard's "Nearest 2 Days" panel — computed on the fly from the
-// FULL stored list (nothing was ever trimmed from storage). If the
-// nearest 2 due-dates combined have >= 50 services, splits evenly
-// between them (e.g. 70 combined -> 35/35); otherwise just returns
-// whatever the nearest 2 days actually contain. This is a DISPLAY
-// view only — GET /due-services always still has everything.
-function handleGetNearestSplit(req, res) {
-    const all = store.getAll().map(s => ({
+// Dashboard's default view — the STORED batch, not a live recompute.
+// Enriched with carrier links, and each record's done-status/date is
+// refreshed from the real due-services data before being returned
+// (so marking done elsewhere is reflected immediately without
+// needing a whole new batch to be computed).
+function handleGetCurrentBatch(req, res) {
+    const all = store.getAll();
+    const batch = currentBatchStore.getCurrentBatch(all);
+    const enriched = batch.map(s => ({
         ...s,
         links: CARRIER_LINKS[s.carrier] || { schedule: [], routeMap: [] }
     }));
-    const nearest = trimToNearestDays(all);
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ services: nearest }));
+    res.end(JSON.stringify({ services: enriched }));
+}
+
+// Manual escape hatch — forces a fresh batch right now, regardless of
+// whether the current one is fully done yet.
+function handleNextBatch(req, res) {
+    const all = store.getAll();
+    const batch = currentBatchStore.advanceToNextBatch(all);
+    const enriched = batch.map(s => ({
+        ...s,
+        links: CARRIER_LINKS[s.carrier] || { schedule: [], routeMap: [] }
+    }));
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ services: enriched }));
 }
 
 // Dashboard's "Mark Done" button — sets a LOCAL override so the
@@ -136,29 +151,14 @@ async function handleMarkDone(req, res) {
     }
 }
 
-// Trend data for the dashboard's history chart — reads every
-// snapshot in history/ and reduces each one to simple counts, so
-// the dashboard can plot how the queue has changed scan-over-scan
-// without needing the full service list for every past snapshot.
+// Trend data for the dashboard's history chart — reads history/
+// (now one file per calendar day, e.g. due-services-2026-07-10.json —
+// same-day rescans overwrite that day's file rather than piling up)
+// and reduces each day to simple counts for the chart.
 function handleGetHistory(req, res) {
     store.ensureDataFolders();
 
     try {
-        const files = fs.readdirSync(HISTORY_FOLDER)
-            .filter(f => f.startsWith("due-services-") && f.endsWith(".json"))
-            .sort(); // filenames are timestamp-ordered, so this sorts chronologically
-
-        // Filenames look like due-services-2026-07-10_013800.json —
-        // grab just the date part to bucket scans by calendar day.
-        // If you scan multiple times a day, only the LAST scan of that
-        // day is used, so the chart's x-axis is genuinely "days," not
-        // "however many times I happened to click scan."
-        const lastFileForDay = new Map(); // "2026-07-10" → filename
-        for (const filename of files) {
-            const match = filename.match(/^due-services-(\d{4}-\d{2}-\d{2})_/);
-            if (match) lastFileForDay.set(match[1], filename); // later files overwrite earlier ones for the same day
-        }
-
         const DAYS = 30;
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -169,16 +169,16 @@ function handleGetHistory(req, res) {
             day.setDate(day.getDate() - i);
             const dayKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
 
-            const filename = lastFileForDay.get(dayKey);
+            const filePath = path.join(HISTORY_FOLDER, `due-services-${dayKey}.json`);
 
-            if (!filename) {
+            if (!fs.existsSync(filePath)) {
                 // no scan that day — still emit a point so the chart has a
                 // real gap instead of silently compressing the timeline
                 points.push({ date: dayKey, asOf: null, total: null, overdue: 0, dueSoon: 0, done: 0, noScan: true });
                 continue;
             }
 
-            const raw    = fs.readFileSync(path.join(HISTORY_FOLDER, filename), "utf8");
+            const raw    = fs.readFileSync(filePath, "utf8");
             const parsed = JSON.parse(raw);
             const services = Array.isArray(parsed.services) ? parsed.services : [];
 
@@ -193,7 +193,7 @@ function handleGetHistory(req, res) {
 
             points.push({
                 date: dayKey,
-                asOf: parsed.asOf || filename,
+                asOf: parsed.asOf || dayKey,
                 total: services.length,
                 overdue, dueSoon, done,
                 noScan: false
@@ -267,7 +267,8 @@ function handleGetActivity(req, res) {
 module.exports = {
     handlePostDueServices,
     handleGetDueServices,
-    handleGetNearestSplit,
+    handleGetCurrentBatch,
+    handleNextBatch,
     handleMarkDone,
     handleGetHistory,
     handleGetActivity,

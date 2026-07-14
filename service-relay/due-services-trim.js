@@ -1,18 +1,16 @@
 // ============================================================
 //  due-services-trim.js
-//  Decides how many services actually get kept, based on due
-//  date proximity — NOT the extension's job. The extension
-//  just scans and reports everything it sees; this is the
-//  single source of truth for "how many, and which ones."
+//  Computes a NEW batch when called — this is not a live filter,
+//  it's invoked once by current-batch-store.js whenever the
+//  previous batch is fully cleared (or on manual "Next Batch").
 //
-//  Rules:
-//  - Group services by nextUpdateDate.
+//  Rule:
+//  - Group services by nextUpdateDate, nearest day first.
 //  - If the 2 NEAREST days COMBINED have >= SPLIT_THRESHOLD
 //    services, take the AVERAGE of the two days' counts as the
-//    total to show, filled by PRIORITY — the nearest day first,
-//    then whatever's left comes from the second day. e.g.
-//    day1=20, day2=40 → average=30 → day1 gives all 20 (it's
-//    smaller than 30), day2 fills the remaining 10.
+//    batch size, filled by PRIORITY — nearest day first, then
+//    whatever's left comes from the second day. e.g. day1=20,
+//    day2=40 → average=30 → day1 gives all 20, day2 fills 10.
 //  - Otherwise, keep whole days starting from the nearest one,
 //    stopping BEFORE any day that would push the total over
 //    MAX_SERVICES (a day's services are never split in this
@@ -56,8 +54,9 @@ function splitByPriority(itemsA, itemsB, total) {
     return [...itemsA.slice(0, takeA), ...itemsB.slice(0, takeB)];
 }
 
-function trimToNearestDays(services) {
+function computeBatch(services) {
     const groups = groupByDay(services);
+    if (groups.length === 0) return [];
 
     if (groups.length >= 2 && groups[0].items.length + groups[1].items.length >= SPLIT_THRESHOLD) {
         const combinedTotal = groups[0].items.length + groups[1].items.length;
@@ -65,7 +64,7 @@ function trimToNearestDays(services) {
         console.log(
             `⚖️ Nearest 2 days combined (${groups[0].date}: ${groups[0].items.length}, ` +
             `${groups[1].date}: ${groups[1].items.length}) = ${combinedTotal}, meets ${SPLIT_THRESHOLD} threshold — ` +
-            `showing the average (${average}), priority-filled from nearest day first`
+            `new batch = average (${average}), priority-filled from nearest day first`
         );
         return splitByPriority(groups[0].items, groups[1].items, average);
     }
@@ -78,7 +77,8 @@ function trimToNearestDays(services) {
         result.push(...group.items);
     }
 
+    console.log(`📦 New batch: ${result.length} service(s) (whole-day accumulation, cap ${MAX_SERVICES})`);
     return result;
 }
 
-module.exports = { trimToNearestDays, MAX_SERVICES, SPLIT_THRESHOLD };
+module.exports = { computeBatch, MAX_SERVICES, SPLIT_THRESHOLD };

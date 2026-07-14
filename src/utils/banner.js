@@ -91,6 +91,125 @@ function removeSuccessBanner() {
     document.getElementById("tt-success-banner")?.remove();
 }
 
+// ── Persistent info banner ───────────────────────────────────
+// Uses its OWN element (#tt-info-banner), styled blue/neutral —
+// distinct from the yellow warning and green success colors, since
+// this isn't reporting a problem or a one-off confirmation. It's a
+// standing status indicator (e.g. "Basing on: MSC OSCAR") that stays
+// up as long as it's true, cleared only when it's no longer
+// applicable. Sits centered near the top of the page. Deliberately
+// low z-index + pointer-events:none so if it ever visually overlaps
+// a real form field, the field always wins — both visually (page
+// content renders on top) and functionally (clicks/typing pass
+// straight through the banner to whatever's underneath it).
+
+function buildInfoStyle() {
+    return `
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1;
+        pointer-events: none;
+        background: rgba(220, 238, 255, 0.55);
+        color: #0a3d6e;
+        border: 2px solid rgba(30, 95, 158, 0.6);
+        border-radius: 0px;
+        padding: 10px 16px;
+        font-family: monospace;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        line-height: 1.6;
+        min-width: 260px;
+        max-width: 340px;
+        text-align: center;
+    `;
+}
+
+function removeInfoBanner() {
+    document.getElementById("tt-info-banner")?.remove();
+}
+
+// Shows (or updates) the persistent info banner. Pass null to clear
+// it — e.g. when there's no longer a vessel match to report.
+function setInfoBanner(info) {
+    removeInfoBanner();
+    if (!info) return;
+
+    const div = document.createElement("div");
+    div.id = "tt-info-banner";
+
+    div.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 4px; text-shadow: 0 0 4px #dceeff, 0 0 4px #dceeff, 0 0 6px #dceeff;">${info.title}</div>
+        <div style="font-weight: bold; font-size: 13px; text-shadow: 0 0 4px #dceeff, 0 0 4px #dceeff, 0 0 6px #dceeff;">${info.message}</div>
+    `;
+
+    div.style.cssText = buildInfoStyle();
+
+    document.body.appendChild(div);
+}
+
+// ── Suggestion banner (right side) ───────────────────────────
+// Uses its OWN element (#tt-suggestion-banner), styled purple —
+// distinct from the centered blue "info" banner (used for the
+// persistent "Basing on: X" status) and from the warning/success
+// banners. Stacks below the warning banner, same as the success
+// banner does, so it lives on the right with everything else
+// EXCEPT the centered info banner.
+
+function getSuggestionBannerTop() {
+    const warningBanner = document.getElementById("tt-banner");
+    if (!warningBanner) return "16px";
+
+    const rect = warningBanner.getBoundingClientRect();
+    return `${rect.bottom + SUCCESS_GAP}px`;
+}
+
+function buildSuggestionStyle() {
+    return `
+        position: fixed;
+        top: ${getSuggestionBannerTop()};
+        right: 16px;
+        z-index: 999997;
+        background: #f0e6ff;
+        color: #3d0a6e;
+        border: 2px solid #6e1e9e;
+        border-radius: 0px;
+        padding: 10px 16px;
+        font-family: monospace;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        line-height: 1.6;
+        box-shadow: 3px 3px 0px #6e1e9e;
+        min-width: 260px;
+        max-width: 340px;
+        opacity: 0.95;
+    `;
+}
+
+function removeSuggestionBanner() {
+    document.getElementById("tt-suggestion-banner")?.remove();
+}
+
+// Shows (or updates) the vessel-suggestion banner. Pass null to clear
+// it — e.g. when there are no candidates in range right now.
+function setSuggestionBanner(info) {
+    removeSuggestionBanner();
+    if (!info) return;
+
+    const div = document.createElement("div");
+    div.id = "tt-suggestion-banner";
+
+    div.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 4px;">${info.title}</div>
+        <div>${info.message}</div>
+    `;
+
+    div.style.cssText = buildSuggestionStyle();
+
+    document.body.appendChild(div);
+}
+
 // Shows a one-off green confirmation banner (e.g. "Snapshot saved",
 // "Cascade complete") that clears itself after `durationMs` (default
 // 3000ms). Positioned below the warning banner each time it's shown,

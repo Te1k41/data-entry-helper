@@ -1,7 +1,7 @@
 let allServices = [];
 let sortKey      = 'nextUpdateDate';
 let sortAsc      = true;
-let showOnlyNearestSplit = true; // default view: just the nearest-days split, not the full list
+let showOnlyBatch = true; // default view: just today's batch, not the full list
 const filters    = { service: '', carrier: '', nextUpdateDate: '' };
 
 const COLUMNS = [
@@ -36,9 +36,15 @@ function clearFilters() {
     render();
 }
 
-function toggleNearestSplit() {
-    showOnlyNearestSplit = !showOnlyNearestSplit;
+function toggleShowAll() {
+    showOnlyBatch = !showOnlyBatch;
     render();
+}
+
+async function nextBatch() {
+    if (!confirm('Force a new batch now? This replaces the current one, even if not all done.')) return;
+    await fetch('/due-services/next-batch', { method: 'POST' });
+    load();
 }
 
 function setSort(key) {
@@ -66,7 +72,7 @@ async function markDone(record) {
 let historyPoints   = [];
 let activityPoints  = [];
 let activityStreak  = 0;
-let nearestSplit    = [];
+let currentBatch    = [];
 
 async function load() {
     const res  = await fetch('/due-services');
@@ -97,11 +103,11 @@ async function load() {
     }
 
     try {
-        const nsRes = await fetch('/due-services/nearest-split');
-        const nsData = await nsRes.json();
-        nearestSplit = nsData.services || [];
+        const batchRes = await fetch('/due-services/current-batch');
+        const batchData = await batchRes.json();
+        currentBatch = batchData.services || [];
     } catch (e) {
-        nearestSplit = [];
+        currentBatch = [];
     }
 
     render();
@@ -283,7 +289,7 @@ function render() {
     const counts = renderStats();
 
     const splitBtn = document.getElementById('splitToggleBtn');
-    if (splitBtn) splitBtn.textContent = showOnlyNearestSplit ? 'Show All' : 'Show Nearest Split';
+    if (splitBtn) splitBtn.textContent = showOnlyBatch ? 'Show All' : 'Show Batch Only';
 
     document.getElementById('charts').innerHTML =
         renderStatusChart(counts) +
@@ -300,13 +306,12 @@ function render() {
         return;
     }
 
-    // If the "nearest split" view is on (default), restrict the pool
-    // to just the record IDs in nearestSplit BEFORE the usual text
-    // filters/sort apply — this is what makes the count read like
-    // "60 / 286" by default, instead of always showing everything.
-    const nearestRecordIds = new Set(nearestSplit.map(s => s.record));
-    const pool = showOnlyNearestSplit
-        ? allServices.filter(s => nearestRecordIds.has(s.record))
+    // Default view shows only the CURRENT BATCH — a persisted snapshot
+    // computed once server-side, not live-recomputed here. "Show All"
+    // toggles to the full stored list instead.
+    const batchRecordIds = new Set(currentBatch.map(s => s.record));
+    const pool = showOnlyBatch
+        ? allServices.filter(s => batchRecordIds.has(s.record))
         : allServices;
 
     // Filter (case-insensitive "contains", Excel-style quick filter)
@@ -348,10 +353,10 @@ function render() {
         html += `<th onclick="setSort('${col.key}')">${col.label}${arrow ? '<span class="arrow">'+arrow+'</span>' : ''}</th>`;
     }
     html += '</tr><tr class="filterRow">';
-    html += `<th><input value="${filters.service}" oninput="filters.service=this.value; render()" placeholder="filter..."></th>`;
-    html += `<th><input value="${filters.carrier}" oninput="filters.carrier=this.value; render()" placeholder="filter..."></th>`;
+    html += `<th><input value="${filters.service}" onkeydown="if(event.key==='Enter'){filters.service=this.value; render();}" placeholder="filter... (enter)"></th>`;
+    html += `<th><input value="${filters.carrier}" onkeydown="if(event.key==='Enter'){filters.carrier=this.value; render();}" placeholder="filter... (enter)"></th>`;
     html += '<th></th><th></th>';
-    html += `<th><input value="${filters.nextUpdateDate}" oninput="filters.nextUpdateDate=this.value; render()" placeholder="filter..."></th>`;
+    html += `<th><input value="${filters.nextUpdateDate}" onkeydown="if(event.key==='Enter'){filters.nextUpdateDate=this.value; render();}" placeholder="filter... (enter)"></th>`;
     html += '<th></th></tr></thead><tbody>';
 
     for (const s of filtered) {
