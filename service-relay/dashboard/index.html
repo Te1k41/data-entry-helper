@@ -10,6 +10,8 @@
 ║  SERVICES DUE FOR UPDATE — TT DASHBOARD  ║
 ╚══════════════════════════════════════════╝</pre>
 <div id="asOf">loading…</div>
+<div id="batchDayIndicator"></div>
+<div id="dayTabs"></div>
 <main>
     <div id="stats"></div>
     <div id="charts"></div>
@@ -17,7 +19,9 @@
         <button onclick="load()">Refresh</button>
         <button onclick="clearFilters()">Clear Filters</button>
         <button id="splitToggleBtn" onclick="toggleShowAll()">Show All</button>
-        <button onclick="nextBatch()">Next Batch →</button>
+        <button onclick="previousBatch()">← Prev Day</button>
+        <button onclick="nextBatch()">Next Day →</button>
+        <button onclick="location.href='/settings-page'">⚙ Settings</button>
         <span id="count"></span>
     </div>
     <div id="content"></div>

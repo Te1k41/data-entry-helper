@@ -13,6 +13,7 @@ const relayRoutes       = require("./routes/relay");
 const filesRoutes       = require("./routes/files");
 const dueServicesRoutes = require("./routes/due-services");
 const dashboardRoutes   = require("./routes/dashboard");
+const settingsRoutes    = require("./routes/settings");
 
 const relaySocket     = require("./relay-socket");
 const downloadWatcher = require("./download-watcher");
@@ -72,12 +73,24 @@ const server = http.createServer((req, res) => {
         return dueServicesRoutes.handleNextBatch(req, res);
     }
 
+    if (req.method === "POST" && req.url === "/due-services/previous-batch") {
+        return dueServicesRoutes.handlePreviousBatch(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/due-services/go-to-day") {
+        return dueServicesRoutes.handleGoToDay(req, res);
+    }
+
     if (req.method === "GET" && req.url === "/due-services/history") {
         return dueServicesRoutes.handleGetHistory(req, res);
     }
 
     if (req.method === "GET" && req.url === "/due-services/activity") {
         return dueServicesRoutes.handleGetActivity(req, res);
+    }
+
+    if (req.method === "GET" && req.url === "/due-services/weekly-plan") {
+        return dueServicesRoutes.handleGetWeeklyPlan(req, res);
     }
 
     if (req.method === "GET" && req.url === "/dashboard") {
@@ -90,6 +103,22 @@ const server = http.createServer((req, res) => {
 
     if (req.method === "GET" && req.url === "/dashboard/dashboard.js") {
         return dashboardRoutes.handleDashboardJs(req, res);
+    }
+
+    if (req.method === "GET" && req.url === "/settings") {
+        return settingsRoutes.handleGetSettings(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/settings") {
+        return settingsRoutes.handlePostSettings(req, res);
+    }
+
+    if (req.method === "GET" && req.url === "/settings-page") {
+        return dashboardRoutes.handleSettingsPage(req, res);
+    }
+
+    if (req.method === "GET" && req.url === "/dashboard/settings.js") {
+        return dashboardRoutes.handleSettingsJs(req, res);
     }
 
     res.writeHead(404);

@@ -37,4 +37,18 @@ function handleDashboardJs(req, res) {
     serveFile(res, "dashboard.js", "application/javascript");
 }
 
-module.exports = { handleDashboardIndex, handleDashboardCss, handleDashboardJs };
+function handleSettingsPage(req, res) {
+    serveFile(res, "settings.html", "text/html");
+}
+
+function handleSettingsJs(req, res) {
+    serveFile(res, "settings.js", "application/javascript");
+}
+
+module.exports = {
+    handleDashboardIndex,
+    handleDashboardCss,
+    handleDashboardJs,
+    handleSettingsPage,
+    handleSettingsJs,
+};

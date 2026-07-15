@@ -3,26 +3,24 @@
 //  Once you land on the search page (either on your own,
 //  or via AutoNavSchedules clicking through from login),
 //  automatically fills Assigned To with your name and runs
-//  the search with NO date filter — every service assigned
-//  to you comes back, not just a "due soon" slice. The full,
-//  UNTRIMMED result is parsed and posted straight to the
-//  relay server as-is. Deciding how many services actually
-//  get kept (and which ones) is the SERVER's job — see
-//  service-relay/due-services-trim.js — not the extension's,
-//  so that logic can be tuned without redeploying this file.
-//  Runs at most once per browser tab session.
+//  the search — date fields are left untouched, at
+//  Tradetech's own default. The parsed result is posted
+//  straight to the relay server as-is. Deciding how many
+//  services actually get kept (and which ones) is the
+//  SERVER's job — see service-relay/due-services-trim.js —
+//  not the extension's, so that logic can be tuned without
+//  redeploying this file. Runs at most once per browser tab
+//  session.
 //
 //  NOTE: this feature was built from a pasted HTML sample
 //  of the results table and the two filter fields, not a
 //  live look at the whole search page. The Search button
 //  itself is confirmed (plain <input type="submit">), but
-//  double-check that s_assignedTo / s_next_update_datet
-//  live in the SAME <form> as that button.
+//  double-check that s_assignedTo lives in the SAME <form>
+//  as that button.
 // ─────────────────────────────────────────────────────
 
 const DueServiceScanner = {
-
-    ASSIGNED_TO_NAME: "tienduongTTI",
 
     FLAG_AUTO_SEARCH_RUN: "tt_dueScanAutoSearchRun",
     FLAG_AUTO_SCAN_DONE:  "tt_dueScanAutoScanDone",
@@ -59,96 +57,98 @@ const DueServiceScanner = {
         });
     },
 
-    fillAssignedToAndSearch() {
+    // Reads your Tradetech username from the relay's settings — set
+    // once at http://localhost:3737/settings-page instead of being
+    // hardcoded here. If the relay isn't reachable or nothing's been
+    // configured yet, leaves the field for you to fill in by hand
+    // rather than silently failing.
+    //
+    // Fires change/input/blur (not just change) and does a real
+    // focus()+blur() cycle, since dispatching a single synthetic
+    // "change" event wasn't reliably triggering Tradetech's own
+    // valid_sql() AJAX lookup that resolves the hidden
+    // s_assignedToId field — mimicking real typing + tabbing away
+    // is more robust against whatever exact event Tradetech's script
+    // actually listens for.
+    async fillAssignedToAndSearch() {
         const assignedField = document.querySelector('input[name="s_assignedTo"]');
+
         if (assignedField && !assignedField.value.trim()) {
-            assignedField.value = this.ASSIGNED_TO_NAME;
-            assignedField.dispatchEvent(new Event("change", { bubbles: true }));
-            console.log(`👤 Auto-filled Assigned To: ${this.ASSIGNED_TO_NAME}`);
+            try {
+                const res = await fetch("http://localhost:3737/settings");
+                const settings = await res.json();
+
+                if (settings.assignedToName) {
+                    assignedField.focus();
+                    assignedField.value = settings.assignedToName;
+                    assignedField.dispatchEvent(new Event("input",  { bubbles: true }));
+                    assignedField.dispatchEvent(new Event("change", { bubbles: true }));
+                    assignedField.blur();
+                    assignedField.dispatchEvent(new Event("blur", { bubbles: true }));
+                    console.log(`👤 Auto-filled Assigned To: ${settings.assignedToName}`);
+                } else {
+                    console.warn("⚠ No Tradetech username set yet — visit http://localhost:3737/settings-page");
+                }
+            } catch (err) {
+                console.warn("⚠ Could not reach relay for settings — fill in Assigned To manually:", err.message);
+            }
         }
 
         this.runSearch();
     },
 
-    // Blanking the date field turned out NOT to mean "no filter" —
-    // Tradetech apparently falls back to showing just the nearest single
-    // day's services when the field is empty (confirmed: blank returned
-    // exactly the nearest day's count, nothing more). Instead, we set an
-    // explicit "On or Before" filter with a date far enough in the
-    // future (10 years out) that it functionally includes every
-    // service, without relying on blank-field behavior Tradetech
-    // doesn't actually support the way we assumed.
+    // Filters by Assigned To ONLY — the date fields are left completely
+    // untouched, at whatever Tradetech's own default is. This is a
+    // DELIBERATE narrower scope: an earlier version tried to force
+    // "search everything" via a fake far-future date, which worked but
+    // added real complexity. Confirmed OK to accept Tradetech's default
+    // date scope instead (the batch system server-side will simply work
+    // from whatever comes back, rather than assuming the full list).
     runSearch() {
-        const opSelect      = document.querySelector('select[name="s_next_update_datet_s"]');
-        const dateInput     = document.querySelector('input[name="s_next_update_datet"]');
-        const assignedField = document.querySelector('input[name="s_assignedTo"]');
-        // valid_sql()'s onchange handler on s_assignedTo does an async lookup
-        // and writes the RESOLVED id here — this, not the visible text, is
-        // what the search actually filters by (per fldS3/'s_assignedToId'
-        // in the field's onchange attribute).
+        const assignedField   = document.querySelector('input[name="s_assignedTo"]');
+        // valid_sql()'s onchange/blur handler on s_assignedTo does an
+        // async lookup and writes the RESOLVED id here — this, not the
+        // visible text, is what the search actually filters by (per
+        // fldS3/'s_assignedToId' in the field's onchange attribute).
         const assignedIdField = document.querySelector('input[name="s_assignedToId"]');
 
-        if (!opSelect || !dateInput) {
-            console.warn("⚠ Due Service Scanner: filter fields not found on this page");
-            return;
-        }
+        console.log("🔎 Searching by Assigned To only — date fields left at Tradetech's own default");
 
-        const farFuture = new Date();
-        farFuture.setFullYear(farFuture.getFullYear() + 10);
-        const mm = String(farFuture.getMonth() + 1).padStart(2, "0");
-        const dd = String(farFuture.getDate()).padStart(2, "0");
-        const yy = String(farFuture.getFullYear()).slice(-2);
-        const expectedDate = `${mm}/${dd}/${yy}`;
-
-        opSelect.value  = ":le:"; // "On or Before"
-        dateInput.value = expectedDate;
-
-        opSelect.dispatchEvent(new Event("change", { bubbles: true }));
-        dateInput.dispatchEvent(new Event("change", { bubbles: true }));
-
-        console.log(`🔎 Searching ALL services assigned to me (on or before ${expectedDate}, effectively everything)`);
-
-        this.waitForFieldsThenSubmit({ opSelect, dateInput, assignedField, assignedIdField, expectedDate });
+        this.waitForFieldsThenSubmit({ assignedField, assignedIdField });
     },
 
-    // Polls the filter fields (every 150ms, up to ~5s — a bit longer than
-    // a same-tick DOM update, since the assignedToId lookup is a real
-    // network round trip) until each one actually holds the expected
-    // value. Crucially, this doesn't just check that the visible
-    // s_assignedTo TEXT is non-blank — it waits for the async-resolved
-    // s_assignedToId hidden field too, since that's what actually drives
-    // the search filter. Without this, the search could fire before
-    // valid_sql()'s lookup finishes, silently ignoring the Assigned To
-    // filter entirely (which matches what was seen manually: typing the
-    // name alone didn't filter anything until Tab caused enough of a
-    // delay for the lookup to complete on its own).
-    waitForFieldsThenSubmit({ opSelect, dateInput, assignedField, assignedIdField, expectedDate }) {
+    // Polls (every 150ms, up to ~8s — a real network round trip for
+    // Tradetech's own AJAX lookup, not a same-tick DOM update) until
+    // the ASSIGNED TO NAME is actually confirmed registered — i.e. the
+    // hidden s_assignedToId field has a resolved value, not just that
+    // the visible text box looks non-blank. Without this, the search
+    // could fire before valid_sql()'s lookup finishes, silently
+    // ignoring the Assigned To filter entirely.
+    waitForFieldsThenSubmit({ assignedField, assignedIdField }) {
         let attempts = 0;
-        const maxAttempts = 34; // 34 × 150ms ≈ 5s ceiling
+        const maxAttempts = 54; // 54 × 150ms ≈ 8s ceiling
 
-        const allFieldsReady = () =>
-            opSelect.value === ":le:" &&
-            dateInput.value.trim() === expectedDate &&
-            (!assignedField || assignedField.value.trim().length === 0 ||
-                (assignedIdField && assignedIdField.value.trim().length > 0));
+        const nameConfirmed = () =>
+            !assignedField || assignedField.value.trim().length === 0 ||
+            (assignedIdField && assignedIdField.value.trim().length > 0);
 
         const timer = setInterval(() => {
             attempts++;
 
-            if (allFieldsReady()) {
+            if (nameConfirmed()) {
                 clearInterval(timer);
-                console.log("✅ All filter fields confirmed (incl. resolved Assigned To id) — submitting search");
-                this.submitSearch(dateInput);
+                console.log("✅ Assigned To name confirmed registered by Tradetech — submitting search");
+                this.submitSearch(assignedField);
                 return;
             }
 
             if (attempts >= maxAttempts) {
                 clearInterval(timer);
                 console.warn(
-                    "⚠ Fields never fully confirmed after 5s " +
-                    `(assignedToId=${assignedIdField?.value || "empty"}) — submitting anyway`
+                    "⚠ Tradetech never registered the Assigned To name after 8s " +
+                    `(s_assignedToId=${assignedIdField?.value || "empty"}) — submitting anyway`
                 );
-                this.submitSearch(dateInput);
+                this.submitSearch(assignedField);
             }
 
         }, 150);

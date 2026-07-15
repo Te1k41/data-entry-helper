@@ -16,6 +16,7 @@ const CARRIER_LINKS = require("../carrier-links");
 const store = require("../due-services-store");
 const activityLog = require("../activity-log-store");
 const currentBatchStore = require("../current-batch-store");
+const { computeWeeklyPlan } = require("../due-services-trim");
 
 function readBody(req) {
     return new Promise((resolve, reject) => {
@@ -95,28 +96,66 @@ function handleGetDueServices(req, res) {
 // refreshed from the real due-services data before being returned
 // (so marking done elsewhere is reflected immediately without
 // needing a whole new batch to be computed).
+function batchResponsePayload(batch) {
+    const enriched = batch.items.map(s => ({
+        ...s,
+        links: CARRIER_LINKS[s.carrier] || { schedule: [], routeMap: [] }
+    }));
+    return {
+        services: enriched,
+        dayIndex: batch.dayIndex,
+        dayName: batch.dayName,
+        weekStart: batch.weekStart,
+        weekComplete: batch.weekComplete,
+        leftoverCount: batch.leftoverCount || 0
+    };
+}
+
 function handleGetCurrentBatch(req, res) {
     const all = store.getAll();
     const batch = currentBatchStore.getCurrentBatch(all);
-    const enriched = batch.map(s => ({
-        ...s,
-        links: CARRIER_LINKS[s.carrier] || { schedule: [], routeMap: [] }
-    }));
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ services: enriched }));
+    res.end(JSON.stringify(batchResponsePayload(batch)));
 }
 
 // Manual escape hatch — forces a fresh batch right now, regardless of
-// whether the current one is fully done yet.
+// whether the current one is fully done yet. Any undone leftovers
+// from the day being left behind automatically carry forward into
+// the new day's batch (see current-batch-store.js).
 function handleNextBatch(req, res) {
     const all = store.getAll();
     const batch = currentBatchStore.advanceToNextBatch(all);
-    const enriched = batch.map(s => ({
-        ...s,
-        links: CARRIER_LINKS[s.carrier] || { schedule: [], routeMap: [] }
-    }));
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ services: enriched }));
+    res.end(JSON.stringify(batchResponsePayload(batch)));
+}
+
+// Navigate back one day.
+function handlePreviousBatch(req, res) {
+    const all = store.getAll();
+    const batch = currentBatchStore.goToPreviousBatch(all);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(batchResponsePayload(batch)));
+}
+
+// Jump directly to a specific weekday (0=Mon .. 4=Fri) — day-tab
+// navigation on the dashboard.
+async function handleGoToDay(req, res) {
+    try {
+        const { dayIndex } = await readBody(req);
+        if (typeof dayIndex !== "number") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "dayIndex must be a number" }));
+            return;
+        }
+        const all = store.getAll();
+        const batch = currentBatchStore.goToDay(all, dayIndex);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(batchResponsePayload(batch)));
+    } catch (err) {
+        console.error("❌ Bad /due-services/go-to-day body:", err);
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
+    }
 }
 
 // Dashboard's "Mark Done" button — sets a LOCAL override so the
@@ -318,13 +357,33 @@ function handleGetActivity(req, res) {
     }
 }
 
+// Workload-per-day breakdown — how the current week's services split
+// across Mon-Fri once overdue/backlog absorption and same-week
+// balancing are applied. Computed fresh from the FULL stored list
+// every time (not persisted like the batch) since it's just a display
+// view, not a work queue.
+function handleGetWeeklyPlan(req, res) {
+    const all = store.getAll();
+    const plan = computeWeeklyPlan(all);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+        breakdown: plan.breakdown,
+        mandatoryCount: plan.mandatoryCount,
+        backlogCount: plan.backlogCount,
+        total: plan.allItems.length
+    }));
+}
+
 module.exports = {
     handlePostDueServices,
     handleGetDueServices,
     handleGetCurrentBatch,
     handleNextBatch,
+    handlePreviousBatch,
+    handleGoToDay,
     handleMarkDone,
     handleUndoDone,
     handleGetHistory,
     handleGetActivity,
+    handleGetWeeklyPlan,
 };

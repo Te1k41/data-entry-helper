@@ -42,8 +42,22 @@ function toggleShowAll() {
 }
 
 async function nextBatch() {
-    if (!confirm('Force a new batch now? This replaces the current one, even if not all done.')) return;
+    if (!confirm('Move to the next day now? Anything not done today carries forward automatically.')) return;
     await fetch('/due-services/next-batch', { method: 'POST' });
+    load();
+}
+
+async function previousBatch() {
+    await fetch('/due-services/previous-batch', { method: 'POST' });
+    load();
+}
+
+async function goToDay(dayIndex) {
+    await fetch('/due-services/go-to-day', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ dayIndex })
+    });
     load();
 }
 
@@ -95,6 +109,8 @@ let historyPoints   = [];
 let activityPoints  = [];
 let activityStreak  = 0;
 let currentBatch    = [];
+let batchInfo       = null; // { dayIndex, dayName, weekStart, weekComplete }
+let weeklyPlan      = null;
 
 async function load() {
     const res  = await fetch('/due-services');
@@ -128,8 +144,23 @@ async function load() {
         const batchRes = await fetch('/due-services/current-batch');
         const batchData = await batchRes.json();
         currentBatch = batchData.services || [];
+        batchInfo = {
+            dayIndex: batchData.dayIndex,
+            dayName: batchData.dayName,
+            weekStart: batchData.weekStart,
+            weekComplete: batchData.weekComplete,
+            leftoverCount: batchData.leftoverCount || 0
+        };
     } catch (e) {
         currentBatch = [];
+        batchInfo = null;
+    }
+
+    try {
+        const planRes = await fetch('/due-services/weekly-plan');
+        weeklyPlan = await planRes.json();
+    } catch (e) {
+        weeklyPlan = null;
     }
 
     render();
@@ -307,16 +338,70 @@ function renderActivityChart() {
     </div>`;
 }
 
+function renderWeeklyPlanChart() {
+    if (!weeklyPlan || !weeklyPlan.breakdown || weeklyPlan.breakdown.length === 0) {
+        return `<div class="chartPanel wide">
+            <h2>this week's workload (mon-fri)</h2>
+            <div id="noHistory">-- no data --</div>
+        </div>`;
+    }
+
+    const max = Math.max(1, ...weeklyPlan.breakdown.map(b => b.count));
+    const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+    const bars = weeklyPlan.breakdown.map((b, i) =>
+        `<div class="histBar ${b.mandatory ? 'hasOverdue' : 'activityBar'}" style="height:${Math.round((b.count / max) * 100) || 2}%" title="${DAY_NAMES[i]} (${b.date}): ${b.count}${b.mandatory ? ' -- mandatory' : ' -- balanced'}"></div>`
+    ).join('');
+
+    const labels = weeklyPlan.breakdown.map((b, i) =>
+        `<span>${DAY_NAMES[i]}<br>${b.count}</span>`
+    ).join('');
+
+    const backlogNote = weeklyPlan.backlogCount > 0
+        ? `<span class="streak">⚠ includes ${weeklyPlan.backlogCount} from before this week</span>`
+        : '';
+
+    return `<div class="chartPanel wide">
+        <h2>this week's workload (mon-fri) -- ${weeklyPlan.total} total ${backlogNote}</h2>
+        <div class="histogram">${bars}</div>
+        <div class="histLabels">${labels}</div>
+    </div>`;
+}
+
 function render() {
     const counts = renderStats();
 
     const splitBtn = document.getElementById('splitToggleBtn');
     if (splitBtn) splitBtn.textContent = showOnlyBatch ? 'Show All' : 'Show Batch Only';
 
+    const dayIndicator = document.getElementById('batchDayIndicator');
+    if (dayIndicator && batchInfo) {
+        if (batchInfo.weekComplete) {
+            dayIndicator.textContent = `# ✅ every day this week (starting ${batchInfo.weekStart}) is done!`;
+        } else if (batchInfo.dayName) {
+            const leftoverNote = batchInfo.leftoverCount > 0
+                ? ` (+ ${batchInfo.leftoverCount} carried forward, not yet done)`
+                : '';
+            dayIndicator.textContent = `# working on: ${batchInfo.dayName}'s batch (week of ${batchInfo.weekStart})${leftoverNote}`;
+        } else {
+            dayIndicator.textContent = '';
+        }
+    }
+
+    const dayTabsEl = document.getElementById('dayTabs');
+    if (dayTabsEl && batchInfo) {
+        const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+        dayTabsEl.innerHTML = DAY_NAMES.map((name, i) => {
+            const active = !batchInfo.weekComplete && batchInfo.dayIndex === i;
+            return `<button class="dayTab ${active ? 'activeDayTab' : ''}" onclick="goToDay(${i})">${name}</button>`;
+        }).join('');
+    }
+
     document.getElementById('charts').innerHTML =
         renderStatusChart(counts) +
         renderCarrierChart() +
         renderHistogram() +
+        renderWeeklyPlanChart() +
         renderActivityChart() +
         renderTrendChart();
 

@@ -1,86 +1,172 @@
 // ============================================================
 //  current-batch-store.js
-//  Owns the "current batch" — a SNAPSHOT of services computed
-//  once by due-services-trim.js's computeBatch(), saved to disk,
-//  and shown as-is on the dashboard until every service in it
-//  is marked done. Only then (or via the manual "Next Batch"
-//  button) does a fresh batch get computed and saved over it.
+//  Owns the CURRENT DAY'S batch — one of the 5 weekday slots
+//  from due-services-trim.js's computeWeeklyPlan(). Works
+//  through the week sequentially: Monday's slot first, and
+//  once every item in it is marked done, automatically
+//  advances to Tuesday's, then Wednesday's, and so on.
 //
-//  This is deliberately NOT a live filter recomputed on every
-//  page load — that was the earlier, confusing version where
-//  the visible set could shift mid-session. Now: compute once,
-//  work through it, done.
+//  A fresh weekly plan is computed once per calendar week (the
+//  first time it's needed that week) and its per-day record
+//  lists are persisted — so the SET of services assigned to
+//  each day-slot stays fixed for the week, even as you mark
+//  things done, rather than being live-recomputed.
+//
+//  Whatever day you're VIEWING, any still-undone items from
+//  EARLIER days automatically tag along too — force-advancing
+//  (or navigating) past an unfinished day never abandons its
+//  leftovers; they keep showing up merged into whichever day
+//  you're on until they're actually marked done.
+//
+//  Fully navigable: goToDay() jumps to any day index directly
+//  (used by both Previous/Next and day-tab navigation).
 // ============================================================
 
 const fs = require("fs");
 const { CURRENT_BATCH_FILE, DATA_FOLDER } = require("./config");
-const { computeBatch } = require("./due-services-trim");
+const { computeWeeklyPlan } = require("./due-services-trim");
+const { formatTTDate } = require("./due-date-utils");
+
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 function ensureDataFolder() {
     if (!fs.existsSync(DATA_FOLDER)) fs.mkdirSync(DATA_FOLDER, { recursive: true });
 }
 
-function loadBatch() {
+function getMondayKey(date) {
+    const day = date.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(date);
+    monday.setDate(monday.getDate() + diff);
+    monday.setHours(0, 0, 0, 0);
+    return formatTTDate(monday);
+}
+
+function loadState() {
     ensureDataFolder();
     if (!fs.existsSync(CURRENT_BATCH_FILE)) return null;
 
     try {
-        const raw = fs.readFileSync(CURRENT_BATCH_FILE, "utf8");
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed.records) ? parsed : null;
+        return JSON.parse(fs.readFileSync(CURRENT_BATCH_FILE, "utf8"));
     } catch (err) {
-        console.error("❌ Could not read current-batch.json:", err.message);
+        console.error("❌ Could not read current-batch.json — starting fresh:", err.message);
         return null;
     }
 }
 
-function saveBatch(records) {
+function saveState(state) {
     ensureDataFolder();
-    const payload = { createdAt: new Date().toISOString(), records };
-    fs.writeFileSync(CURRENT_BATCH_FILE, JSON.stringify(payload, null, 2));
-    console.log(`📦 Saved current-batch.json — ${records.length} record(s)`);
+    fs.writeFileSync(CURRENT_BATCH_FILE, JSON.stringify(state, null, 2));
+    console.log(
+        `📦 Weekly batch state saved — week of ${state.weekStart}, ` +
+        `day ${state.dayIndex} (${DAY_NAMES[state.dayIndex] || "week complete"})`
+    );
 }
 
-// Given the FULL, current due-services list (source of truth for
-// done/nextUpdateDate), returns the batch that should be shown right
-// now — either the existing stored batch (refreshed with live
-// done-status from allServices), or a freshly computed one if the
-// stored batch doesn't exist yet or is now fully done.
-function getCurrentBatch(allServices) {
-    const byRecord = new Map(allServices.map(s => [s.record, s]));
-    const stored = loadBatch();
+// Computes a fresh weekly plan and stores just the RECORD IDs per day
+// (not full service objects) — live data (done-status, dates, etc.)
+// always comes from the real due-services store when reading the
+// batch back out.
+function startNewWeek(allServices) {
+    const plan = computeWeeklyPlan(allServices);
+    const weekStart = getMondayKey(new Date());
+    const dayRecordLists = plan.breakdown.map(day => day.items.map(s => s.record));
 
-    if (stored && stored.records.length > 0) {
-        // Refresh each stored record's live done-status/date from the
-        // real due-services data (in case something changed), dropping
-        // any record that no longer exists at all.
-        const refreshed = stored.records
-            .map(r => byRecord.get(r))
-            .filter(Boolean);
+    const state = { weekStart, dayIndex: 0, dayRecordLists };
+    saveState(state);
+    return state;
+}
 
-        const allDone = refreshed.length > 0 && refreshed.every(s => s.done);
+function ensureCurrentWeekState(allServices) {
+    const thisWeekKey = getMondayKey(new Date());
+    let state = loadState();
+    if (!state || state.weekStart !== thisWeekKey) {
+        console.log(state ? "📅 New week — computing a fresh weekly plan" : "📦 No batch state yet — computing the first weekly plan");
+        state = startNewWeek(allServices);
+    }
+    return state;
+}
 
-        if (!allDone && refreshed.length > 0) {
-            return refreshed; // keep showing the same batch, just with live done-status
-        }
-        console.log("✅ Current batch is fully done — computing the next one");
-    } else {
-        console.log("📦 No current batch yet — computing the first one");
+function itemsForDay(state, dayIndex, byRecord) {
+    const records = state.dayRecordLists[dayIndex] || [];
+    return records.map(r => byRecord.get(r)).filter(Boolean);
+}
+
+function isDayFullyDone(state, dayIndex, byRecord) {
+    const items = itemsForDay(state, dayIndex, byRecord);
+    return items.length === 0 || items.every(s => s.done);
+}
+
+// Walks the state forward past any day-slots that are empty or fully
+// done, saving as it goes.
+function advancePastDone(state, byRecord) {
+    while (state.dayIndex < state.dayRecordLists.length && isDayFullyDone(state, state.dayIndex, byRecord)) {
+        state.dayIndex++;
+    }
+    saveState(state);
+    return state;
+}
+
+// Builds the actual batch shown for a given day index: that day's own
+// items (done + undone, so progress stays visible) PLUS any still-
+// undone items from every EARLIER day — nothing left behind, whether
+// you got here by auto-advancing, force-advancing, or navigating.
+function buildBatchForDay(state, dayIndex, byRecord) {
+    if (dayIndex >= state.dayRecordLists.length) {
+        return { items: [], dayIndex, dayName: null, weekStart: state.weekStart, weekComplete: true };
     }
 
-    return advanceToNextBatch(allServices);
+    const ownItems = itemsForDay(state, dayIndex, byRecord);
+
+    const leftovers = [];
+    for (let i = 0; i < dayIndex; i++) {
+        leftovers.push(...itemsForDay(state, i, byRecord).filter(s => !s.done));
+    }
+
+    return {
+        items: [...leftovers, ...ownItems],
+        dayIndex,
+        dayName: DAY_NAMES[dayIndex],
+        weekStart: state.weekStart,
+        weekComplete: false,
+        leftoverCount: leftovers.length
+    };
 }
 
-// Forces a fresh batch regardless of whether the current one is done
-// — used by the manual "Next Batch" button, and internally once the
-// current batch is confirmed fully done.
+// Returns the batch for whichever day the state is currently on,
+// auto-advancing past anything already fully done first.
+function getCurrentBatch(allServices) {
+    const byRecord = new Map(allServices.map(s => [s.record, s]));
+    let state = ensureCurrentWeekState(allServices);
+    state = advancePastDone(state, byRecord);
+    return buildBatchForDay(state, state.dayIndex, byRecord);
+}
+
+// Jumps directly to a specific day index (clamped to valid range) —
+// the one function behind Previous, Next, and day-tab navigation.
+// Does NOT auto-skip done days — navigating is explicit, you land
+// exactly where you asked to go.
+function goToDay(allServices, dayIndex) {
+    const byRecord = new Map(allServices.map(s => [s.record, s]));
+    let state = ensureCurrentWeekState(allServices);
+
+    const clamped = Math.max(0, Math.min(dayIndex, state.dayRecordLists.length));
+    state.dayIndex = clamped;
+    saveState(state);
+
+    return buildBatchForDay(state, state.dayIndex, byRecord);
+}
+
+// Manual "Next Batch" — force-advances one day forward.
 function advanceToNextBatch(allServices) {
-    // Exclude anything already done from the pool — completed work
-    // shouldn't be re-selected into a new batch.
-    const pool = allServices.filter(s => !s.done);
-    const batch = computeBatch(pool);
-    saveBatch(batch.map(s => s.record));
-    return batch;
+    const state = ensureCurrentWeekState(allServices);
+    return goToDay(allServices, state.dayIndex + 1);
 }
 
-module.exports = { getCurrentBatch, advanceToNextBatch };
+// Navigate back one day.
+function goToPreviousBatch(allServices) {
+    const state = ensureCurrentWeekState(allServices);
+    return goToDay(allServices, state.dayIndex - 1);
+}
+
+module.exports = { getCurrentBatch, advanceToNextBatch, goToPreviousBatch, goToDay, DAY_NAMES };

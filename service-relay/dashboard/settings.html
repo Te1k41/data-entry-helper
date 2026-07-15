@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>tt-settings</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+<style>
+    .settingsForm { max-width: 560px; margin: 0 auto; }
+    .field { margin-bottom: 18px; }
+    .field label { display: block; margin-bottom: 6px; color: var(--cyan); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .field input { width: 100%; font-family: var(--mono); font-size: 13px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); color: var(--text); }
+    .field input:focus { outline: none; border-color: var(--cyan); }
+    .field .hint { color: var(--dim); font-size: 11px; margin-top: 4px; }
+    #saveMsg { margin-top: 14px; font-size: 12px; }
+    #saveMsg.ok { color: var(--green); }
+    #saveMsg.err { color: var(--red); }
+</style>
+</head>
+<body>
+<pre class="banner">╔══════════════════════════════════════════╗
+║  SETTINGS — TT DATA ENTRY HELPER         ║
+╚══════════════════════════════════════════╝</pre>
+<div style="text-align:center; margin-bottom: 12px;">
+    <button onclick="location.href='/dashboard'">← Dashboard</button>
+</div>
+<main>
+    <div class="chartPanel wide settingsForm">
+        <h2>your details</h2>
+        <div class="field">
+            <label>Tradetech Username</label>
+            <input type="text" id="assignedToName" placeholder="e.g. tienduongTTI">
+            <div class="hint">Used to auto-fill "Assigned To" and search for your services.</div>
+        </div>
+    </div>
+
+    <div class="chartPanel wide settingsForm" style="margin-top:16px;">
+        <h2>folders (requires server restart to apply)</h2>
+        <div class="field">
+            <label>Downloads Folder</label>
+            <input type="text" id="watchFolder" placeholder="C:\Users\YourName\Downloads">
+            <div class="hint">Where the relay watches for new downloads to auto-rename.</div>
+        </div>
+        <div class="field">
+            <label>Data Folder</label>
+            <input type="text" id="dataFolder" placeholder="C:\Users\YourName\Documents\Tradetech Services">
+            <div class="hint">Where scanned services, history, and activity data get saved.</div>
+        </div>
+    </div>
+
+    <div class="settingsForm" style="margin-top:16px;">
+        <button onclick="saveSettings()">Save Settings</button>
+        <span id="saveMsg"></span>
+    </div>
+</main>
+
+<script src="/dashboard/settings.js"></script>
+</body>
+</html>
