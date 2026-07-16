@@ -30,9 +30,13 @@ const SP001DateValidation = {
             const vesselName = nameField?.value.trim();
 
             if (vesselName) {
+                const voyageField = this.getVoyageFieldForField(match);
+                const voyage = voyageField?.value.trim();
+                const message = voyage ? `${vesselName} — ${voyage}` : vesselName;
+
                 setInfoBanner({
                     title:   "⚓ Basing on",
-                    message: vesselName
+                    message
                 });
                 this.applyBasingHighlight(nameField);
             } else {
@@ -90,6 +94,14 @@ const SP001DateValidation = {
         if (!rowMatch) return null;
 
         return document.querySelector(`input[name="SV${rowMatch[1]}_vessel_name"]`);
+    },
+
+    // Same row lookup, but for the voyage number field instead.
+    getVoyageFieldForField(fieldName) {
+        const rowMatch = fieldName.match(/^SV(\d+)_depart_date$/);
+        if (!rowMatch) return null;
+
+        return document.querySelector(`input[name="SV${rowMatch[1]}_start_voyage"]`);
     },
 
     findMatchingSVDate(spDate) {

@@ -20,31 +20,77 @@
 //  as that button.
 // ─────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────
+//  FEATURE: Due Service Scanner
+//  Once you land on the search page (either on your own,
+//  or via AutoNavSchedules clicking through from login),
+//  automatically fills Assigned To with your name and runs
+//  the search — date fields are left untouched, at
+//  Tradetech's own default. The parsed result is posted
+//  straight to the relay server as-is. Deciding how many
+//  services actually get kept (and which ones) is the
+//  SERVER's job — see service-relay/due-services-trim.js —
+//  not the extension's, so that logic can be tuned without
+//  redeploying this file.
+//
+//  The WHOLE routine — search, scan, and post — only happens
+//  ONCE PER CALENDAR DAY now (tracked via localStorage, not
+//  sessionStorage — so it persists across new tabs, not just
+//  within one tab's session). Opening 5 new tabs today won't
+//  re-run any of it 5 times; tomorrow it auto-fires again.
+//  The "🔄 Scan & Save" button always works regardless, as a
+//  manual override.
+//
+//  NOTE: this feature was built from a pasted HTML sample
+//  of the results table and the two filter fields, not a
+//  live look at the whole search page. The Search button
+//  itself is confirmed (plain <input type="submit">), but
+//  double-check that s_assignedTo lives in the SAME <form>
+//  as that button.
+// ─────────────────────────────────────────────────────
+
 const DueServiceScanner = {
 
-    FLAG_AUTO_SEARCH_RUN: "tt_dueScanAutoSearchRun",
-    FLAG_AUTO_SCAN_DONE:  "tt_dueScanAutoScanDone",
+    FLAG_AUTO_SEARCH_RUN: "tt_dueScanAutoSearchRun", // sessionStorage — per TAB, avoids re-searching on every reload within the same tab
+    FLAG_LAST_AUTO_SCAN_DATE: "tt_dueScan_lastAutoScanDate", // localStorage — per CALENDAR DAY, shared across all tabs
+
+    todayDateString() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    },
+
+    hasAutoScannedToday() {
+        return localStorage.getItem(this.FLAG_LAST_AUTO_SCAN_DATE) === this.todayDateString();
+    },
+
+    markAutoScannedToday() {
+        localStorage.setItem(this.FLAG_LAST_AUTO_SCAN_DATE, this.todayDateString());
+    },
 
     init() {
         const onResultsPage = !!document.querySelector('input[name$="_REC"]');
         const onSearchPage  = !!document.querySelector('input[name="s_next_update_datet"]');
 
-        if (onSearchPage && !sessionStorage.getItem(this.FLAG_AUTO_SEARCH_RUN)) {
+        // The WHOLE routine (search + scan + post) only runs once per
+        // calendar day now — not once per tab. If today's already
+        // done, don't even auto-fill/search again in a new tab.
+        if (onSearchPage && !this.hasAutoScannedToday() && !sessionStorage.getItem(this.FLAG_AUTO_SEARCH_RUN)) {
             sessionStorage.setItem(this.FLAG_AUTO_SEARCH_RUN, "1");
             this.fillAssignedToAndSearch();
         }
 
-        // Auto-scan happens ONCE per tab session (the very first time we
-        // land on a results page — normally right after our own auto-run
-        // search above). After that, landing on results pages again
-        // (browsing manually, revisiting, etc.) does NOT keep re-scanning
-        // and re-posting on its own — that's now a deliberate action via
-        // the "🔄 Scan & Save" button instead.
+        // The SCAN+POST itself only runs once per calendar day — this is
+        // the meaningful, once-daily action (searching alone doesn't
+        // accomplish anything without it). Landing on a results page
+        // again later the same day (new tab, manual browsing, etc.)
+        // won't re-trigger it; tomorrow it's live again automatically.
         if (onResultsPage) {
             this.createScanButton();
 
-            if (!sessionStorage.getItem(this.FLAG_AUTO_SCAN_DONE)) {
+            if (!this.hasAutoScannedToday()) {
                 this.scanAndReport();
+            } else {
+                console.log(`📅 Already auto-scanned today (${this.todayDateString()}) — use "🔄 Scan & Save" to re-scan manually`);
             }
         }
     },
@@ -209,11 +255,11 @@ const DueServiceScanner = {
 
         console.log(`📋 Due Service Scanner: parsed ${services.length} total assigned service(s) — posting as-is`);
 
-        // Mark the auto-scan flow as finalized BEFORE posting — this is
-        // what stops future results-page visits from auto-scanning
-        // again. Manual re-scans after this point only happen via the
-        // "🔄 Scan & Save" button.
-        sessionStorage.setItem(this.FLAG_AUTO_SCAN_DONE, "1");
+        // Mark today as auto-scanned BEFORE posting — this is what stops
+        // any other tab (today or later today) from auto-scanning again.
+        // Manual re-scans still always work via the "🔄 Scan & Save"
+        // button, regardless of this flag.
+        this.markAutoScannedToday();
 
         fetch("http://localhost:3737/due-services", {
             method:  "POST",

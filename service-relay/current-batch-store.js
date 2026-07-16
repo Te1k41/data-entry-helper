@@ -113,6 +113,27 @@ function advancePastDone(state, byRecord) {
 // you got here by auto-advancing, force-advancing, or navigating.
 function buildBatchForDay(state, dayIndex, byRecord) {
     if (dayIndex >= state.dayRecordLists.length) {
+        // Past the last day (Friday) — before declaring the week
+        // genuinely complete, check for any still-undone leftovers
+        // from every day. Force-advancing past a day that wasn't
+        // actually finished should never make its undone items
+        // silently disappear from view.
+        const leftovers = [];
+        for (let i = 0; i < state.dayRecordLists.length; i++) {
+            leftovers.push(...itemsForDay(state, i, byRecord).filter(s => !s.done));
+        }
+
+        if (leftovers.length > 0) {
+            return {
+                items: leftovers,
+                dayIndex,
+                dayName: "Leftover",
+                weekStart: state.weekStart,
+                weekComplete: false,
+                leftoverCount: leftovers.length
+            };
+        }
+
         return { items: [], dayIndex, dayName: null, weekStart: state.weekStart, weekComplete: true };
     }
 
@@ -169,4 +190,19 @@ function goToPreviousBatch(allServices) {
     return goToDay(allServices, state.dayIndex - 1);
 }
 
-module.exports = { getCurrentBatch, advanceToNextBatch, goToPreviousBatch, goToDay, DAY_NAMES };
+// Manual "Recalculate Week" — forces a completely fresh weekly plan
+// RIGHT NOW, regardless of whether the stored state's weekStart still
+// matches the current week. Unlike ensureCurrentWeekState (which only
+// recomputes when the week has genuinely changed), this always
+// rebuilds from scratch — the same effect as manually deleting
+// current-batch.json, without needing to touch the file by hand.
+// Lands on day 0 (Monday) and then auto-advances past anything
+// already done, same as a normal fresh-week start.
+function recalculateWeek(allServices) {
+    const byRecord = new Map(allServices.map(s => [s.record, s]));
+    let state = startNewWeek(allServices);
+    state = advancePastDone(state, byRecord);
+    return buildBatchForDay(state, state.dayIndex, byRecord);
+}
+
+module.exports = { getCurrentBatch, advanceToNextBatch, goToPreviousBatch, goToDay, recalculateWeek, DAY_NAMES };

@@ -72,6 +72,15 @@ async function handlePostDueServices(req, res) {
         store.setAll(merged, new Date().toISOString());
         store.save();
 
+        // Validate the batch state IMMEDIATELY, right when fresh data
+        // arrives — not lazily, waiting for the dashboard to next ask
+        // for it. getCurrentBatch() already checks "is this state for
+        // the right week?" and recomputes if not — calling it here
+        // means that check (and any correction) happens on every scan,
+        // so the batch is never sitting around wrong/stale between
+        // scans, even if nobody's looked at the dashboard in a while.
+        currentBatchStore.getCurrentBatch(merged);
+
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true, count: merged.length }));
     } catch (err) {
@@ -133,6 +142,15 @@ function handleNextBatch(req, res) {
 function handlePreviousBatch(req, res) {
     const all = store.getAll();
     const batch = currentBatchStore.goToPreviousBatch(all);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(batchResponsePayload(batch)));
+}
+
+// Manual "Recalculate Week" — forces a completely fresh weekly plan
+// right now, same effect as manually deleting current-batch.json.
+function handleRecalculateWeek(req, res) {
+    const all = store.getAll();
+    const batch = currentBatchStore.recalculateWeek(all);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(batchResponsePayload(batch)));
 }
@@ -381,6 +399,7 @@ module.exports = {
     handleNextBatch,
     handlePreviousBatch,
     handleGoToDay,
+    handleRecalculateWeek,
     handleMarkDone,
     handleUndoDone,
     handleGetHistory,

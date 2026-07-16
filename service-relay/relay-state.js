@@ -10,4 +10,5 @@
 module.exports = {
     currentServiceCode: "",
     renamingEnabled: true,
+    toolbarCollapsed: false,
 };

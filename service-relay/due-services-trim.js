@@ -128,17 +128,63 @@ function computeWeeklyPlan(services) {
         return d && d < monday;
     });
 
-    const groups = groupByDay(thisWeek);
+    let groups = groupByDay(thisWeek);
+
+    // The breakdown/batch system only has 5 weekday slots (Mon-Fri) —
+    // any service due on a Saturday or Sunday of this week has no
+    // slot to land in and would otherwise silently never appear in
+    // any batch, even though it's correctly counted in "this week"'s
+    // totals. Fold weekend-dated items into Friday's group (the last
+    // working day of the week) instead of losing them.
+    const fridayDateStr = formatTTDate(addDays(monday, 4));
+    const weekendGroups = groups.filter(g => {
+        const gd = parseTTDate(g.date);
+        return gd && (gd.getDay() === 0 || gd.getDay() === 6); // Sun=0, Sat=6
+    });
+
+    if (weekendGroups.length > 0) {
+        const weekendItems = weekendGroups.flatMap(g => g.items);
+        const fridayGroup = groups.find(g => g.date === fridayDateStr);
+
+        if (fridayGroup) {
+            fridayGroup.items.push(...weekendItems);
+        } else {
+            groups.push({ date: fridayDateStr, items: weekendItems });
+        }
+
+        groups = groups
+            .filter(g => !weekendGroups.includes(g))
+            .sort((a, b) => parseTTDate(a.date) - parseTTDate(b.date));
+
+        console.log(`📅 Folded ${weekendItems.length} weekend-dated service(s) into Friday (${fridayDateStr})`);
+    }
+
+    // All 5 weekday date strings this week, guaranteed to exist as
+    // pool slots even when a day has ZERO services — without this, a
+    // day with no data simply never gets a group at all (groupByDay
+    // only creates entries for dates that actually appear), silently
+    // shrinking the divisor used for balancing. E.g. Mon=0, Tue=20,
+    // Wed=30, Thu=10, Fri=40 should divide by 5 (→ target 20), not by
+    // 4 real groups (→ target 25) just because Monday had nothing.
+    const weekdayDateStrs = [0, 1, 2, 3, 4].map(i => formatTTDate(addDays(monday, i)));
+    const groupsByDate = new Map(groups.map(g => [g.date, g]));
+    const emptySlot = (dateStr) => ({ date: dateStr, items: [] });
 
     let mandatoryItems = [];
     let poolGroups;
 
     if (isMondayToday) {
-        poolGroups = groups; // whole week balanced together, nothing pre-mandatory yet
+        // Whole week balanced together, nothing pre-mandatory yet —
+        // every weekday gets a guaranteed slot, empty or not.
+        poolGroups = weekdayDateStrs.map(dateStr => groupsByDate.get(dateStr) || emptySlot(dateStr));
     } else {
-        const mandatoryGroups = groups.filter(g => parseTTDate(g.date) <= today);
-        poolGroups            = groups.filter(g => parseTTDate(g.date) >  today);
-        mandatoryItems = mandatoryGroups.flatMap(g => g.items);
+        const todayStr  = formatTTDate(today);
+        const todayIdx  = weekdayDateStrs.indexOf(todayStr);
+        const priorDateStrs     = weekdayDateStrs.slice(0, todayIdx + 1); // today + everything before it
+        const remainingDateStrs = weekdayDateStrs.slice(todayIdx + 1);    // days still ahead
+
+        mandatoryItems = priorDateStrs.flatMap(dateStr => (groupsByDate.get(dateStr)?.items) || []);
+        poolGroups = remainingDateStrs.map(dateStr => groupsByDate.get(dateStr) || emptySlot(dateStr));
     }
 
     // Backlog from before this week always lands on today, on top of

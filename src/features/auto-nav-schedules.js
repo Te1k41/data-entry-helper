@@ -6,18 +6,37 @@
 //  page. due-service-scanner.js takes over from there
 //  (fills your name, runs the search, scans results).
 //
-//  Runs at most once per browser tab session — uses
-//  sessionStorage flags so it doesn't re-click these
-//  links every time a page/frame reloads while you're
-//  working elsewhere in Tradetech.
+//  Gated by the SAME once-per-calendar-day flag as
+//  due-service-scanner.js (shared localStorage key,
+//  duplicated here rather than referenced cross-file to
+//  keep these two features independent) — the WHOLE
+//  routine (nav + search + scan + post) only runs once
+//  per day, not once per browser tab. sessionStorage flags
+//  are still used WITHIN that one daily run, so a page/
+//  frame reload mid-flow doesn't re-click links it already
+//  clicked a moment ago.
 // ─────────────────────────────────────────────────────
 
 const AutoNavSchedules = {
 
-    FLAG_CLICKED_DATA_INPUT:       "tt_clickedDataInput",
+    FLAG_CLICKED_DATA_INPUT:        "tt_clickedDataInput",
     FLAG_CLICKED_SAILING_SCHEDULES: "tt_clickedSailingSchedules",
+    FLAG_LAST_AUTO_SCAN_DATE:       "tt_dueScan_lastAutoScanDate", // must match due-service-scanner.js exactly
+
+    todayDateString() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    },
+
+    hasAutoScannedToday() {
+        return localStorage.getItem(this.FLAG_LAST_AUTO_SCAN_DATE) === this.todayDateString();
+    },
 
     init() {
+        // Already completed the full daily routine (today's scan
+        // already posted) — don't even start clicking anything.
+        if (this.hasAutoScannedToday()) return;
+
         // Whole flow already completed this tab session — do nothing,
         // even if both links happen to still be present on this page.
         if (sessionStorage.getItem(this.FLAG_CLICKED_SAILING_SCHEDULES)) return;

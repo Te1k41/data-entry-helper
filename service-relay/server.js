@@ -81,6 +81,10 @@ const server = http.createServer((req, res) => {
         return dueServicesRoutes.handleGoToDay(req, res);
     }
 
+    if (req.method === "POST" && req.url === "/due-services/recalculate-week") {
+        return dueServicesRoutes.handleRecalculateWeek(req, res);
+    }
+
     if (req.method === "GET" && req.url === "/due-services/history") {
         return dueServicesRoutes.handleGetHistory(req, res);
     }

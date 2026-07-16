@@ -27,6 +27,7 @@ const Toolbar = {
     _panel:         null,
     _listContainer: null,
     _collapsed:     false,
+    _ws:            null,
 
     register(action) {
         if (this._actions.find(a => a.id === action.id)) return; // avoid dupes if init() ever runs twice
@@ -41,9 +42,71 @@ const Toolbar = {
         this._render();
     },
 
+    // Connects to the relay's WebSocket so the collapsed/expanded state
+    // stays in sync LIVE across every open tab — same self-reconnecting
+    // pattern used by service-relay-send.js / rename-toggle.js. Local
+    // clicks broadcast their new state out; messages from OTHER tabs
+    // update this tab's panel without re-broadcasting (no feedback loop).
+    _connectWebSocket() {
+        if (this._ws) return; // already connecting/connected
+
+        this._ws = new WebSocket("ws://localhost:3737");
+
+        this._ws.addEventListener("open", () => {
+            console.log("🔌 Toolbar connected to relay");
+        });
+
+        this._ws.addEventListener("message", (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.type === "init" && typeof data.toolbarCollapsed === "boolean") {
+                    this._applyCollapsedState(data.toolbarCollapsed, false);
+                }
+
+                if (data.type === "toolbar-collapsed") {
+                    this._applyCollapsedState(data.collapsed, false);
+                }
+            } catch (err) {
+                console.error("❌ Toolbar bad WebSocket message:", err);
+            }
+        });
+
+        this._ws.addEventListener("close", () => {
+            console.log("🔌 Toolbar disconnected from relay — reconnecting in 3s");
+            this._ws = null;
+            setTimeout(() => this._connectWebSocket(), 3000);
+        });
+
+        this._ws.addEventListener("error", () => {
+            console.error("❌ Toolbar WebSocket error — will retry on close");
+        });
+    },
+
+    // Updates the collapsed state and re-renders the panel to match.
+    // `broadcast` controls whether this change should be sent OUT to
+    // other tabs (true for a local click) or not (false when this
+    // update IS the incoming broadcast from another tab).
+    _applyCollapsedState(collapsed, broadcast) {
+        this._collapsed = collapsed;
+        localStorage.setItem("tt-toolbar-collapsed", collapsed ? "1" : "0");
+
+        if (this._panel) {
+            const list = document.getElementById("tt-toolbar-list");
+            const arrow = document.getElementById("tt-toolbar-arrow");
+            if (list)  list.style.display = collapsed ? "none" : "flex";
+            if (arrow) arrow.textContent  = collapsed ? "▸" : "▾";
+        }
+
+        if (broadcast && this._ws?.readyState === WebSocket.OPEN) {
+            this._ws.send(JSON.stringify({ type: "toolbar-collapsed", collapsed }));
+        }
+    },
+
     _ensurePanel() {
         if (this._panel) return;
 
+        this._connectWebSocket();
         this._collapsed = localStorage.getItem("tt-toolbar-collapsed") === "1";
 
         const panel = document.createElement("div");
@@ -130,10 +193,7 @@ const Toolbar = {
             header.style.cursor = "grab";
 
             if (!didDrag) {
-                this._collapsed = !this._collapsed;
-                list.style.display = this._collapsed ? "none" : "flex";
-                document.getElementById("tt-toolbar-arrow").textContent = this._collapsed ? "▸" : "▾";
-                localStorage.setItem("tt-toolbar-collapsed", this._collapsed ? "1" : "0");
+                this._applyCollapsedState(!this._collapsed, true); // true = broadcast this to other tabs
             } else {
                 localStorage.setItem(
                     "tt-toolbar-pos",

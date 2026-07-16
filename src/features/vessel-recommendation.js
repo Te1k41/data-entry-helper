@@ -112,12 +112,15 @@ const VesselRecommendation = {
             const vesselName = vesselNameField?.value.trim();
             if (!vesselName) return;
 
+            const voyageField = document.querySelector(`input[name="SV${rowM[1]}_start_voyage"]`);
+            const voyage = voyageField?.value.trim() || null;
+
             const date = DateUtils.parse(field.value);
             if (!date) return;
 
             if (date >= windowStart && date <= windowEnd) {
                 const diffDays = Math.round((date - baseDate) / 86400000);
-                candidates.push({ vesselName, vesselNameField, date, diffDays, absDiff: Math.abs(diffDays) });
+                candidates.push({ vesselName, vesselNameField, voyage, date, diffDays, absDiff: Math.abs(diffDays) });
             }
         });
 
@@ -130,13 +133,27 @@ const VesselRecommendation = {
             return;
         }
 
+        // "Today" is only accurate when baseDate genuinely IS today's
+        // real calendar date (Case 1). In Case 2, baseDate is a
+        // CALCULATED target date (today minus a stored diff) — it's
+        // often a different day entirely, so labeling an exact match
+        // "Today" would be actively wrong, not just imprecise. The
+        // base date itself is always shown in the title too, so
+        // there's never ambiguity about what these labels are relative
+        // to.
+        const isBaseDateToday = baseDate.getTime() === this.todayUTCMidnight().getTime();
+
         const lines = top.map(c => {
-            const label = c.diffDays < 0 ? "Past" : c.diffDays > 0 ? "Future" : "Today";
-            return `${c.vesselName} — ${label} (${DateUtils.format(c.date)})`;
+            let label;
+            if (c.diffDays < 0)      label = "Past";
+            else if (c.diffDays > 0) label = "Future";
+            else                     label = isBaseDateToday ? "Today" : "On base date";
+            const voyagePart = c.voyage ? ` — ${c.voyage}` : "";
+            return `${c.vesselName}${voyagePart} — ${label} (${DateUtils.format(c.date)})`;
         }).join("<br>");
 
         setSuggestionBanner({
-            title:   "⚓ Suggested Vessel(s)",
+            title:   `⚓ Suggested Vessel(s) — base ${DateUtils.format(baseDate)}`,
             message: lines
         });
 

@@ -28,9 +28,10 @@ function init(httpServer) {
         console.log("🔌 Client connected");
 
         ws.send(JSON.stringify({
-            type:            "init",
-            serviceCode:     relayState.currentServiceCode,
-            renamingEnabled: relayState.renamingEnabled
+            type:             "init",
+            serviceCode:      relayState.currentServiceCode,
+            renamingEnabled:  relayState.renamingEnabled,
+            toolbarCollapsed: relayState.toolbarCollapsed
         }));
 
         ws.on("message", (raw) => {
@@ -47,6 +48,12 @@ function init(httpServer) {
                     relayState.renamingEnabled = data.enabled;
                     console.log("🔄 Renaming enabled:", relayState.renamingEnabled);
                     broadcast({ type: "renaming", enabled: relayState.renamingEnabled });
+                }
+
+                if (data.type === "toolbar-collapsed") {
+                    relayState.toolbarCollapsed = data.collapsed;
+                    console.log("🧰 Toolbar collapsed:", relayState.toolbarCollapsed);
+                    broadcast({ type: "toolbar-collapsed", collapsed: relayState.toolbarCollapsed });
                 }
 
                 if (data.type === "merge-download") {

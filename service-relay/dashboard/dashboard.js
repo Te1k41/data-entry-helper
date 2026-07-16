@@ -61,6 +61,12 @@ async function goToDay(dayIndex) {
     load();
 }
 
+async function recalculateWeek() {
+    if (!confirm('Recalculate this whole week from scratch? Any manual progress tracking (which day you were on) resets to Monday.')) return;
+    await fetch('/due-services/recalculate-week', { method: 'POST' });
+    load();
+}
+
 function setSort(key) {
     const col = COLUMNS.find(c => c.key === key);
     if (!col || col.sortable === false) return;
