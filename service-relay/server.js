@@ -93,7 +93,7 @@ const server = http.createServer((req, res) => {
         return dueServicesRoutes.handleGetActivity(req, res);
     }
 
-    if (req.method === "GET" && req.url === "/due-services/weekly-plan") {
+    if (req.method === "GET" && req.url.startsWith("/due-services/weekly-plan")) {
         return dueServicesRoutes.handleGetWeeklyPlan(req, res);
     }
 

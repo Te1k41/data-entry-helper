@@ -117,6 +117,7 @@ let activityStreak  = 0;
 let currentBatch    = [];
 let batchInfo       = null; // { dayIndex, dayName, weekStart, weekComplete }
 let weeklyPlan      = null;
+let weeklyPlanOffset = 0; // 0 = real current week; Next/Previous Week buttons shift this
 
 async function load() {
     const res  = await fetch('/due-services');
@@ -162,13 +163,33 @@ async function load() {
         batchInfo = null;
     }
 
+    await loadWeeklyPlan();
+
+    render();
+}
+
+// Fetches just the weekly-plan preview at the current weeklyPlanOffset
+// and re-renders — used both by the initial load() and by the Next
+// Week / Previous Week buttons, so switching weeks doesn't need to
+// re-fetch everything else (services, history, batch, etc.).
+async function loadWeeklyPlan() {
     try {
-        const planRes = await fetch('/due-services/weekly-plan');
+        const planRes = await fetch(`/due-services/weekly-plan?offset=${weeklyPlanOffset}`);
         weeklyPlan = await planRes.json();
     } catch (e) {
         weeklyPlan = null;
     }
+}
 
+async function nextWeekPlan() {
+    weeklyPlanOffset++;
+    await loadWeeklyPlan();
+    render();
+}
+
+async function previousWeekPlan() {
+    weeklyPlanOffset--;
+    await loadWeeklyPlan();
     render();
 }
 
@@ -344,10 +365,26 @@ function renderActivityChart() {
     </div>`;
 }
 
+function weekPlanTitle() {
+    if (weeklyPlanOffset === 0) return "this week's workload (mon-fri)";
+    if (weeklyPlanOffset === 1) return "next week's workload (preview)";
+    if (weeklyPlanOffset === -1) return "last week's workload (preview)";
+    return weeklyPlanOffset > 0
+        ? `${weeklyPlanOffset} weeks ahead (preview)`
+        : `${Math.abs(weeklyPlanOffset)} weeks back (preview)`;
+}
+
 function renderWeeklyPlanChart() {
+    const nav = `<div class="weekNav">
+        <button onclick="previousWeekPlan()">← Previous Week</button>
+        <span class="weekNavLabel">${weeklyPlan && weeklyPlan.weekStart ? 'week of ' + weeklyPlan.weekStart : ''}</span>
+        <button onclick="nextWeekPlan()">Next Week →</button>
+    </div>`;
+
     if (!weeklyPlan || !weeklyPlan.breakdown || weeklyPlan.breakdown.length === 0) {
         return `<div class="chartPanel wide">
-            <h2>this week's workload (mon-fri)</h2>
+            <h2>${weekPlanTitle()}</h2>
+            ${nav}
             <div id="noHistory">-- no data --</div>
         </div>`;
     }
@@ -368,7 +405,8 @@ function renderWeeklyPlanChart() {
         : '';
 
     return `<div class="chartPanel wide">
-        <h2>this week's workload (mon-fri) -- ${weeklyPlan.total} total ${backlogNote}</h2>
+        <h2>${weekPlanTitle()} -- ${weeklyPlan.total} total ${backlogNote}</h2>
+        ${nav}
         <div class="histogram">${bars}</div>
         <div class="histLabels">${labels}</div>
     </div>`;
@@ -401,6 +439,23 @@ function render() {
             const active = !batchInfo.weekComplete && batchInfo.dayIndex === i;
             return `<button class="dayTab ${active ? 'activeDayTab' : ''}" onclick="goToDay(${i})">${name}</button>`;
         }).join('');
+    }
+
+    // Floating "N left today" badge — stays visible on the right edge
+    // of the screen regardless of scroll position, counting undone
+    // items in TODAY's actual batch (not the full service list).
+    const remainingBadge = document.getElementById('remainingTodayBadge');
+    if (remainingBadge) {
+        if (!batchInfo || batchInfo.weekComplete) {
+            remainingBadge.style.display = 'none';
+        } else {
+            const remaining = currentBatch.filter(s => !s.done).length;
+            remainingBadge.style.display = 'block';
+            remainingBadge.className = remaining === 0 ? 'doneToday' : '';
+            remainingBadge.innerHTML = remaining === 0
+                ? `✅<br>all done`
+                : `<b>${remaining}</b><br>left today`;
+        }
     }
 
     document.getElementById('charts').innerHTML =

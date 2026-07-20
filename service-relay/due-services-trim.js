@@ -93,37 +93,49 @@ function balanceEqually(dayGroups) {
 
     const targets = dayGroups.map((g, i) => base + (i < remainder ? 1 : 0));
 
-    // Each day first keeps up to its own target from its OWN real items.
-    const kept = dayGroups.map((g, i) => g.items.slice(0, Math.min(g.items.length, targets[i])));
+    // Pool every item across all days — since dayGroups is already one
+    // entry per date in chronological order, this pool is naturally
+    // sorted nearest-due-first. Fill each day's target IN ORDER from
+    // the front of that pool, so an earlier day-label always draws the
+    // nearest-due items before a later day-label gets a look — a slow
+    // day (e.g. nothing due Monday) pulls tomorrow's work forward
+    // instead of reaching past it into Thursday/Friday just because
+    // those days happen to have more than their own equal share.
+    const pooled = dayGroups.flatMap(g => g.items);
 
-    // Anything left over beyond what a day kept goes into a shared pool.
-    const surplusPool = dayGroups.flatMap((g, i) => g.items.slice(kept[i].length));
-
-    // Days that fell short of target get topped up from that pool, in
-    // order (earliest short day first) — since sum(targets) === total,
-    // the pool always has exactly enough to cover every shortfall.
-    let poolIndex = 0;
+    let idx = 0;
     return dayGroups.map((g, i) => {
-        const need = targets[i] - kept[i].length;
-        const borrowed = need > 0 ? surplusPool.slice(poolIndex, poolIndex + need) : [];
-        poolIndex += borrowed.length;
-        return { date: g.date, count: kept[i].length + borrowed.length, items: [...kept[i], ...borrowed] };
+        const items = pooled.slice(idx, idx + targets[i]);
+        idx += items.length;
+        return { date: g.date, count: items.length, items };
     });
 }
 
 // The full weekly plan: which services are in this week's batch, plus
 // a day-by-day breakdown (for the dashboard's workload view).
-function computeWeeklyPlan(services) {
-    const today  = startOfDay(new Date());
-    const monday = getMonday(today);
-    const sunday = addDays(monday, 6);
-    const isMondayToday = today.getDay() === 1;
+//
+// weekOffset lets the dashboard preview a week other than the current
+// one (Next Week / Previous Week buttons) — 0 is the real current
+// week (default, unchanged behavior). Any other value is a READ-ONLY
+// PREVIEW: there's no "today" inside a week that hasn't happened yet
+// (or already passed), so a preview always treats that week's Monday
+// as if it were "today" (whole week balanced together, same as the
+// real Monday-morning case) and never rolls in old backlog — backlog
+// is a "what's overdue right now" concept that only makes sense for
+// the actual current day.
+function computeWeeklyPlan(services, weekOffset = 0) {
+    const realToday = startOfDay(new Date());
+    const isPreview  = weekOffset !== 0;
+    const monday  = getMonday(isPreview ? addDays(realToday, weekOffset * 7) : realToday);
+    const sunday  = addDays(monday, 6);
+    const today   = isPreview ? monday : realToday;
+    const isMondayToday = isPreview ? true : (today.getDay() === 1);
 
     const thisWeek = services.filter(s => {
         const d = parseTTDate(s.nextUpdateDate);
         return d && d >= monday && d <= sunday;
     });
-    const oldBacklog = services.filter(s => {
+    const oldBacklog = isPreview ? [] : services.filter(s => {
         const d = parseTTDate(s.nextUpdateDate);
         return d && d < monday;
     });
@@ -235,7 +247,14 @@ function computeWeeklyPlan(services) {
         `= ${allItems.length} total this week`
     );
 
-    return { allItems, breakdown, mandatoryCount: mandatoryItems.length, backlogCount: oldBacklog.length };
+    return {
+        allItems,
+        breakdown,
+        mandatoryCount: mandatoryItems.length,
+        backlogCount: oldBacklog.length,
+        weekStart: formatTTDate(monday),
+        weekOffset,
+    };
 }
 
 function computeBatch(services) {

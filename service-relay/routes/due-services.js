@@ -380,15 +380,24 @@ function handleGetActivity(req, res) {
 // balancing are applied. Computed fresh from the FULL stored list
 // every time (not persisted like the batch) since it's just a display
 // view, not a work queue.
+// ?offset=N previews a week other than the current one — N=1 is next
+// week, N=-1 is previous week, etc. Omitted/0/invalid all mean "the
+// real current week" (unchanged default behavior).
 function handleGetWeeklyPlan(req, res) {
+    const url = new URL(req.url, "http://localhost");
+    const parsedOffset = parseInt(url.searchParams.get("offset"), 10);
+    const weekOffset = Number.isFinite(parsedOffset) ? parsedOffset : 0;
+
     const all = store.getAll();
-    const plan = computeWeeklyPlan(all);
+    const plan = computeWeeklyPlan(all, weekOffset);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
         breakdown: plan.breakdown,
         mandatoryCount: plan.mandatoryCount,
         backlogCount: plan.backlogCount,
-        total: plan.allItems.length
+        total: plan.allItems.length,
+        weekStart: plan.weekStart,
+        weekOffset: plan.weekOffset
     }));
 }
 
