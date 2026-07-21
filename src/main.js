@@ -42,6 +42,8 @@ const FEATURES = [
     KeyboardFieldNav,
     AutoNavSchedules,
     DueServiceScanner,
+    DateStepButtons,
+    VoyageStepButtons,
 
     // Add new features here ↓
     // MyNewFeature,

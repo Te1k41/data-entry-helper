@@ -61,9 +61,21 @@ async function goToDay(dayIndex) {
     load();
 }
 
+const RECALC_DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
 async function recalculateWeek() {
-    if (!confirm('Recalculate this whole week from scratch? Any manual progress tracking (which day you were on) resets to Monday.')) return;
-    await fetch('/due-services/recalculate-week', { method: 'POST' });
+    const select   = document.getElementById('recalcDaySelect');
+    const raw      = select ? select.value : '';
+    const dayIndex = raw === '' ? null : parseInt(raw, 10);
+    const anchorLabel = dayIndex === null ? 'today' : RECALC_DAY_NAMES[dayIndex];
+
+    if (!confirm(`Recalculate this whole week from scratch, using ${anchorLabel} as the anchor day? Any manual progress tracking (which day you were on) resets to ${anchorLabel}.`)) return;
+
+    await fetch('/due-services/recalculate-week', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ dayIndex })
+    });
     load();
 }
 
@@ -117,6 +129,7 @@ let activityStreak  = 0;
 let currentBatch    = [];
 let batchInfo       = null; // { dayIndex, dayName, weekStart, weekComplete }
 let weeklyPlan      = null;
+let weeklyPlanOffset = 0; // 0 = real current week; Next/Previous Week buttons shift this
 
 async function load() {
     const res  = await fetch('/due-services');
@@ -162,13 +175,33 @@ async function load() {
         batchInfo = null;
     }
 
+    await loadWeeklyPlan();
+
+    render();
+}
+
+// Fetches just the weekly-plan preview at the current weeklyPlanOffset
+// and re-renders — used both by the initial load() and by the Next
+// Week / Previous Week buttons, so switching weeks doesn't need to
+// re-fetch everything else (services, history, batch, etc.).
+async function loadWeeklyPlan() {
     try {
-        const planRes = await fetch('/due-services/weekly-plan');
+        const planRes = await fetch(`/due-services/weekly-plan?offset=${weeklyPlanOffset}`);
         weeklyPlan = await planRes.json();
     } catch (e) {
         weeklyPlan = null;
     }
+}
 
+async function nextWeekPlan() {
+    weeklyPlanOffset++;
+    await loadWeeklyPlan();
+    render();
+}
+
+async function previousWeekPlan() {
+    weeklyPlanOffset--;
+    await loadWeeklyPlan();
     render();
 }
 
@@ -344,10 +377,26 @@ function renderActivityChart() {
     </div>`;
 }
 
+function weekPlanTitle() {
+    if (weeklyPlanOffset === 0) return "this week's workload (mon-fri)";
+    if (weeklyPlanOffset === 1) return "next week's workload (preview)";
+    if (weeklyPlanOffset === -1) return "last week's workload (preview)";
+    return weeklyPlanOffset > 0
+        ? `${weeklyPlanOffset} weeks ahead (preview)`
+        : `${Math.abs(weeklyPlanOffset)} weeks back (preview)`;
+}
+
 function renderWeeklyPlanChart() {
+    const nav = `<div class="weekNav">
+        <button onclick="previousWeekPlan()">← Previous Week</button>
+        <span class="weekNavLabel">${weeklyPlan && weeklyPlan.weekStart ? 'week of ' + weeklyPlan.weekStart : ''}</span>
+        <button onclick="nextWeekPlan()">Next Week →</button>
+    </div>`;
+
     if (!weeklyPlan || !weeklyPlan.breakdown || weeklyPlan.breakdown.length === 0) {
         return `<div class="chartPanel wide">
-            <h2>this week's workload (mon-fri)</h2>
+            <h2>${weekPlanTitle()}</h2>
+            ${nav}
             <div id="noHistory">-- no data --</div>
         </div>`;
     }
@@ -368,7 +417,8 @@ function renderWeeklyPlanChart() {
         : '';
 
     return `<div class="chartPanel wide">
-        <h2>this week's workload (mon-fri) -- ${weeklyPlan.total} total ${backlogNote}</h2>
+        <h2>${weekPlanTitle()} -- ${weeklyPlan.total} total ${backlogNote}</h2>
+        ${nav}
         <div class="histogram">${bars}</div>
         <div class="histLabels">${labels}</div>
     </div>`;
@@ -401,6 +451,23 @@ function render() {
             const active = !batchInfo.weekComplete && batchInfo.dayIndex === i;
             return `<button class="dayTab ${active ? 'activeDayTab' : ''}" onclick="goToDay(${i})">${name}</button>`;
         }).join('');
+    }
+
+    // Floating "N left today" badge — stays visible on the right edge
+    // of the screen regardless of scroll position, counting undone
+    // items in TODAY's actual batch (not the full service list).
+    const remainingBadge = document.getElementById('remainingTodayBadge');
+    if (remainingBadge) {
+        if (!batchInfo || batchInfo.weekComplete) {
+            remainingBadge.style.display = 'none';
+        } else {
+            const remaining = currentBatch.filter(s => !s.done).length;
+            remainingBadge.style.display = 'block';
+            remainingBadge.className = remaining === 0 ? 'doneToday' : '';
+            remainingBadge.innerHTML = remaining === 0
+                ? `✅<br>all done`
+                : `<b>${remaining}</b><br>left today`;
+        }
     }
 
     document.getElementById('charts').innerHTML =
@@ -497,4 +564,269 @@ function render() {
     content.innerHTML = html;
 }
 
+// ============================================================
+//  Wellness reminders
+//  Interval is based on real research, not a guess: Diaz et al.,
+//  "Breaking Up Prolonged Sitting to Improve Cardiometabolic Risk"
+//  (Columbia University, Medicine & Science in Sports & Exercise) —
+//  a 5-minute walk every 30 minutes was the only pattern tested that
+//  meaningfully helped blood sugar (-58% post-meal spikes) AND blood
+//  pressure (-4 to -5 mmHg, comparable to 6 months of regular
+//  exercise). So: every 30 minutes, one gentle nudge.
+//
+//  Deliberately calm on purpose: no sound, ever (Notification is
+//  always created with silent: true). Both a real desktop
+//  notification AND an in-page banner fire together, since either
+//  one alone might be missed — but neither is urgent, neither
+//  demands a response, and both are trivially dismissible. Off by
+//  default; only starts if explicitly turned on.
+// ============================================================
+
+const WELLNESS_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const WELLNESS_SNOOZE_MS   = 10 * 60 * 1000; // 10 minutes
+
+const WELLNESS_MESSAGES = [
+    { emoji: '🚶', text: "No rush at all -- whenever you're ready, maybe a short 5-minute walk? Your body would probably really appreciate it." },
+    { emoji: '💧', text: "Just a gentle thought: a sip of water might be nice right now, if you feel like it." },
+    { emoji: '🌿', text: "However you're doing right now is okay. If you want, a little stretch could feel good." },
+    { emoji: '🧘', text: "No pressure whatsoever -- just checking in. Maybe stand up and roll your shoulders for a moment?" },
+    { emoji: '💛', text: "Small reminder, take it or leave it: your body might enjoy a quick walk and some water about now." },
+];
+
+// Fixed daily check-ins, separate from the 30-minute rotation above --
+// these fire once at that clock time each day, not on a repeating
+// interval.
+const WELLNESS_DAILY_REMINDERS = [
+    { hour: 12, minute: 0, emoji: '🍽️', text: "It's around lunchtime -- no pressure, but if you haven't eaten yet, now could be a nice time to." },
+    { hour: 17, minute: 0, emoji: '🌇', text: "It's 5pm. If today's a wrap for you, that's more than okay -- take care of yourself out there." },
+];
+
+let wellnessEnabled  = false;
+let wellnessTimerId  = null;
+let wellnessMsgIndex = 0;
+let wellnessNextTick = null; // timestamp (ms) of the next 30-min reminder, for the countdown display
+let wellnessCountdownTimerId = null;
+let wellnessDailyTimeoutIds  = [];
+
+function loadWellnessPreference() {
+    try {
+        wellnessEnabled = localStorage.getItem('wellnessRemindersEnabled') === 'true';
+    } catch (e) {
+        wellnessEnabled = false;
+    }
+    if (wellnessEnabled) {
+        startWellnessTimer();
+        scheduleDailyReminders();
+    }
+    updateWellnessToggleLabel();
+}
+
+function saveWellnessPreference() {
+    try {
+        localStorage.setItem('wellnessRemindersEnabled', wellnessEnabled ? 'true' : 'false');
+    } catch (e) { /* fine if unavailable -- just won't persist across reloads */ }
+}
+
+function updateWellnessToggleLabel() {
+    const btn = document.getElementById('wellnessToggle');
+    if (!btn) return;
+
+    const supported = 'Notification' in window;
+    const denied = supported && Notification.permission === 'denied';
+
+    if (!wellnessEnabled) {
+        btn.textContent = '💛 Wellness reminders: off';
+    } else if (denied) {
+        // Desktop notifications are blocked at the browser level --
+        // JS can't re-prompt once denied, so say so plainly instead
+        // of silently only-sometimes working.
+        btn.textContent = '💛 On (banner only -- notifications blocked, see below)';
+    } else if (!supported) {
+        btn.textContent = '💛 On (banner only -- notifications unsupported)';
+    } else {
+        btn.textContent = '💛 Wellness reminders: on';
+    }
+    btn.classList.toggle('wellnessOn', wellnessEnabled);
+
+    const help = document.getElementById('wellnessHelp');
+    if (help) {
+        help.innerHTML = (wellnessEnabled && denied)
+            ? `Desktop notifications are blocked for this page, so only the in-page banner will show (only while this tab is open and visible).
+               To fix: click the icon just left of the address bar (padlock or "i") → Site settings / Permissions → set Notifications to Allow, then reload.
+               Also double check Windows itself isn't muting your browser: Settings → System → Notifications → make sure your browser is allowed.`
+            : '';
+    }
+}
+
+async function toggleWellnessReminders() {
+    if (!wellnessEnabled) {
+        // Only ask for notification permission on a deliberate click,
+        // never automatically on page load -- and it's fine if this
+        // is denied or unsupported, the in-page banner still works.
+        if ('Notification' in window && Notification.permission === 'default') {
+            try { await Notification.requestPermission(); } catch (e) { /* ignore */ }
+        }
+        wellnessEnabled = true;
+        startWellnessTimer();
+        scheduleDailyReminders();
+    } else {
+        wellnessEnabled = false;
+        stopWellnessTimer();
+        clearDailyReminders();
+    }
+    saveWellnessPreference();
+    updateWellnessToggleLabel();
+}
+
+// Fires a reminder immediately (bypassing the 30-minute wait) so you
+// can check right now whether the desktop notification actually shows
+// up, instead of finding out half an hour later.
+function testWellnessNotification() {
+    showWellnessReminder();
+}
+
+function startWellnessTimer() {
+    stopWellnessTimer();
+    // First nudge is a full interval away -- no reminder the instant
+    // you turn this on, that would feel like a jump-scare, not calm.
+    wellnessNextTick = Date.now() + WELLNESS_INTERVAL_MS;
+    wellnessTimerId = setInterval(() => {
+        showWellnessReminder();
+        wellnessNextTick = Date.now() + WELLNESS_INTERVAL_MS;
+    }, WELLNESS_INTERVAL_MS);
+    startWellnessCountdownDisplay();
+}
+
+function stopWellnessTimer() {
+    if (wellnessTimerId) clearInterval(wellnessTimerId);
+    wellnessTimerId = null;
+    wellnessNextTick = null;
+    stopWellnessCountdownDisplay();
+}
+
+// --- Live countdown display (updates once a second) ---
+
+function startWellnessCountdownDisplay() {
+    stopWellnessCountdownDisplay();
+    updateWellnessCountdownDisplay();
+    wellnessCountdownTimerId = setInterval(updateWellnessCountdownDisplay, 1000);
+}
+
+function stopWellnessCountdownDisplay() {
+    if (wellnessCountdownTimerId) clearInterval(wellnessCountdownTimerId);
+    wellnessCountdownTimerId = null;
+    const el = document.getElementById('wellnessCountdown');
+    if (el) el.textContent = '';
+}
+
+function formatCountdownClock(ms) {
+    if (ms == null || ms < 0) return '--:--';
+    const totalSeconds = Math.floor(ms / 1000);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function formatCountdownRough(ms) {
+    const totalMinutes = Math.max(0, Math.floor(ms / 60000));
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return h === 0 ? `${m}m` : `${h}h ${m}m`;
+}
+
+// Milliseconds until the next time it's exactly `hour:minute` --
+// today if that hasn't happened yet, otherwise tomorrow.
+function msUntilClockTime(hour, minute) {
+    const now = new Date();
+    const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+    if (target <= now) target.setDate(target.getDate() + 1);
+    return target - now;
+}
+
+function updateWellnessCountdownDisplay() {
+    const el = document.getElementById('wellnessCountdown');
+    if (!el) return;
+
+    if (!wellnessEnabled || wellnessNextTick == null) {
+        el.textContent = '';
+        return;
+    }
+
+    const remaining = wellnessNextTick - Date.now();
+    const [lunch, endOfDay] = WELLNESS_DAILY_REMINDERS;
+    const lunchMs = msUntilClockTime(lunch.hour, lunch.minute);
+    const eodMs   = msUntilClockTime(endOfDay.hour, endOfDay.minute);
+
+    el.textContent =
+        `next check-in in ${formatCountdownClock(remaining)}` +
+        ` · ${lunch.emoji} lunch in ${formatCountdownRough(lunchMs)}` +
+        ` · ${endOfDay.emoji} end of day in ${formatCountdownRough(eodMs)}`;
+}
+
+// --- Fixed daily reminders (12:00 lunch, 17:00 end of day) ---
+
+function scheduleDailyReminders() {
+    clearDailyReminders();
+    WELLNESS_DAILY_REMINDERS.forEach((reminder, i) => {
+        const fire = () => {
+            if (wellnessEnabled) showWellnessReminder(reminder);
+            // Reschedule for the same time tomorrow regardless, so
+            // this keeps working across midnight without a reload.
+            wellnessDailyTimeoutIds[i] = setTimeout(fire, msUntilClockTime(reminder.hour, reminder.minute));
+        };
+        wellnessDailyTimeoutIds[i] = setTimeout(fire, msUntilClockTime(reminder.hour, reminder.minute));
+    });
+}
+
+function clearDailyReminders() {
+    wellnessDailyTimeoutIds.forEach(id => { if (id) clearTimeout(id); });
+    wellnessDailyTimeoutIds = [];
+}
+
+// explicitMsg lets the fixed daily reminders (lunch/end-of-day) reuse
+// this same notification+banner machinery instead of duplicating it.
+function showWellnessReminder(explicitMsg) {
+    const msg = explicitMsg || WELLNESS_MESSAGES[wellnessMsgIndex % WELLNESS_MESSAGES.length];
+    if (!explicitMsg) wellnessMsgIndex++;
+
+    // Desktop notification -- silent: true means no sound under any
+    // circumstance, regardless of OS/browser settings.
+    if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+            const n = new Notification('Tradetech Dashboard', {
+                body: msg.text,
+                silent: true,
+                tag: 'wellness-reminder', // replaces any previous one instead of stacking up
+            });
+            setTimeout(() => n.close(), 15000);
+        } catch (e) { /* ignore -- banner still shows below */ }
+    }
+
+    // In-page banner, shown alongside the notification.
+    const banner = document.getElementById('wellnessBanner');
+    if (banner) {
+        banner.querySelector('.wellnessEmoji').textContent = msg.emoji;
+        banner.querySelector('.wellnessText').textContent = msg.text;
+        banner.classList.add('show');
+    }
+}
+
+function dismissWellnessBanner() {
+    const banner = document.getElementById('wellnessBanner');
+    if (banner) banner.classList.remove('show');
+}
+
+function snoozeWellnessBanner() {
+    dismissWellnessBanner();
+    if (!wellnessEnabled) return;
+    stopWellnessTimer(); // clears the normal 30-min countdown display
+    wellnessNextTick = Date.now() + WELLNESS_SNOOZE_MS;
+    startWellnessCountdownDisplay(); // resume the countdown, now counting down to the snooze
+    setTimeout(() => {
+        showWellnessReminder();
+        if (wellnessEnabled) startWellnessTimer(); // back to the normal 30-min cadence after this
+    }, WELLNESS_SNOOZE_MS);
+}
+
+loadWellnessPreference();
 load();
