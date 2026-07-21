@@ -148,9 +148,24 @@ function handlePreviousBatch(req, res) {
 
 // Manual "Recalculate Week" — forces a completely fresh weekly plan
 // right now, same effect as manually deleting current-batch.json.
-function handleRecalculateWeek(req, res) {
+// Optional JSON body { dayIndex: 0-4 } picks which weekday (Mon-Fri)
+// to use as the domino-balance anchor instead of today's real
+// weekday — the dashboard's day-picker dropdown. No body, an empty
+// body, or a non-number dayIndex all mean "today, for real" (the
+// original, unchanged behavior).
+async function handleRecalculateWeek(req, res) {
+    let dayIndex = null;
+    try {
+        const body = await readBody(req);
+        if (typeof body?.dayIndex === "number") dayIndex = body.dayIndex;
+    } catch (err) {
+        // No body (or invalid JSON) sent — fall back to "today, for
+        // real" rather than treating this as an error, since the
+        // dayIndex override is optional.
+    }
+
     const all = store.getAll();
-    const batch = currentBatchStore.recalculateWeek(all);
+    const batch = currentBatchStore.recalculateWeek(all, dayIndex);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(batchResponsePayload(batch)));
 }
@@ -377,18 +392,43 @@ function handleGetActivity(req, res) {
 
 // Workload-per-day breakdown — how the current week's services split
 // across Mon-Fri once overdue/backlog absorption and same-week
-// balancing are applied. Computed fresh from the FULL stored list
-// every time (not persisted like the batch) since it's just a display
-// view, not a work queue.
+// balancing are applied.
+//
+// For the REAL current week (offset 0/omitted), this now reads
+// straight from the PERSISTED batch state (via
+// currentBatchStore.getStoredWeeklyBreakdown) instead of independently
+// recomputing computeWeeklyPlan("today") — they used to be two
+// separate calculations that could disagree the moment Recalculate
+// was given a chosen weekday anchor instead of the real one: the
+// actual batch would reflect that chosen anchor, but this chart would
+// still show a plain real-today split next to it. Reading from the
+// same persisted state the batch itself uses keeps the two in sync.
+//
 // ?offset=N previews a week other than the current one — N=1 is next
-// week, N=-1 is previous week, etc. Omitted/0/invalid all mean "the
-// real current week" (unchanged default behavior).
+// week, N=-1 is previous week, etc. Those have no persisted state to
+// read (nothing has actually been "recalculated" for a hypothetical
+// week), so they still go through computeWeeklyPlan fresh, same as
+// before.
 function handleGetWeeklyPlan(req, res) {
     const url = new URL(req.url, "http://localhost");
     const parsedOffset = parseInt(url.searchParams.get("offset"), 10);
     const weekOffset = Number.isFinite(parsedOffset) ? parsedOffset : 0;
 
     const all = store.getAll();
+
+    if (weekOffset === 0) {
+        const plan = currentBatchStore.getStoredWeeklyBreakdown(all);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+            breakdown: plan.breakdown,
+            backlogCount: plan.backlogCount,
+            total: plan.total,
+            weekStart: plan.weekStart,
+            weekOffset: plan.weekOffset
+        }));
+        return;
+    }
+
     const plan = computeWeeklyPlan(all, weekOffset);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({

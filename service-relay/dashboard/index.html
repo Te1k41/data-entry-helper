@@ -22,6 +22,14 @@
         <button id="splitToggleBtn" onclick="toggleShowAll()">Show All</button>
         <button onclick="previousBatch()">← Prev Day</button>
         <button onclick="nextBatch()">Next Day →</button>
+        <select id="recalcDaySelect" title="Which weekday to use as the anchor when recalculating">
+            <option value="">Today (auto)</option>
+            <option value="0">Monday</option>
+            <option value="1">Tuesday</option>
+            <option value="2">Wednesday</option>
+            <option value="3">Thursday</option>
+            <option value="4">Friday</option>
+        </select>
         <button onclick="recalculateWeek()">🔄 Recalculate</button>
         <button onclick="location.href='/settings-page'">⚙ Settings</button>
         <button id="wellnessToggle" onclick="toggleWellnessReminders()">💛 Wellness reminders: off</button>

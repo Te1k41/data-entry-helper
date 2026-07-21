@@ -16,22 +16,6 @@ const VesselVoyageCorrection = {
         return isNaN(val) ? 1 : val;
     },
 
-    // Splits a voyage code like "0042A" into its numeric part (42),
-    // any trailing letter suffix ("A"), and the original digit width
-    // (4) so it can be re-padded correctly later.
-    parseVoyageCode(code) {
-        if (!code) return null;
-        const match = code.trim().match(/^(\d+)([A-Za-z]*)$/);
-        if (!match) return null;
-        return { num: parseInt(match[1], 10), suffix: match[2], width: match[1].length };
-    },
-
-    // Rebuilds a voyage code string from a parsed object + new number,
-    // re-padding with leading zeros to match the original width.
-    buildVoyageCode(parsed, newNum) {
-        return String(newNum).padStart(parsed.width, "0") + parsed.suffix;
-    },
-
     fixVesselDates() {
         const sp001Field = document.querySelector('input[name="SP001_depart_date"]');
 
@@ -97,9 +81,18 @@ const VesselVoyageCorrection = {
                 console.log(`📅 ${vessel.dateField.name} → ${newDateStr}`);
 
                 if (vessel.voyageField) {
-                    const parsed = this.parseVoyageCode(vessel.voyageField.value);
-                    if (parsed) {
-                        const newCode = this.buildVoyageCode(parsed, parsed.num + voyageIncrement);
+                    // VoyageUtils.step() bumps EVERY digit run in the
+                    // code (see src/utils/voyage.js) — this used to be
+                    // a single-number-plus-letter-suffix parser that
+                    // silently skipped the whole bump for any code with
+                    // more than one number in it (e.g. "2698-102"), since
+                    // that shape just failed to parse. Sharing the same
+                    // stepping logic the [-][+] voyage buttons use keeps
+                    // this button consistent with those, for every
+                    // voyage code shape they both handle.
+                    const newCode = VoyageUtils.step(vessel.voyageField.value, voyageIncrement);
+
+                    if (newCode !== vessel.voyageField.value) {
                         setFieldValue(vessel.voyageField, newCode);
 
                         // Tradetech keeps a hidden PV_ duplicate of this

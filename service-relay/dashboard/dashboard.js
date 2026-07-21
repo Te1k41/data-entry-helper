@@ -61,9 +61,21 @@ async function goToDay(dayIndex) {
     load();
 }
 
+const RECALC_DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
 async function recalculateWeek() {
-    if (!confirm('Recalculate this whole week from scratch? Any manual progress tracking (which day you were on) resets to Monday.')) return;
-    await fetch('/due-services/recalculate-week', { method: 'POST' });
+    const select   = document.getElementById('recalcDaySelect');
+    const raw      = select ? select.value : '';
+    const dayIndex = raw === '' ? null : parseInt(raw, 10);
+    const anchorLabel = dayIndex === null ? 'today' : RECALC_DAY_NAMES[dayIndex];
+
+    if (!confirm(`Recalculate this whole week from scratch, using ${anchorLabel} as the anchor day? Any manual progress tracking (which day you were on) resets to ${anchorLabel}.`)) return;
+
+    await fetch('/due-services/recalculate-week', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ dayIndex })
+    });
     load();
 }
 

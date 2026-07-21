@@ -199,6 +199,16 @@
     button:after  { content: ' ]'; color: var(--dim); }
     button:hover:before, button:hover:after { color: var(--bg); }
 
+    #recalcDaySelect {
+        font-family: var(--mono);
+        font-size: 13px;
+        padding: 6px 10px;
+        cursor: pointer;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+    }
+
     #count { color: var(--muted); font-size: 12px; margin-left: auto; }
 
     table {

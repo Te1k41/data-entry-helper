@@ -28,6 +28,7 @@
             "src/utils/button.js",
             "src/utils/toolbar.js",
             "src/utils/dom.js",
+            "src/utils/voyage.js",
             "src/core/boundary.js",
             "src/features/notes.js",
             "src/features/validation.js",
@@ -48,6 +49,8 @@
             "src/features/keyboard-navigation.js",
             "src/features/auto-nav-schedules.js",
             "src/features/due-service-scanner.js",
+            "src/features/date-step-buttons.js",
+            "src/features/voyage-step-buttons.js",
             "src/main.js"
         ],
         "all_frames": true,

@@ -123,13 +123,28 @@ function balanceEqually(dayGroups) {
 // real Monday-morning case) and never rolls in old backlog — backlog
 // is a "what's overdue right now" concept that only makes sense for
 // the actual current day.
-function computeWeeklyPlan(services, weekOffset = 0) {
+//
+// asOfDayIndex lets Recalculate be told to use a CHOSEN weekday (0 =
+// Monday .. 4 = Friday) as the anchor instead of whatever the real
+// calendar day happens to be — e.g. recalculating on an actual
+// Thursday but wanting the domino balance to run as if today were
+// Tuesday. Only meaningful for the real current week (weekOffset ===
+// 0); ignored for a preview, which already forces its own Monday-as-
+// today anchor for a different reason. Backlog (services overdue from
+// BEFORE this week's Monday) still comes from the REAL current date
+// either way — that's "what's actually overdue right now", not
+// something a hypothetical anchor day should change.
+function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
     const realToday = startOfDay(new Date());
     const isPreview  = weekOffset !== 0;
     const monday  = getMonday(isPreview ? addDays(realToday, weekOffset * 7) : realToday);
     const sunday  = addDays(monday, 6);
-    const today   = isPreview ? monday : realToday;
-    const isMondayToday = isPreview ? true : (today.getDay() === 1);
+
+    const hasAnchorOverride = !isPreview && Number.isInteger(asOfDayIndex) && asOfDayIndex >= 0 && asOfDayIndex <= 4;
+    const today = isPreview
+        ? monday
+        : (hasAnchorOverride ? addDays(monday, asOfDayIndex) : realToday);
+    const isMondayToday = isPreview ? true : (hasAnchorOverride ? asOfDayIndex === 0 : today.getDay() === 1);
 
     const thisWeek = services.filter(s => {
         const d = parseTTDate(s.nextUpdateDate);
@@ -190,17 +205,33 @@ function computeWeeklyPlan(services, weekOffset = 0) {
         // every weekday gets a guaranteed slot, empty or not.
         poolGroups = weekdayDateStrs.map(dateStr => groupsByDate.get(dateStr) || emptySlot(dateStr));
     } else {
+        // Any OTHER day: still balance the WHOLE week's remaining work
+        // domino-style, exactly like Monday does — just scoped to the
+        // days that are actually still available (today onward; you
+        // can't redistribute onto a day that's already passed). Any
+        // earlier-this-week day's real items (e.g. Monday's, if today
+        // is Tuesday) are folded into TODAY's pool input rather than
+        // force-dumped onto today uncapped — they join the same
+        // nearest-first cascade as everything else.
         const todayStr  = formatTTDate(today);
         const todayIdx  = weekdayDateStrs.indexOf(todayStr);
-        const priorDateStrs     = weekdayDateStrs.slice(0, todayIdx + 1); // today + everything before it
-        const remainingDateStrs = weekdayDateStrs.slice(todayIdx + 1);    // days still ahead
+        const priorDateStrs     = weekdayDateStrs.slice(0, todayIdx); // strictly BEFORE today
+        const remainingDateStrs = weekdayDateStrs.slice(todayIdx);    // today + everything still ahead
 
-        mandatoryItems = priorDateStrs.flatMap(dateStr => (groupsByDate.get(dateStr)?.items) || []);
-        poolGroups = remainingDateStrs.map(dateStr => groupsByDate.get(dateStr) || emptySlot(dateStr));
+        const priorItems    = priorDateStrs.flatMap(dateStr => (groupsByDate.get(dateStr)?.items) || []);
+        const todayOwnItems = groupsByDate.get(todayStr)?.items || [];
+
+        poolGroups = remainingDateStrs.map((dateStr, i) =>
+            i === 0
+                ? { date: dateStr, items: [...priorItems, ...todayOwnItems] } // today's slot carries prior days' leftovers too
+                : (groupsByDate.get(dateStr) || emptySlot(dateStr))
+        );
     }
 
     // Backlog from before this week always lands on today, on top of
     // whatever else today already has — regardless of which day it is.
+    // (Prior-days-THIS-week items are handled above now, folded into
+    // the balance pool instead of living here.)
     mandatoryItems = [...mandatoryItems, ...oldBacklog];
 
     const balanced = balanceEqually(poolGroups);
@@ -208,41 +239,33 @@ function computeWeeklyPlan(services, weekOffset = 0) {
     // Day-by-day breakdown, Mon..Fri, for the dashboard's workload chart
     // AND for the sequential day-batch system (current-batch-store.js) —
     // each entry now carries the actual ITEMS assigned to that day-slot,
-    // not just a count.
+    // not just a count. Both the Monday case and any other day now share
+    // the same shape: `balanced` covers today-through-Friday (or all of
+    // Mon-Fri on an actual Monday), and today additionally gets backlog
+    // appended on top.
     const weekdayDates = [0, 1, 2, 3, 4].map(i => addDays(monday, i));
     const breakdown = weekdayDates.map(d => {
         const dateStr  = formatTTDate(d);
         const isToday  = d.getTime() === today.getTime();
 
-        if (isMondayToday) {
-            const match = balanced.find(b => b.date === dateStr);
-            let items = match ? match.items : [];
-            if (isToday) items = [...items, ...oldBacklog];
-            return { date: dateStr, count: items.length, items, mandatory: isToday };
-        }
-
-        if (isToday) {
-            // Today's slot carries the FULL rolled-up mandatory set
-            // (its own + every earlier day this week + backlog) — not
-            // just its own day's items.
-            return { date: dateStr, count: mandatoryItems.length, items: mandatoryItems, mandatory: true };
-        }
-
         if (d < today) {
-            // Already rolled into today's slot above — empty here so
-            // nothing is double-counted or double-batched, even though
-            // these services are still genuinely included in allItems.
+            // Already folded into today's pool input above — empty
+            // here so nothing is double-counted or double-batched,
+            // even though these services are still genuinely included
+            // in allItems (via today's slot).
             return { date: dateStr, count: 0, items: [], mandatory: true, rolledIntoToday: true };
         }
 
         const match = balanced.find(b => b.date === dateStr);
-        return { date: dateStr, count: match ? match.count : 0, items: match ? match.items : [], mandatory: false };
+        let items = match ? match.items : [];
+        if (isToday) items = [...items, ...oldBacklog];
+        return { date: dateStr, count: items.length, items, mandatory: isToday };
     });
 
     const allItems = [...mandatoryItems, ...balanced.flatMap(b => b.items)];
 
     console.log(
-        `📦 Weekly plan: ${mandatoryItems.length} mandatory (today+overdue+backlog) + ` +
+        `📦 Weekly plan: ${mandatoryItems.length} mandatory (backlog from before this week) + ` +
         `${balanced.reduce((s, b) => s + b.count, 0)} balanced across ${poolGroups.length} day(s) ` +
         `= ${allItems.length} total this week`
     );
@@ -254,6 +277,7 @@ function computeWeeklyPlan(services, weekOffset = 0) {
         backlogCount: oldBacklog.length,
         weekStart: formatTTDate(monday),
         weekOffset,
+        asOfDayIndex: hasAnchorOverride ? asOfDayIndex : null,
     };
 }
 
