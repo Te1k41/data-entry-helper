@@ -58,34 +58,45 @@ what the extension is allowed to do and what code to run where.
   and `vessel-correction.js` depend on it), and the two step-buttons
   feature files load near the end with the rest of the features.
 
-  **Block 2 — every other site (Rename Toggle + force-tab-links bundle)**:
+  **Block 2 — every other site (Rename Toggle bundle)**:
   - `"matches": ["<all_urls>"]` with `"exclude_matches": ["https://www.tradetech.net/*"]`
     — runs everywhere EXCEPT Tradetech, so the standalone Rename ON/OFF
     button doesn't collide with Tradetech's own set of buttons.
   - `"js"` — `utils/button.js`, `features/rename-toggle.js`,
-    `rename-toggle-init.js`, and `features/force-tab-links.js`.
-  - `"world": "MAIN"` — **required** for `force-tab-links.js` to work at
-    all. Without it, a content script runs in an ISOLATED world with its
-    own copy of `window`, completely separate from the page's real
-    `window` — wrapping `window.open` there has zero effect on the
-    page's own calls. `"world": "MAIN"` puts the script directly in the
-    page's own JS context instead, so its `window.open` override is the
-    SAME `window.open` the page itself calls.
-    > **Bug fix note:** this file existed on disk and shipped in a
-    > commit, but was never actually added to this block's `"js"` array
-    > (nor was `"world": "MAIN"` set) — so it silently never ran on ANY
-    > site. The symptom was popups still opening chrome-less on sites
-    > like `ss.shipmentlink.com` even though the fix was "in the repo."
-    > Always double check a new file is BOTH on disk AND listed in the
-    > right `manifest.json` block before assuming it's live.
-  - `"all_frames": true` — also added so a popup triggered from inside
-    an iframe on the page (not just the top-level frame) still gets
-    intercepted.
-  - `"run_at": "document_start"` — needs to wrap `window.open` before
-    the page's own scripts get a chance to run and call it; `rename-
-    toggle.js`/`button.js`/`rename-toggle-init.js` don't care about
-    timing this precisely, so sharing the earlier `run_at` with them is
-    harmless (they just create a button once the DOM settles either way).
+    `rename-toggle-init.js`. Runs in the default ISOLATED world
+    (no `"world"` key), which is why these files can freely call
+    `chrome.runtime.sendMessage`/`chrome.runtime.onMessage` — an
+    isolated-world content script keeps full access to `chrome.*` APIs.
+  - `"run_at": "document_idle"` — these files just create a button once
+    the DOM settles, so exact timing doesn't matter.
+
+  **Block 3 — every other site (force-tab-links, MAIN world)**:
+  - Same `"matches"`/`"exclude_matches"` as Block 2, but kept as its
+    OWN separate block rather than folded into Block 2.
+  - `"js"` — just `features/force-tab-links.js`.
+  - `"world": "MAIN"` — **required** for this file to work at all.
+    Without it, a content script runs in an ISOLATED world with its own
+    copy of `window`, completely separate from the page's real `window`
+    — wrapping `window.open` there has zero effect on the page's own
+    calls. `"world": "MAIN"` puts the script directly in the page's own
+    JS context instead, so its `window.open` override is the SAME
+    `window.open` the page itself calls. The tradeoff: MAIN-world
+    scripts have **no access to `chrome.*` APIs at all** (`chrome.runtime`
+    is literally undefined there) — which is exactly why this can't
+    share a block with `rename-toggle.js`, which needs `chrome.runtime`.
+    > **Bug fix history:** this file first shipped on disk but was never
+    > added to any block's `"js"` array — silently never ran anywhere.
+    > The first attempted fix added it into Block 2 and set
+    > `"world": "MAIN"` on that WHOLE block — which broke
+    > `rename-toggle.js`, since it lost `chrome.runtime` access. Splitting
+    > it into its own MAIN-world-only block (this one) fixed both:
+    > force-tab-links.js gets MAIN world, rename-toggle.js keeps
+    > ISOLATED world. Always double check a new file is BOTH on disk AND
+    > listed in the right block before assuming it's live.
+  - `"all_frames": true` — so a popup triggered from inside an iframe on
+    the page (not just the top-level frame) still gets intercepted.
+  - `"run_at": "document_start"` — needs to wrap `window.open` before the
+    page's own scripts get a chance to run and call it.
 
 ---
 
@@ -157,22 +168,23 @@ interface — most features don't need it).
 
 ---
 
-## src/background.js — relay state sync
+## src/background.js — relay state sync + message relay
 
 Runs in its own isolated worker context (not on the Tradetech page), so
 it can't see page DOM — it can only use `chrome.*` APIs, `fetch`, and
 `WebSocket`. **Renaming itself moved server-side** (see `server.js`
-below) — this file no longer builds filenames at all; it just keeps
-a local in-memory mirror of relay state via WebSocket in case anything
-in the extension ever needs to read it.
+below) — this file no longer builds filenames at all. It does two jobs
+now: (1) keep a mirror of relay state via WebSocket, and (2) act as a
+message relay so `rename-toggle.js` (which runs on `<all_urls>`) never
+has to open its own WebSocket from inside a page.
 
 ```js
 let lastServiceCode  = "";
 let renamingEnabled  = true;
 let ws               = null;
 ```
-In-memory mirror of relay state. Reset every time the service worker
-restarts (MV3 workers are short-lived, so this isn't persisted).
+In-memory mirror of relay state, backed by `chrome.storage.local` (see
+below) so it survives service-worker restarts.
 
 ```js
 function connectWebSocket() {
@@ -187,14 +199,77 @@ connectWebSocket();
 Opens a persistent WebSocket to the relay server and keeps `ws`
 updated with whatever the server broadcasts:
 - `type: "init"` (sent once on connect) — seeds `lastServiceCode` and
-  `renamingEnabled` from the server's current state.
+  `renamingEnabled` from the server's current state, and writes
+  `renamingEnabled` to `chrome.storage.local`.
 - `type: "service"` — updates `lastServiceCode` whenever any tab
   changes the service code.
 - `type: "renaming"` — updates `renamingEnabled` whenever the Rename
-  Toggle button is flipped from any tab.
+  Toggle button is flipped from any tab, persists it to
+  `chrome.storage.local`, and calls `broadcastRenameState()` so every
+  open tab's button label updates immediately.
 - On `close`, reconnects automatically after 3 seconds — this is what
   makes every relay-connected feature in this extension self-healing
   if the local server is restarted.
+
+### Message relay for `rename-toggle.js`
+
+`rename-toggle.js` runs on `<all_urls>` (minus Tradetech), and some
+sites (e.g. Maersk) set a CSP `connect-src` that blocks
+`ws://localhost:3737` from inside the page — the browser refuses the
+connection before it leaves the machine, no matter how well the relay
+server is running, because a page's CSP governs anything opened from
+INSIDE that page's context, content scripts included. This service
+worker is NOT part of any page and isn't bound by any page's CSP, so
+`rename-toggle.js` asks IT for state instead of opening its own socket:
+
+```js
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "GET_RENAME_STATE") {
+        chrome.storage.local.get("renamingEnabled", (data) => {
+            sendResponse({ enabled: data.renamingEnabled ?? renamingEnabled });
+        });
+        return true; // async sendResponse — keep the channel open
+    }
+    if (message?.type === "SET_RENAME_STATE") {
+        renamingEnabled = message.enabled;
+        chrome.storage.local.set({ renamingEnabled });
+        if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "renaming", enabled: renamingEnabled }));
+        }
+        broadcastRenameState();
+        return;
+    }
+});
+
+function broadcastRenameState() {
+    chrome.tabs.query({}, (tabs) => {
+        for (const tab of tabs) {
+            chrome.tabs.sendMessage(
+                tab.id,
+                { type: "RENAME_STATE_CHANGED", enabled: renamingEnabled },
+                () => { void chrome.runtime.lastError; } // tabs with no content script throw — expected, ignored
+            );
+        }
+    });
+}
+```
+- `GET_RENAME_STATE` — answered by reading `chrome.storage.local`
+  first, not the plain `renamingEnabled` variable. **Why:** MV3
+  suspends this service worker after ~30s idle; when a message wakes
+  it back up, all top-level code (including `let renamingEnabled =
+  true`) reruns from scratch, so the variable would silently reset to
+  the hardcoded default until the WebSocket reconnects and corrects it
+  — a real bug that shipped once. `chrome.storage.local` persists to
+  disk and survives the restart, so the answer is always correct even
+  on a cold-started worker. `return true` is required here since the
+  answer now comes from an async storage read.
+- `SET_RENAME_STATE` — updates the variable AND storage, forwards the
+  change to the relay server over the one WebSocket this worker owns,
+  then broadcasts the new state to every open tab.
+- `broadcastRenameState()` — pushes `RENAME_STATE_CHANGED` to every
+  open tab so all `rename-toggle.js` instances stay in sync, whether
+  the change came from another tab's button click or the relay
+  server's own `"renaming"` broadcast.
 
 ```js
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
@@ -924,23 +999,26 @@ injected on every site except Tradetech (see the second
 `rename-toggle-init.js` (`RenameToggle.init();`) rather than through
 the `FEATURES` array in `main.js`, since it belongs to a completely
 separate content script injection.
-- **`connect()`** — same self-reconnecting WebSocket pattern as the
-  other relay features. On `message`, handles `type: "init"` (seeds
-  `enabled` from the server's current `renamingEnabled` state) and
-  `type: "renaming"` (updates `enabled` whenever ANY tab/browser flips
-  the toggle — this is what keeps the button's label in sync
-  everywhere at once).
-- **`init()`** — connects, then waits for the socket's `open` event,
-  then waits an *additional* 200ms before creating the button — this
-  delay gives the server's `init` message (sent immediately on
-  connect) time to arrive and set the correct initial `enabled` state
-  before the button's label is first rendered, so it doesn't flash the
-  wrong state on load.
+Does NOT open its own WebSocket (it used to — see `background.js`
+notes above for why: some sites' CSP blocks `ws://localhost:3737` from
+inside a page). Instead it talks to the background service worker via
+`chrome.runtime.sendMessage`/`onMessage`.
+- **`init()`** — sends `{ type: "GET_RENAME_STATE" }` to the
+  background worker and creates the button once the response arrives
+  (the callback IS the up-to-date answer, no more guessing with a
+  200ms timeout). If the worker is unreachable
+  (`chrome.runtime.lastError`), falls back to creating the button with
+  the default state rather than never showing up. Also registers a
+  `chrome.runtime.onMessage` listener for `RENAME_STATE_CHANGED`,
+  which the background worker broadcasts whenever ANY tab/browser
+  flips the toggle — this is what keeps the button's label in sync
+  everywhere at once.
 - **`createToggleButton()`** — creates the "📁 Rename: ON/OFF" button.
   Clicking it flips `enabled` locally, immediately updates its own
-  label, and — if the socket is open — broadcasts
-  `{ type: "renaming", enabled }` so the server (and every other
-  connected tab/browser) picks up the change too.
+  label, and calls `broadcastEnabled()`.
+- **`broadcastEnabled()`** — sends `{ type: "SET_RENAME_STATE", enabled }`
+  to the background worker, which persists it, forwards it to the relay
+  server over its own WebSocket, and broadcasts it to every other tab.
 - **`handle()` / `handleBlur()`** — both empty; this feature doesn't
   belong to the Tradetech `FEATURES` array at all, so these exist only
   in case something ever calls them defensively.

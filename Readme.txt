@@ -199,10 +199,14 @@ extension/
     │                                    service to the relay (server decides
     │                                    what to keep — see due-services-trim.js)
     │
-    ├── background.js                ← Service worker. No longer does anything
-    │                                    on its own — see Section 9, this file
-    │                                    only exists because MV3 requires SOME
-    │                                    service worker if "downloads" is used
+    ├── background.js                ← Service worker. Doesn't build filenames
+    │                                    anymore (server does that — Section 9),
+    │                                    but now also relays rename-toggle.js's
+    │                                    state through chrome.runtime messages
+    │                                    (some sites' CSP blocks a direct
+    │                                    WebSocket from inside the page) and
+    │                                    persists it to chrome.storage.local
+    │                                    so it survives the worker sleeping
     │
     └── main.js                      ← Registers every feature, runs bootstrap
 
@@ -210,11 +214,15 @@ extension/
 │                                        all-sites-except-Tradetech bundle —
 │                                        still part of the main version)
 ├── rename-toggle-init.js            ← Bootstraps that second bundle
-└── features/force-tab-links.js      ← Also part of that second bundle.
+└── features/force-tab-links.js      ← Its OWN third bundle (same sites,
+                                         separate manifest.json block).
                                          Runs in the page's MAIN world
-                                         ("world": "MAIN" in manifest.json)
-                                         and wraps window.open so any popup-
-                                         style call opens as a tab instead.
+                                         ("world": "MAIN") and wraps
+                                         window.open so any popup-style
+                                         call opens as a tab instead.
+                                         Kept out of rename-toggle.js's
+                                         block because MAIN-world scripts
+                                         can't use chrome.* APIs at all.
 
 ⚠ A trimmed "mini" build also exists (shared with coworkers) that
   removes every relay-dependent file above (service-relay-send.js,
@@ -283,18 +291,24 @@ service-relay/                       ← Separate local Node.js process, NOT
 > main.js  → the only file that knows about all Tradetech features
 > background.js → present only because MV3 needs it; does nothing itself now
 >
-> manifest.json still defines TWO content script bundles in the main
+> manifest.json defines THREE content script bundles in the main
 > version (the mini build only has the first one):
 >   1. Tradetech + mergeimagesonline — everything above `main.js`
 >   2. All other sites (except Tradetech) — button.js, rename-toggle.js,
->      rename-toggle-init.js (standalone rename ON/OFF switch), AND
->      force-tab-links.js (no-popups fix). This block runs with
->      "world": "MAIN" and "all_frames": true — force-tab-links.js
->      needs MAIN world to see the page's REAL window.open, and
->      all_frames so a popup triggered from inside an iframe is still
->      caught. (A file only being ADDED TO DISK doesn't make it run —
->      it must also be listed in this block's "js" array, which is
->      exactly the bug force-tab-links.js hit once already.)
+>      rename-toggle-init.js (standalone rename ON/OFF switch). Default
+>      ISOLATED world, so these can use chrome.runtime.sendMessage to
+>      talk to background.js.
+>   3. Same sites as #2, but JUST force-tab-links.js (no-popups fix),
+>      in its OWN block with "world": "MAIN" and "all_frames": true —
+>      MAIN world to see the page's REAL window.open, all_frames so a
+>      popup triggered from inside an iframe is still caught. This is
+>      a SEPARATE block from #2 on purpose: MAIN-world scripts have NO
+>      access to chrome.* APIs, so bundling it with rename-toggle.js
+>      (which needs chrome.runtime) would break the latter — that
+>      exact mistake happened once mid-development and was split back
+>      out. (Also: a file only being ADDED TO DISK doesn't make it
+>      run — it must be listed in a block's "js" array too, which is
+>      the OTHER bug force-tab-links.js hit before this.)
 >
 > service-relay is now split by RESPONSIBILITY, not thrown into one file:
 > config/state → routes → stores → server.js just wires them together.
@@ -466,11 +480,14 @@ you'll get an alert instead of a silent failure.
 └────────────────────────┘
 ```
 Appears on every site except Tradetech itself (so it doesn't clash
-with the extension's Tradetech-side buttons). Toggling it broadcasts
-the new state to the relay server over WebSocket, which turns its
-automatic Downloads-folder renaming on or off — the button stays in
-sync across every open tab/browser since they all get the same
-broadcast.
+with the extension's Tradetech-side buttons). Toggling it sends a
+message to the background service worker (NOT a direct WebSocket —
+some sites' CSP blocks that from inside the page), which forwards the
+new state to the relay server and turns automatic Downloads-folder
+renaming on or off. The background worker then broadcasts the change
+to every open tab, so the button stays in sync everywhere, and
+persists it to disk so it's remembered even if the worker goes to
+sleep and restarts.
 
 ---
 
