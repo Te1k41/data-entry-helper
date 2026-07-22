@@ -102,6 +102,27 @@ date mismatches before they become problems.
 │                             between SP/SV fields like    │
 │                             a spreadsheet                │
 ├─────────────────────────────────────────────────────────┤
+│  Date Step Buttons          [-]/[+] next to every SP     │
+│                             arrival/depart date field —  │
+│                             click ±1 day, Shift+click    │
+│                             ±7 days. Won't let arrival   │
+│                             cross past departure (or     │
+│                             vice versa) — shifts the     │
+│                             other date to keep the gap   │
+├─────────────────────────────────────────────────────────┤
+│  Voyage Step Buttons        [-]/[+] next to every SV     │
+│                             voyage code field — click    │
+│                             ±1, Shift+click jumps by      │
+│                             "voyage_increment_by".        │
+│                             Steps EVERY number in the    │
+│                             code (e.g. "2698-102" -1 →   │
+│                             "2697-101")                   │
+├─────────────────────────────────────────────────────────┤
+│  Force Tab Links            Any site except Tradetech —  │
+│                             popup windows (window.open   │
+│                             with a features string) open │
+│                             as a normal tab instead       │
+├─────────────────────────────────────────────────────────┤
 │  Rename Toggle              ON/OFF switch (any site,     │
 │                             except Tradetech) for the    │
 │                             relay's download renaming    │
@@ -122,6 +143,10 @@ extension/
     ├── utils/                       ← Shared helpers, no features here
     │   ├── date.js                  ← All date math (parse, format, compare)
     │   ├── dom.js                   ← Writing values into form fields
+    │   ├── voyage.js                 ← VoyageUtils.step() — bumps EVERY digit
+    │   │                                run in a voyage code by delta, shared
+    │   │                                by vessel-correction.js AND
+    │   │                                voyage-step-buttons.js
     │   ├── banner.js                ← Warning/success/info/suggestion banners,
     │   │                               the warning registry, and the
     │   │                               hide/show-all-notifications toggle
@@ -158,6 +183,12 @@ extension/
     │   ├── resize-toggle.js         ← Turns off resize switch (image merge site)
     │   ├── schedule-cascade.js      ← Snapshot + cascade port date diffs
     │   ├── keyboard-navigation.js   ← Spreadsheet-style arrow/tab navigation
+    │   ├── date-step-buttons.js     ← [-]/[+] buttons on arrival/depart date
+    │   │                               fields, with arrival/depart crossing
+    │   │                               protection (shifts the other date to
+    │   │                               keep the gap)
+    │   ├── voyage-step-buttons.js   ← [-]/[+] buttons on voyage code fields,
+    │   │                               Shift+click jumps by voyage_increment_by
     │   ├── service-relay-send.js    ← Sends service code to local relay server
     │   ├── merge-download-signal.js ← Signals relay to clean up merge downloads
     │   ├── upload-proof.js          ← Stages + auto-submits today's proof file
@@ -178,7 +209,12 @@ extension/
 ├── features/rename-toggle.js        ← Rename ON/OFF button (SEPARATE
 │                                        all-sites-except-Tradetech bundle —
 │                                        still part of the main version)
-└── rename-toggle-init.js            ← Bootstraps that second bundle
+├── rename-toggle-init.js            ← Bootstraps that second bundle
+└── features/force-tab-links.js      ← Also part of that second bundle.
+                                         Runs in the page's MAIN world
+                                         ("world": "MAIN" in manifest.json)
+                                         and wraps window.open so any popup-
+                                         style call opens as a tab instead.
 
 ⚠ A trimmed "mini" build also exists (shared with coworkers) that
   removes every relay-dependent file above (service-relay-send.js,
@@ -212,18 +248,21 @@ service-relay/                       ← Separate local Node.js process, NOT
 ├── activity-log-store.js            ← Logs every "Mark Done" click with a
 │                                        timestamp, for the dashboard's daily
 │                                        throughput chart + streak counter
-├── current-batch-store.js           ← Owns the persisted "current batch" —
-│                                        computed once, shown as-is until
-│                                        every item in it is marked done
-├── due-services-trim.js             ← computeBatch() — the actual "which
-│                                        services form the next batch" logic
-│                                        (day-grouping + the 50-combined /
-│                                        average / priority-fill rules)
+├── current-batch-store.js           ← Owns the persisted WEEKLY batch state
+│                                        (5 day-slots, worked through Mon-Fri
+│                                        sequentially) + getStoredWeeklyBreakdown
+│                                        for the dashboard's workload chart
+├── due-services-trim.js             ← computeWeeklyPlan() — splits the week's
+│                                        due services across Mon-Fri via
+│                                        nearest-due-first domino balancing,
+│                                        with weekOffset (week preview) and
+│                                        asOfDayIndex (weekday-picker anchor)
 ├── routes/
 │   ├── relay.js                     ← GET /service, /renaming
 │   ├── files.js                     ← GET /find-file, /file (for Upload Proof)
 │   ├── due-services.js              ← POST/GET /due-services, mark-done,
 │   │                                    undo-done, current-batch, next-batch,
+│   │                                    recalculate-week, weekly-plan,
 │   │                                    history, activity
 │   └── dashboard.js                 ← Serves dashboard/index.html,
 │                                        style.css, dashboard.js from disk
@@ -248,7 +287,14 @@ service-relay/                       ← Separate local Node.js process, NOT
 > version (the mini build only has the first one):
 >   1. Tradetech + mergeimagesonline — everything above `main.js`
 >   2. All other sites (except Tradetech) — button.js, rename-toggle.js,
->      rename-toggle-init.js, for the standalone rename ON/OFF switch
+>      rename-toggle-init.js (standalone rename ON/OFF switch), AND
+>      force-tab-links.js (no-popups fix). This block runs with
+>      "world": "MAIN" and "all_frames": true — force-tab-links.js
+>      needs MAIN world to see the page's REAL window.open, and
+>      all_frames so a popup triggered from inside an iframe is still
+>      caught. (A file only being ADDED TO DISK doesn't make it run —
+>      it must also be listed in this block's "js" array, which is
+>      exactly the bug force-tab-links.js hit once already.)
 >
 > service-relay is now split by RESPONSIBILITY, not thrown into one file:
 > config/state → routes → stores → server.js just wires them together.
@@ -363,6 +409,35 @@ Tab     cycles arrival_date ↔ depart_date within/across rows
 Landing on a field also selects its full text, like a spreadsheet
 cell, so you can just start typing to overwrite it.
 
+### Date Step Buttons
+```
+[-]  07/14/26  [+]
+```
+Appear next to every SP arrival/depart date field. Click [-]/[+] to
+nudge the date back/forward one day; Shift+click to nudge by a full
+week (7 days). If stepping arrival past depart (or depart before
+arrival) on the same row would make them cross, the OTHER date on
+that row shifts by the same amount too — so the gap between arrival
+and departure is preserved instead of the two dates crossing over
+each other.
+
+### Voyage Step Buttons
+```
+[-]  2698-102  [+]
+```
+Same idea, next to every SV voyage code field. Click [-]/[+] to step
+the code by 1; Shift+click jumps by whatever the "voyage_increment_by"
+field is set to (falls back to 1 if that field is empty, zero, or
+negative). Steps EVERY number in the code together, so a code like
+"2698-102" decreased by 1 becomes "2697-101" — not just the first or
+last number.
+
+### Force Tab Links (any site except Tradetech)
+Runs automatically, no button. If a page tries to open a link as a
+small chrome-less popup window (no tab bar, no address bar) via
+JavaScript, it opens as a normal background tab instead. A plain link
+that already opens as a tab is left alone.
+
 ### Upload Proof
 ```
 ┌──────────────────────┐
@@ -459,6 +534,8 @@ const FEATURES = [
     KeyboardFieldNav,
     AutoNavSchedules,
     DueServiceScanner,
+    DateStepButtons,
+    VoyageStepButtons,
     YourFeatureName,        // ← add here
 ];
 ```
@@ -835,7 +912,7 @@ Login to Tradetech
     not "everything", so it's avoided entirely now)
   → parses the full results table, POSTs every row to the relay as-is
   → the SERVER (not the extension) decides what to keep — see
-    due-services-trim.js's computeBatch()
+    due-services-trim.js's computeWeeklyPlan()
 ```
 
 **Why the server decides, not the extension:** the trimming/batching
@@ -843,28 +920,50 @@ rules are business logic that changes often — keeping it server-side
 means tweaking it is a `node server.js` restart, not a whole
 extension reload + new tab dance.
 
-### The batch system (`current-batch-store.js`)
+### The weekly batch system (`current-batch-store.js` + `due-services-trim.js`)
 
-The dashboard's default view is a **persisted snapshot**, not a live
-recalculation:
-- The first time (or once the current batch is 100% marked done),
-  `computeBatch()` runs and the result is saved to
-  `current-batch.json`.
-- Every dashboard load after that shows the SAME batch, refreshed
-  only with live done/not-done status — it does not silently change
-  underneath you while you're working through it.
-- A manual **"Next Batch →"** button on the dashboard forces a new
-  one early if you want to move on before finishing.
+The dashboard's default view is a **persisted weekly plan**, not a
+live recalculation:
+- The first time (or when a new calendar week starts), a fresh
+  `computeWeeklyPlan()` splits the whole week's due services across
+  Mon-Fri and the result is saved to `current-batch.json` as 5
+  per-day record-ID lists.
+- The dashboard works through the week SEQUENTIALLY, one day-slot at
+  a time — once every item in the current day is marked done, it
+  auto-advances to the next day. Any still-undone leftovers from
+  earlier days always tag along into whichever day you're currently
+  viewing, so nothing gets silently dropped by advancing past an
+  unfinished day.
+- A manual **"Next Batch →"** / **"← Previous"** pair lets you
+  navigate day-to-day directly (doesn't auto-skip done days —
+  navigating is explicit).
+- A **"Recalculate"** button forces a completely fresh weekly plan
+  right now, with a dropdown next to it to pick which weekday
+  (Monday–Friday, or "Today (auto)") to use as the balancing anchor —
+  useful if you're doing today's recalculation work ahead of time and
+  want it balanced as if a later day were "today."
+- **"Next Week →" / "← Previous Week"** on the workload chart preview
+  a hypothetical week's balance without touching the real persisted
+  batch — read-only, always balanced as if that week's Monday were
+  "today," and never includes backlog (which only makes sense for the
+  real current day).
 
-**`computeBatch()`'s actual rule:**
-- Group services by due date, nearest first.
-- If the nearest 2 days COMBINED have ≥ 50 services, take the
-  AVERAGE of the two counts as the total, filled by PRIORITY — the
-  nearest day first (up to its own size or the average, whichever's
-  smaller), remainder from the second day.
-- Otherwise, keep whole days starting from the nearest one, stopping
-  BEFORE any day that would push the total over 40 (a day's services
-  are never split across that cutoff).
+**`computeWeeklyPlan()`'s actual rule:** groups services into the
+week's 5 weekday slots by due date, then pools every item across every
+day that's still available (today onward) together, sorted
+nearest-due-first, and fills each day's target share of the week's
+workload from the front of that shared pool in order — so a slow day
+(nothing due Monday) pulls tomorrow's work forward to fill its share,
+and the nearest-due items always land in the earliest possible day
+slot rather than being stuck behind a later day's own (less urgent)
+items.
+
+**Keeping the chart honest:** the workload chart on the dashboard
+reads the SAME persisted state the real batch uses
+(`getStoredWeeklyBreakdown`), not an independent fresh calculation —
+so recalculating "as of Wednesday" (say) shows the actual real batch
+AND the chart agreeing on the same Wednesday-anchored split, instead
+of the chart quietly showing a different real-today split next to it.
 
 ### Storage (`D:\Tradetech services\`)
 

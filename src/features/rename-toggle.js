@@ -1,62 +1,64 @@
 // ─────────────────────────────────────────────────────
 //  FEATURE: Rename Toggle
 //  Syncs rename ON/OFF state across all tabs and
-//  browsers via WebSocket relay.
+//  browsers — routed through the background service
+//  worker (see background.js) rather than opening a
+//  direct WebSocket from inside the page.
+//
+//  Why: this runs on <all_urls> (minus Tradetech), and
+//  some sites set a Content-Security-Policy connect-src
+//  that doesn't allow ws://localhost:3737 — the browser
+//  blocks that connection before it leaves the machine,
+//  no matter how well the relay server is running,
+//  because a page's CSP governs anything opened from
+//  INSIDE that page's own context, content scripts
+//  included. The background service worker isn't part
+//  of any page and isn't bound by any page's CSP, so it
+//  keeps the one real WebSocket connection and this file
+//  just asks IT for state / tells IT about changes via
+//  chrome.runtime.sendMessage.
 // ─────────────────────────────────────────────────────
 const RenameToggle = {
 
-    ws:      null,
     enabled: true,
 
     init() {
-    this.connect();
-    // wait for init message from server before creating button
-    // so label shows correct state from the start
-    this.ws.addEventListener("open", () => {
-        setTimeout(() => this.createToggleButton(), 200);
-    });
-},
-
-    connect() {
-        this.ws = new WebSocket("ws://localhost:3737");
-
-        this.ws.addEventListener("open", () => {
-            console.log("🔌 RenameToggle connected to relay");
-        });
-
-        this.ws.addEventListener("message", (event) => {
-            try {
-                const data = JSON.parse(event.data);
-
-                if (data.type === "init") {
-                    this.enabled = data.renamingEnabled !== false;
-
-                    // On mergeimagesonline.com, always force renaming back
-                    // ON whenever this page loads/reconnects (e.g. a
-                    // reload after a merge session), regardless of
-                    // whatever state was left on from before.
-                    if (location.hostname === "mergeimagesonline.com" && !this.enabled) {
-                        this.enabled = true;
-                        this.broadcastEnabled();
-                        console.log("📁 mergeimagesonline.com loaded — forcing Rename: ON");
-                    }
-
-                    this.updateButton();
-                }
-
-                if (data.type === "renaming") {
-                    this.enabled = data.enabled;
-                    this.updateButton();
-                }
-
-            } catch (err) {
-                console.error("❌ RenameToggle bad message:", err);
+        // Ask the background service worker for the current state,
+        // then create the button once we know what label to show —
+        // no more waiting on our own socket's "open" + a timing
+        // guess, since sendMessage's callback IS the up-to-date
+        // answer.
+        chrome.runtime.sendMessage({ type: "GET_RENAME_STATE" }, (response) => {
+            if (chrome.runtime.lastError) {
+                // Background worker unreachable (rare) — fall back to
+                // the default so the button still appears rather than
+                // silently never showing up.
+                this.createToggleButton();
+                return;
             }
+
+            this.enabled = response?.enabled !== false;
+
+            // On mergeimagesonline.com, always force renaming back ON
+            // whenever this page loads/reconnects (e.g. a reload
+            // after a merge session), regardless of whatever state
+            // was left on from before.
+            if (location.hostname === "mergeimagesonline.com" && !this.enabled) {
+                this.enabled = true;
+                this.broadcastEnabled();
+                console.log("📁 mergeimagesonline.com loaded — forcing Rename: ON");
+            }
+
+            this.createToggleButton();
         });
 
-        this.ws.addEventListener("close", () => {
-            console.log("🔌 RenameToggle disconnected — reconnecting in 3s");
-            setTimeout(() => this.connect(), 3000);
+        // Live updates whenever ANY tab/browser flips the toggle —
+        // the background worker broadcasts this to every open tab.
+        chrome.runtime.onMessage.addListener((message) => {
+            if (message?.type === "RENAME_STATE_CHANGED") {
+                this.enabled = message.enabled;
+                this.updateButton();
+            }
         });
     },
 
@@ -65,15 +67,11 @@ const RenameToggle = {
         if (btn) btn.textContent = `📁 Rename: ${this.enabled ? "ON" : "OFF"}`;
     },
 
-    // Tells the relay server (and every other connected tab/browser)
-    // about the current enabled state.
+    // Tells the background service worker about the new state, which
+    // relays it to the relay server AND broadcasts it to every other
+    // open tab.
     broadcastEnabled() {
-        if (this.ws?.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
-                type:    "renaming",
-                enabled: this.enabled
-            }));
-        }
+        chrome.runtime.sendMessage({ type: "SET_RENAME_STATE", enabled: this.enabled });
     },
 
     createToggleButton() {

@@ -51,16 +51,41 @@ what the extension is allowed to do and what code to run where.
     loading (DOM parsed, most resources fetched) before injecting, so
     form fields actually exist when `init()` runs.
 
-  **Block 2 — every other site (Rename Toggle bundle)**:
+  Note: `src/utils/voyage.js` (the shared voyage-code stepping helper)
+  and `src/features/date-step-buttons.js` / `voyage-step-buttons.js`
+  (the [-]/[+] step buttons) are also in this array now — `voyage.js`
+  loads early alongside the other utils (since both step-buttons files
+  and `vessel-correction.js` depend on it), and the two step-buttons
+  feature files load near the end with the rest of the features.
+
+  **Block 2 — every other site (Rename Toggle + force-tab-links bundle)**:
   - `"matches": ["<all_urls>"]` with `"exclude_matches": ["https://www.tradetech.net/*"]`
     — runs everywhere EXCEPT Tradetech, so the standalone Rename ON/OFF
     button doesn't collide with Tradetech's own set of buttons.
-  - `"js"` — just `utils/button.js`, `features/rename-toggle.js`, and
-    `rename-toggle-init.js`. Deliberately minimal — this bundle only
-    needs `createButton` and the WebSocket relay connection, nothing
-    from the Tradetech-specific feature set.
-  - No `all_frames` key here (defaults to top frame only) and no
-    `run_at` override (defaults to `document_idle`).
+  - `"js"` — `utils/button.js`, `features/rename-toggle.js`,
+    `rename-toggle-init.js`, and `features/force-tab-links.js`.
+  - `"world": "MAIN"` — **required** for `force-tab-links.js` to work at
+    all. Without it, a content script runs in an ISOLATED world with its
+    own copy of `window`, completely separate from the page's real
+    `window` — wrapping `window.open` there has zero effect on the
+    page's own calls. `"world": "MAIN"` puts the script directly in the
+    page's own JS context instead, so its `window.open` override is the
+    SAME `window.open` the page itself calls.
+    > **Bug fix note:** this file existed on disk and shipped in a
+    > commit, but was never actually added to this block's `"js"` array
+    > (nor was `"world": "MAIN"` set) — so it silently never ran on ANY
+    > site. The symptom was popups still opening chrome-less on sites
+    > like `ss.shipmentlink.com` even though the fix was "in the repo."
+    > Always double check a new file is BOTH on disk AND listed in the
+    > right `manifest.json` block before assuming it's live.
+  - `"all_frames": true` — also added so a popup triggered from inside
+    an iframe on the page (not just the top-level frame) still gets
+    intercepted.
+  - `"run_at": "document_start"` — needs to wrap `window.open` before
+    the page's own scripts get a chance to run and call it; `rename-
+    toggle.js`/`button.js`/`rename-toggle-init.js` don't care about
+    timing this precisely, so sharing the earlier `run_at` with them is
+    harmless (they just create a button once the DOM settles either way).
 
 ---
 
@@ -327,6 +352,35 @@ somehow runs twice (e.g. the multi-frame injection bug).
     it persists, and `onClick()` is **not** fired (so dragging a button
     doesn't accidentally trigger its action).
 
+### voyage.js — `VoyageUtils`
+One function: `step(code, delta)`. Bumps a voyage code by `delta`,
+handling ANY number of digit runs in the string, not just a single
+trailing number:
+```js
+step(code, delta) {
+    if (!code) return code;
+    return code.replace(/\d+/g, (digits) => {
+        const width = digits.length;
+        let num = parseInt(digits, 10) + delta;
+        if (num < 0) num = 0;
+        return String(num).padStart(width, "0");
+    });
+}
+```
+`code.replace(/\d+/g, ...)` finds every run of digits anywhere in the
+string and replaces each independently — so `"2698-102"` stepped by
+`-1` becomes `"2697-101"` (both numbers step together), `"A102"`
+stepped by `-1` becomes `"A101"` (a letter prefix is left alone,
+only the digit run changes), and non-numeric codes like `"TBN"` pass
+through completely unchanged (no digit runs to replace). Each run's
+original zero-padded WIDTH is preserved via `padStart` — `"099"`
+stepped by `+1` becomes `"100"` only if that changes the width; a
+narrower result gets re-padded back to the original width so leading
+zeros aren't lost. Numbers are floored at `0` (never go negative).
+Used by both `vessel-correction.js`'s "Fix Vessel Dates" bump and
+`voyage-step-buttons.js`'s [-]/[+] buttons — a single shared
+implementation instead of two separate ones that could drift apart.
+
 ### toolbar.js — `Toolbar`
 Replaces individual `createButton()` calls for every Tradetech-page
 feature button (7 of them used to float independently around the
@@ -515,12 +569,14 @@ Powers the "🛠 Fix Vessel Dates" button.
 - **`getVoyageIncrement()`** — reads the `voyage_increment_by` field (if
   present) as an integer; defaults to `1` if missing or not a valid
   number.
-- **`parseVoyageCode(code)`** — splits a voyage code like `"0042A"` into
-  its numeric part (`42`), any trailing letter suffix (`"A"`), and the
-  original numeric width (`4`, so it can be re-padded back to `"0043A"`
-  later without losing leading zeros).
-- **`buildVoyageCode(parsed, newNum)`** — reassembles a voyage code from
-  a parsed object and a new number, re-padding to the original width.
+- Voyage-code bumping now goes through the shared **`VoyageUtils.step()`**
+  helper (see `utils/voyage.js` below) instead of this file's own
+  parse/build pair. The old `parseVoyageCode`/`buildVoyageCode` methods
+  only handled a SINGLE number plus an optional trailing letter (e.g.
+  `"0042A"`) and silently did nothing for any code with more than one
+  number in it (e.g. `"2698-102"`) — a real, previously-unnoticed bug,
+  since multi-number voyage codes are common. `VoyageUtils.step()` fixes
+  this by stepping every digit run in the string, so it's removed here.
 - **`fixVesselDates()`** — the button's main action:
   1. Requires `SP001_depart_date` to be set and parseable; alerts and
      bails otherwise.
@@ -537,11 +593,15 @@ Powers the "🛠 Fix Vessel Dates" button.
      `baseDate + (index+1) * 7 days` — i.e. each lagging vessel gets
      pushed to a new date one week later than the previous one,
      cascading forward from the furthest vessel.
-  7. For each corrected vessel, also increments its voyage code by the
-     configured increment, and if a hidden `PV_` duplicate of that
-     voyage field exists, mirrors the new value there too (directly via
-     `.value`, not `setFieldValue`, since it's a hidden mirror field with
-     no listeners that need notifying).
+  7. For each corrected vessel, bumps its voyage code by
+     `VoyageUtils.step(vessel.voyageField.value, voyageIncrement)` and,
+     if the returned code actually differs, writes it via
+     `setFieldValue` and mirrors the new value onto the hidden `PV_`
+     duplicate field too (directly via `.value`, not `setFieldValue`,
+     since it's a hidden mirror field with no listeners that need
+     notifying). This now correctly handles multi-number voyage codes
+     like `"2698-102"` (see `utils/voyage.js` below), which the old
+     single-number logic silently skipped.
   8. Wraps all the field writes in the `syncing` guard, then calls
      `SP001DateValidation.validate()` at the end since vessel dates just
      changed.
@@ -765,6 +825,98 @@ instead of relying on Tradetech's own (unreliable) tab order.
   own `keydown` listener, not the shared `change` bus. Present only to
   satisfy the `FEATURES` interface in `main.js`.
 
+### date-step-buttons.js — `DateStepButtons`
+Adds small [-]/[+] buttons next to every `SP*_arrival_date` and
+`SP*_depart_date` field for nudging a date by day instead of retyping
+it. Click = ±1 day, Shift+click = ±7 days.
+- **`addButtons()`** — one-time scan on `init()`; wraps every matching
+  date field with a minus button, the field itself, then a plus
+  button. Guards against double-wrapping via a `dataset.ttStepButtonsAdded`
+  marker on the field (same "have I already touched this" pattern used
+  elsewhere in the codebase).
+- **`step(field, delta)`** — parses the field's current value with
+  `DateUtils.parse()`, bails if unparseable, otherwise computes
+  `DateUtils.addDays(current, delta)` and writes it back via
+  `setFieldValue` (wrapped in the `syncing` guard — see below).
+- **`keepArrivalBeforeDepart(field, newDate, deltaDays)`** /
+  **`findCounterpartField(field)`** — the crossing-prevention logic.
+  When stepping an arrival date past its row's departure date (or a
+  departure date before its arrival date), the OTHER field on that same
+  SP row is shifted by the SAME delta, so the existing gap between
+  arrival and departure is preserved instead of letting one date cross
+  over the other and produce a nonsensical (or negative) gap.
+  `findCounterpartField()` locates the matching arrival/depart field on
+  the same row by name substitution (`SP004_arrival_date` ↔
+  `SP004_depart_date`), same pattern as `date-syncing.js`.
+- Wraps its own writes in the `syncing` guard (`syncing = true` before,
+  `false` after) specifically so `date-syncing.js`'s auto-copy
+  (arrival → departure) doesn't fire and fight with the crossing-
+  prevention logic's own explicit departure-field write. Also excludes
+  Tradetech's hidden `PV_` duplicate fields via
+  `:not([name^="PV_"])` in its selector, like every other feature that
+  matches fields by name suffix.
+
+### voyage-step-buttons.js — `VoyageStepButtons`
+The same [-]/[+] step-button pattern as `date-step-buttons.js` above,
+but for `SV*_start_voyage` fields, bumping the voyage code itself
+instead of a date.
+- **`SELECTOR`**: `'input[name$="_start_voyage"]:not([name^="PV_"])'`.
+- **`step(field, delta)`** — reads the current value, calls
+  `VoyageUtils.step(current, delta)` (see `utils/voyage.js` above),
+  writes the result via `setFieldValue` if it actually changed, and
+  manually mirrors the new value onto the matching hidden `PV_` field
+  (`pvField.value = field.value`) in case `voyage-direction.js`'s
+  reaction to the change altered the value further (e.g. appending a
+  direction suffix) — reading the value back from the live field
+  after the write, rather than using the value computed a moment
+  earlier, keeps the mirror in sync with whatever it actually ended up
+  being.
+- **Deliberately does NOT use the `syncing` guard** (unlike
+  `date-step-buttons.js`) — `voyage-direction.js` reacting to a voyage
+  code change (appending N/S/E/W) is normal, wanted behavior here, not
+  something to suppress.
+- **Shift+click magnitude**: `makeStepButton()`'s click handler checks
+  `e.shiftKey` and, if held, calls `getShiftMagnitude()` instead of
+  stepping by `1`:
+  ```js
+  getShiftMagnitude() {
+      const increment = VesselVoyageCorrection.getVoyageIncrement();
+      return increment > 0 ? increment : 1;
+  }
+  ```
+  Reads the SAME `voyage_increment_by` field "Fix Vessel Dates" uses,
+  falling back to `1` if that field is missing, empty, zero, or
+  negative — so Shift+click always does SOMETHING sensible rather than
+  a no-op jump of `0`.
+
+### force-tab-links.js — MAIN-world script (not in `FEATURES`, not Tradetech-specific)
+Runs on every site EXCEPT Tradetech (see manifest.json's Block 2
+above) — a small, self-contained IIFE, not a `FEATURES`-array feature
+object, since it isn't Tradetech-specific and doesn't use the
+`change`/`blur` event bus at all.
+```js
+(function () {
+    const realOpen = window.open.bind(window);
+    window.open = function (url, target, features, ...rest) {
+        if (features) {
+            return realOpen(url, "_blank", "", ...rest);
+        }
+        return realOpen(url, target, features, ...rest);
+    };
+})();
+```
+Some sites open links via `window.open(url, name, "toolbar=no,width=...")`
+instead of a plain `<a href>` — Chrome honors that features string and
+opens a small chrome-less popup window (no tab strip, no address bar,
+no extension icons). This wraps the page's own `window.open` so ANY
+call that passes a non-empty `features` string is redirected to open
+as a normal background tab instead; a plain `window.open(url)` call
+with no features string already opens as a tab in Chrome, so those are
+left untouched. Must run with `"world": "MAIN"` (see manifest.json
+notes above) to see and wrap the page's REAL `window.open` — an
+isolated-world content script would only be wrapping its own private
+copy, with zero effect on the page.
+
 ### rename-toggle.js — `RenameToggle` (all-sites bundle, not in `FEATURES`)
 A standalone ON/OFF button for the relay's automatic download-renaming,
 injected on every site except Tradetech (see the second
@@ -966,43 +1118,90 @@ and streak counter. Deliberately separate from `due-services-store`
 since this needs to track real EVENTS over time, not current state.
 
 ### current-batch-store.js
-Owns the **persisted** "current batch" — this is what makes the
-dashboard's default view a snapshot rather than a live recalculation.
-- **`getCurrentBatch(allServices)`** — loads the stored batch (if
-  any), refreshes each record's live done-status from `allServices`
-  (dropping any that no longer exist), and checks if it's now fully
-  done. If not fully done (and not empty), returns it AS-IS — same
-  batch, just current done-flags. Only computes a fresh batch via
-  `advanceToNextBatch()` if there's no batch yet, or the existing one
-  is 100% done.
-- **`advanceToNextBatch(allServices)`** — filters OUT already-done
-  services first (completed work shouldn't be re-selected into a new
-  batch), calls `computeBatch()` on what's left, saves the result's
-  record IDs to `current-batch.json`. Also the manual "Next Batch"
-  button's handler — same function, called regardless of whether the
-  current batch is actually done yet.
+Owns the **persisted** weekly batch state — a full Mon-Fri week
+computed once via `computeWeeklyPlan()` (see `due-services-trim.js`
+below), stored as 5 per-day RECORD ID lists (`dayRecordLists`), and
+worked through sequentially: whichever day-slot you're on
+(`state.dayIndex`) is what the dashboard shows, and completing every
+item in it auto-advances to the next day.
+- **`startNewWeek(allServices, asOfDayIndex = null)`** — computes a
+  fresh `computeWeeklyPlan()`, stores its per-day record IDs, and
+  persists `backlogCount` alongside them (not just used once and
+  discarded) so the workload chart can describe the exact same plan
+  later without recomputing anything. `asOfDayIndex` (0=Monday..4=Friday),
+  when given, is threaded into `computeWeeklyPlan()` as the domino-
+  balance anchor AND used as the state's starting `dayIndex` — this is
+  what the dashboard's Recalculate weekday-picker drives (see below).
+- **`getCurrentBatch(allServices)`** — loads the stored state (via
+  `ensureCurrentWeekState`, which starts a fresh week only when the
+  stored `weekStart` no longer matches the real current week),
+  auto-advances past any day-slot that's now fully done
+  (`advancePastDone`), and returns the batch for whichever day it lands
+  on (`buildBatchForDay` — that day's own items plus every still-undone
+  leftover from earlier days, so nothing gets silently dropped).
+- **`goToDay` / `advanceToNextBatch` / `goToPreviousBatch`** — explicit
+  navigation, all funneling through `goToDay()`, which does NOT
+  auto-skip done days (navigating is an explicit choice, unlike
+  auto-advance).
+- **`getStoredWeeklyBreakdown(allServices)`** — rebuilds the SAME
+  Mon-Fri workload breakdown the dashboard's chart displays, but reads
+  it straight from the PERSISTED `dayRecordLists`/`dayIndex` instead of
+  independently recomputing `computeWeeklyPlan("today")`.
+  > **Bug fix note:** the chart used to call `computeWeeklyPlan(all, 0)`
+  > fresh every time it loaded, completely separate from whatever
+  > anchor day the actual current batch was really built with. Once
+  > Recalculate could be told to use a chosen weekday as its anchor,
+  > that meant the chart and the real batch could disagree — the real
+  > batch would reflect the chosen anchor, but the chart would still
+  > show a plain real-today split next to it. Reading from the same
+  > persisted state the batch itself uses keeps the two permanently in
+  > sync, whatever anchor produced that state.
+- **`recalculateWeek(allServices, asOfDayIndex = null)`** — the manual
+  "Recalculate" button's handler. Always rebuilds from scratch
+  (unlike `ensureCurrentWeekState`, which only recomputes when the
+  week has genuinely changed) — same effect as deleting
+  `current-batch.json` by hand. `asOfDayIndex` is the dashboard's
+  weekday-picker value (`null`/omitted = real today, unchanged
+  default behavior).
 
 ### due-services-trim.js
-`computeBatch(services)` — the actual "which services form the next
-batch" business logic, called ONLY by `current-batch-store.js` when a
-new batch needs computing (not live on every dashboard load):
-1. Groups by due date, nearest first (`groupByDay`).
-2. **If the 2 nearest days COMBINED have ≥ 50 services** —
-   `splitByPriority()`: take the AVERAGE of the two counts as the
-   total, filled by priority — the nearest day gets taken first (up
-   to its own size or the average, whichever's smaller), whatever's
-   left of the average comes from the second day. E.g. day1=20,
-   day2=40 → average=30 → day1 gives all 20, day2 fills the
-   remaining 10. This went through several iterations before landing
-   here — earlier versions tried "split evenly" and "include
-   everything from both days," both were explicitly rejected in favor
-   of this priority-fill-to-the-average version.
-3. **Otherwise** — keep whole days starting from the nearest one,
-   stopping BEFORE any day that would push the total over
-   `MAX_SERVICES` (40). A day's services are never split across this
-   cutoff — the result may land under 40, or slightly over 40 only if
-   a SINGLE day alone already exceeds it (can't do better without
-   splitting a day).
+`computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null)` —
+the actual "how is this week's work split across Mon-Fri" business
+logic, called by `current-batch-store.js` whenever a new weekly plan
+needs computing (not live on every dashboard load):
+1. Groups services by due date into the current week's 5 weekday
+   slots, nearest-due-first within each slot.
+2. Computes each day's TARGET share of the week's total workload, then
+   balances the whole week domino-style: every item across every
+   still-available day (today onward — you can't redistribute onto a
+   day that's already passed) is pooled together, nearest-due-first,
+   and each day's slot is filled from the front of that pool in order.
+   A slow day (e.g. nothing due Monday) pulls tomorrow's work forward
+   to fill its share, instead of leaving itself empty while a later
+   day (which merely happens to have more of its OWN items) stays
+   overloaded.
+   > This pooling approach replaced an earlier "each day keeps up to
+   > its own target from its own items, shortfalls topped up from a
+   > surplus pool in day order" version — the earlier version could
+   > still hand a day items that weren't actually its nearest-due ones
+   > if an earlier day's surplus got pooled before a later day's more
+   > urgent items did. Pooling ALL available items first, sorted
+   > nearest-due, and filling day slots front-to-back from that single
+   > pool guarantees the nearest-due items always land in the earliest
+   > possible day slot.
+3. **`weekOffset`** (Next/Previous Week preview buttons) — any nonzero
+   value previews a hypothetical week rather than the real current
+   one. A preview always treats that week's Monday as "today" (whole
+   week balanced together) and never rolls in backlog, since "overdue
+   right now" is only meaningful for the actual current day.
+4. **`asOfDayIndex`** (0=Monday..4=Friday) — lets the real current
+   week's (`weekOffset === 0` only) domino-balance anchor be a CHOSEN
+   weekday instead of whatever the real calendar day happens to be
+   (the dashboard's Recalculate weekday-picker). Backlog (services
+   overdue from BEFORE this week's Monday) still always comes from the
+   REAL current date regardless of this override — an anchor override
+   changes "which day are we balancing as if it were today," not
+   "what's actually overdue right now."
 
 ### routes/relay.js
 `GET /service` → `{ code }`, `GET /renaming` → `{ enabled }` — thin
@@ -1016,8 +1215,24 @@ the file back. Both used by `upload-proof.js`.
 
 ### routes/due-services.js
 The biggest route file — POST/GET `/due-services`, mark-done,
-undo-done, current-batch, next-batch, history, activity. A few things
-worth knowing:
+undo-done, current-batch, next-batch, recalculate-week, history,
+activity, weekly-plan. A few things worth knowing:
+- **`handleRecalculateWeek`** is `async` now — reads an optional JSON
+  body `{ dayIndex: 0-4 }` (the dashboard's weekday-picker) via
+  `readBody(req)`, wrapped in try/catch so a missing or invalid body
+  just falls back to `null` (today, for real — original behavior)
+  rather than erroring. Threads `dayIndex` straight through to
+  `currentBatchStore.recalculateWeek(all, dayIndex)`.
+- **`handleGetWeeklyPlan`** — for the real current week (`?offset=0` or
+  omitted) now reads `currentBatchStore.getStoredWeeklyBreakdown(all)`
+  (the persisted state) instead of calling `computeWeeklyPlan` fresh,
+  so the chart always matches whatever anchor the real batch is
+  currently using. Any other `?offset=N` (Next/Previous Week preview)
+  still calls `computeWeeklyPlan(all, weekOffset)` fresh each time,
+  since there's no persisted state for a hypothetical week —
+  unaffected by this change. `server.js`'s route match for this
+  endpoint had to change from an exact `===` check to `.startsWith(...)`
+  to allow the `?offset=N` query string through at all.
 - **`handlePostDueServices`** — merges the incoming FULL scan with
   whatever's already stored, specifically to preserve `done`
   overrides: if a service was marked done locally and Tradetech's
@@ -1056,13 +1271,22 @@ a browser refresh, no server restart.
 Dark/ASCII terminal aesthetic. `dashboard.js` fetches `/due-services`
 (full list, for the charts), `/due-services/current-batch` (the
 persisted batch, drives the default filtered table view — "Show All"
-toggles to everything), `/due-services/history`, and
-`/due-services/activity` on load. Filters apply on **Enter**, not
-live per-keystroke (an earlier live-filter version caused the input
-to lose focus every character, since `render()` rebuilds the whole
-table via `innerHTML` including the filter inputs themselves).
-Clicking a service name copies it to clipboard. "Mark Done" (green)
-swaps to "Undo" (amber) once a row is done.
+toggles to everything), `/due-services/history`, `/due-services/activity`,
+and `/due-services/weekly-plan` (workload chart, supports `?offset=N`
+for the Next/Previous Week preview buttons) on load. Filters apply on
+**Enter**, not live per-keystroke (an earlier live-filter version
+caused the input to lose focus every character, since `render()`
+rebuilds the whole table via `innerHTML` including the filter inputs
+themselves). Clicking a service name copies it to clipboard.
+"Mark Done" (green) swaps to "Undo" (amber) once a row is done.
+
+**Recalculate weekday-picker** — `index.html` has a `#recalcDaySelect`
+dropdown right before the Recalculate button ("Today (auto)" plus
+Monday–Friday). `recalculateWeek()` in `dashboard.js` reads it, builds
+a `dayIndex` (`null` for "auto"), shows a confirm dialog naming the
+chosen anchor day, and POSTs `{ dayIndex }` as the request body to
+`/due-services/recalculate-week`. `RECALC_DAY_NAMES` maps 0-4 to
+weekday names for that confirm-dialog text.
 
 **Dependencies** (`service-relay/package.json`): `ws`, `chokidar`. Run
 `npm install` inside `service-relay/` after cloning, before first run.
