@@ -24,6 +24,7 @@ function connectWebSocket() {
             if (data.type === "init") {
                 lastServiceCode  = data.serviceCode   || "";
                 renamingEnabled  = data.renamingEnabled !== false;
+                chrome.storage.local.set({ renamingEnabled });
                 console.log("📥 Init state received:", lastServiceCode, renamingEnabled);
             }
 
@@ -34,6 +35,7 @@ function connectWebSocket() {
 
             if (data.type === "renaming") {
                 renamingEnabled = data.enabled;
+                chrome.storage.local.set({ renamingEnabled });
                 console.log("🔄 Renaming enabled:", renamingEnabled);
                 broadcastRenameState();
             }
@@ -69,12 +71,19 @@ connectWebSocket();
 // instead of opening a direct socket of their own.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "GET_RENAME_STATE") {
-        sendResponse({ enabled: renamingEnabled });
-        return; // synchronous response, no need to keep the channel open
+        // Read from storage (survives service-worker restarts) instead
+        // of trusting renamingEnabled, which resets to its hardcoded
+        // default every time the worker wakes back up from being
+        // suspended, before the WebSocket reconnects and corrects it.
+        chrome.storage.local.get("renamingEnabled", (data) => {
+            sendResponse({ enabled: data.renamingEnabled ?? renamingEnabled });
+        });
+        return true; // async sendResponse — keep the channel open
     }
 
     if (message?.type === "SET_RENAME_STATE") {
         renamingEnabled = message.enabled;
+        chrome.storage.local.set({ renamingEnabled });
         if (ws?.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "renaming", enabled: renamingEnabled }));
         }
