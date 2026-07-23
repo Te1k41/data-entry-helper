@@ -6,40 +6,54 @@
 <link rel="stylesheet" href="/dashboard/style.css">
 </head>
 <body>
-<pre class="banner">╔══════════════════════════════════════════╗
-║  SERVICES DUE FOR UPDATE — TT DASHBOARD  ║
-╚══════════════════════════════════════════╝</pre>
+<div id="deepField"></div>
+<div id="starfield"></div>
+<button id="bgOnlyToggle" onclick="toggleBgOnly()">🌌 Background only</button>
+<pre id="banner" class="banner"></pre>
+<div id="workArea">
 <div id="asOf">loading…</div>
 <div id="batchDayIndicator"></div>
 <div id="dayTabs"></div>
-<div id="remainingTodayBadge"></div>
 <main>
     <div id="stats"></div>
     <div id="charts"></div>
     <div id="controls">
-        <button onclick="load()">Refresh</button>
-        <button onclick="clearFilters()">Clear Filters</button>
-        <button id="splitToggleBtn" onclick="toggleShowAll()">Show All</button>
-        <button onclick="previousBatch()">← Prev Day</button>
-        <button onclick="nextBatch()">Next Day →</button>
-        <select id="recalcDaySelect" title="Which weekday to use as the anchor when recalculating">
-            <option value="">Today (auto)</option>
-            <option value="0">Monday</option>
-            <option value="1">Tuesday</option>
-            <option value="2">Wednesday</option>
-            <option value="3">Thursday</option>
-            <option value="4">Friday</option>
-        </select>
-        <button onclick="recalculateWeek()">🔄 Recalculate</button>
-        <button onclick="location.href='/settings-page'">⚙ Settings</button>
-        <button id="wellnessToggle" onclick="toggleWellnessReminders()">💛 Wellness reminders: off</button>
-        <button onclick="testWellnessNotification()">🔔 Test notification now</button>
+        <span class="ctrlGroup">
+            <button onclick="load()">Refresh</button>
+            <button onclick="clearFilters()">Clear Filters</button>
+            <button id="splitToggleBtn" onclick="toggleShowAll()">Show All</button>
+        </span>
+        <span class="ctrlDivider"></span>
+        <span class="ctrlGroup">
+            <button onclick="previousBatch()">← Prev Day</button>
+            <button onclick="nextBatch()">Next Day →</button>
+        </span>
+        <span class="ctrlDivider"></span>
+        <span class="ctrlGroup">
+            <select id="recalcDaySelect" title="Which weekday to use as the anchor when recalculating">
+                <option value="">Today (auto)</option>
+                <option value="0">Monday</option>
+                <option value="1">Tuesday</option>
+                <option value="2">Wednesday</option>
+                <option value="3">Thursday</option>
+                <option value="4">Friday</option>
+            </select>
+            <button onclick="recalculateWeek()">🔄 Recalculate</button>
+        </span>
+        <span class="ctrlDivider"></span>
+        <span class="ctrlGroup">
+            <button onclick="location.href='/settings-page'">⚙ Settings</button>
+            <button id="wellnessToggle" onclick="toggleWellnessReminders()">💛 Wellness reminders: off</button>
+            <button onclick="testWellnessNotification()">🔔 Test notification now</button>
+        </span>
         <span id="count"></span>
     </div>
     <div id="wellnessHelp"></div>
     <div id="wellnessCountdown"></div>
     <div id="content"></div>
 </main>
+</div>
+<div id="remainingTodayBadge"></div>
 
 <div id="wellnessBanner">
     <span class="wellnessEmoji"></span><span class="wellnessText"></span>

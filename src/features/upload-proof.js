@@ -21,6 +21,48 @@ const UploadProof = {
             label:   "📤 Upload Proof",
             onClick: () => this.startUpload()
         });
+
+        this.checkUploadStatus();
+
+        // The popup (a SEPARATE window/content-script instance) is the
+        // one that actually completes the upload and marks it done —
+        // this listens for that so the main page's banner clears itself
+        // live instead of staying stale until the next reload.
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area === "local" && changes.uploadedProofLog) this.checkUploadStatus();
+        });
+    },
+
+    // "{service}|{YYYY-MM-DD}" — proof upload is a once-per-day-per-service
+    // thing (same convention download-watcher.js's renamed filenames use).
+    uploadLogKey(service) {
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        return `${service}|${dateStr}`;
+    },
+
+    async markUploaded(service) {
+        const { uploadedProofLog } = await chrome.storage.local.get("uploadedProofLog");
+        const log = uploadedProofLog || {};
+        log[this.uploadLogKey(service)] = true;
+        await chrome.storage.local.set({ uploadedProofLog: log });
+    },
+
+    // Shows/clears a warning banner (via the shared setWarning registry —
+    // same system SP001 mismatch etc. use, so this combines cleanly with
+    // any other active warning instead of fighting over the one banner).
+    async checkUploadStatus() {
+        const serviceField = document.querySelector('input[name="service"]');
+        const service = serviceField?.value.trim();
+        if (!service) { setWarning("upload-proof-missing", null); return; }
+
+        const { uploadedProofLog } = await chrome.storage.local.get("uploadedProofLog");
+        const uploaded = uploadedProofLog?.[this.uploadLogKey(service)];
+
+        setWarning("upload-proof-missing", uploaded ? null : {
+            title:   "📤 Proof not uploaded yet",
+            message: `${service} — click "Upload Proof" once you have it.`
+        });
     },
 
     // The Support Document button can live in a DIFFERENT frame than
@@ -102,7 +144,7 @@ const UploadProof = {
         const chosen = files.sort().pop();
         console.log("📎 Chosen proof file:", chosen);
 
-        await chrome.storage.local.set({ pendingUpload: chosen });
+        await chrome.storage.local.set({ pendingUpload: chosen, pendingUploadService: service });
 
         const supportBtn = this.findSupportDocsButton();
         if (!supportBtn) {
@@ -113,7 +155,7 @@ const UploadProof = {
     },
 
     async tryAutoFill(fileInput) {
-        const { pendingUpload } = await chrome.storage.local.get("pendingUpload");
+        const { pendingUpload, pendingUploadService } = await chrome.storage.local.get(["pendingUpload", "pendingUploadService"]);
         if (!pendingUpload) return; // not our job, leave it alone
 
         console.log(`📤 Auto-filling upload with: ${pendingUpload}`);
@@ -131,13 +173,14 @@ const UploadProof = {
 
             console.log("✅ File staged in FILE1 input");
 
-            await chrome.storage.local.remove("pendingUpload");
+            await chrome.storage.local.remove(["pendingUpload", "pendingUploadService"]);
 
             // Submit immediately — no confirm step.
             const submitBtn = document.querySelector('input[type="submit"][value="Upload"]');
             if (submitBtn) {
                 submitBtn.click();
                 console.log("🚀 Upload submitted automatically");
+                if (pendingUploadService) await this.markUploaded(pendingUploadService);
                 showTemporaryBanner({
                     title:   "✅ Upload submitted",
                     message: pendingUpload
@@ -158,6 +201,12 @@ const UploadProof = {
         }
     },
 
-    handle(_event) {},
+    // The service field can get filled/changed after init() already ran
+    // (due-service-scanner/auto-nav-schedules populate it asynchronously,
+    // and it's editable by hand too) — re-check whenever it changes so
+    // the banner tracks whichever service is actually on screen.
+    handle(event) {
+        if (event.target?.name === "service") this.checkUploadStatus();
+    },
     handleBlur(_event) {}
 };

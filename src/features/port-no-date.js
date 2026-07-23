@@ -37,7 +37,7 @@ const DetectPortNoDate = {
             // styles these same fields (its orange region-change
             // highlight) and would get silently wiped out otherwise.
             if (field.dataset.ttPortNoDateFlagged) {
-                field.style.outline         = "";
+                field.style.outline = "";
                 field.style.backgroundColor = "";
                 delete field.dataset.ttPortNoDateFlagged;
             }
@@ -57,8 +57,8 @@ const DetectPortNoDate = {
             // normal and shouldn't trigger this warning.
             if (!hasArrival && !hasDepart) {
                 missing.push(field.value.trim());
-                field.style.outline         = "2px solid #cc0000";
-                field.style.backgroundColor = "#fff0f0";
+                field.style.outline = "2px solid #cc0000";
+                field.style.backgroundColor = TradetechStars.darkModeOn ? "" : "#fff0f0";
                 field.dataset.ttPortNoDateFlagged = "1";
             }
         }

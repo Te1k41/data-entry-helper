@@ -121,10 +121,7 @@ const ScheduleCascade = {
         'input[name="SP001_arrival_date"]'
     );
     if (!sp001ArrivalField?.value.trim()) {
-        showBanner({
-            title:   "⚠ Cascade failed",
-            message: "SP001 arrival date is not set"
-        });
+        this.flashCascadeError("⚠ Cascade failed", "SP001 arrival date is not set");
         return;
     }
 
@@ -132,10 +129,7 @@ const ScheduleCascade = {
     if (!sp001Date) return;
 
     if (Object.keys(this.diffs).length === 0) {
-        showBanner({
-            title:   "⚠ No snapshot",
-            message: "Click 📸 Snapshot Diffs first"
-        });
+        this.flashCascadeError("⚠ No snapshot", "Click 📸 Snapshot Diffs first");
         return;
     }
 
@@ -167,6 +161,20 @@ const ScheduleCascade = {
         message: `Ports recalculated from SP001 ${DateUtils.format(sp001Date)}`
     });
 },
+
+    // These two failures used to call showBanner() directly, which
+    // bypasses the setWarning registry entirely (see banner.js's own
+    // warning about that) — it would silently clobber whatever real
+    // warning (SP001 mismatch, missing dates, etc.) was already
+    // showing, and then get clobbered right back the next time any
+    // OTHER feature's setWarning ran. Routed through the registry
+    // instead, with a short auto-clear since these are one-off
+    // click-triggered errors, not a standing problem to leave up
+    // until something explicitly resolves it.
+    flashCascadeError(title, message) {
+        setWarning("cascade-error", { title, message });
+        setTimeout(() => setWarning("cascade-error", null), 4000);
+    },
 
     handle(_event) {
         // fully manual — no auto triggers

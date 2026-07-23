@@ -24,6 +24,8 @@ console.log("🚀 ETA-to-ETD Extension Loaded");
 // order) — these are just object references, not files.
 const FEATURES = [
     NotesDateReplacement,
+    NotesSidebar,
+    TradetechStars,
     SP001DateValidation,
     DateSyncing,
     PortHighlighting,

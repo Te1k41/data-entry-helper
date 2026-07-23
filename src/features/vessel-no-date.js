@@ -32,7 +32,7 @@ const DetectVesselNoDate = {
             // vessel suggestions) also style these same fields and would
             // get silently wiped out otherwise.
             if (field.dataset.ttVesselNoDateFlagged) {
-                field.style.outline         = "";
+                field.style.outline = "";
                 field.style.backgroundColor = "";
                 delete field.dataset.ttVesselNoDateFlagged;
             }
@@ -45,8 +45,8 @@ const DetectVesselNoDate = {
 
             if (!dateField || !dateField.value.trim()) {
                 missing.push(field.value.trim());
-                field.style.outline         = "2px solid #cc0000";
-                field.style.backgroundColor = "#fff0f0";
+                field.style.outline = "2px solid #cc0000";
+                field.style.backgroundColor = TradetechStars.darkModeOn ? "" : "#fff0f0";
                 field.dataset.ttVesselNoDateFlagged = "1";
             }
         }

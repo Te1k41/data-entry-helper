@@ -226,7 +226,7 @@ const Toolbar = {
                 letter-spacing: 0.5px !important;
                 cursor: pointer !important;
             `;
-            btn.addEventListener("mouseenter", () => { btn.style.background = "#f0f0f0"; });
+            btn.addEventListener("mouseenter", () => { btn.style.background = "#e8f2fa"; });
             btn.addEventListener("mouseleave", () => { btn.style.background = "#ffffff"; });
             btn.addEventListener("click", action.onClick);
             this._listContainer.appendChild(btn);

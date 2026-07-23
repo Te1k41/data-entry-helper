@@ -85,9 +85,13 @@ const PortHighlighting = {
         return isDirectional;
     },
 
+    // Fill only in light mode — dark mode keeps the outline alone since a
+    // pale fixed-color fill doesn't track the dark-mode recolor pass (that
+    // pass runs once per toggle click, but this can re-fire on every
+    // keystroke and would stomp it back to the light-mode color each time).
     applyHighlight(field) {
-        field.style.outline          = this.HIGHLIGHT_STYLE.outline;
-        field.style.backgroundColor  = this.HIGHLIGHT_STYLE.backgroundColor;
+        field.style.outline = this.HIGHLIGHT_STYLE.outline;
+        field.style.backgroundColor = TradetechStars.darkModeOn ? "" : this.HIGHLIGHT_STYLE.backgroundColor;
     },
 
     // Resets styling so re-running the scan doesn't leave stale

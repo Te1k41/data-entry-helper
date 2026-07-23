@@ -107,12 +107,23 @@ const DateStepButtons = {
         const base    = current || this.todayUTCMidnight();
         const next    = DateUtils.addDays(base, deltaDays);
 
-        // date-syncing.js auto-copies arrival→depart (and, for SP001,
-        // depart→arrival) whenever either one changes. That's the right
-        // behavior for a normal edit, but it means nudging JUST the
-        // arrival date with these buttons would immediately get
-        // overwritten onto the depart date too (or vice versa) — the
-        // two buttons couldn't move a date independently.
+        // SP001 is the exception (see date-syncing.js): it has its own
+        // bidirectional sync (depart→arrival, and arrival→depart via the
+        // general path) instead of the one-directional arrival→depart
+        // every other row gets. That sync should keep working when
+        // stepping SP001 with +/-, exactly as if the date had been
+        // typed by hand — so SP001 is deliberately NOT guarded below.
+        if (field.name === "SP001_arrival_date" || field.name === "SP001_depart_date") {
+            setFieldValue(field, DateUtils.format(next));
+            return;
+        }
+
+        // Every other row: date-syncing.js auto-copies arrival→depart
+        // whenever either one changes. That's the right behavior for a
+        // normal edit, but it means nudging JUST the arrival date with
+        // these buttons would immediately get overwritten onto the
+        // depart date too (or vice versa) — the two buttons couldn't
+        // move a date independently.
         //
         // syncing is the codebase's existing re-entrancy guard (see
         // main.js): any feature that writes a value sets it to true

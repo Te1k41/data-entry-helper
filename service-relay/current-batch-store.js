@@ -2,9 +2,15 @@
 //  current-batch-store.js
 //  Owns the CURRENT DAY'S batch — one of the 5 weekday slots
 //  from due-services-trim.js's computeWeeklyPlan(). Works
-//  through the week sequentially: Monday's slot first, and
-//  once every item in it is marked done, automatically
-//  advances to Tuesday's, then Wednesday's, and so on.
+//  through the week sequentially: Monday's slot first, then
+//  Tuesday's, and so on — but advancing to the next slot only
+//  happens on an EXPLICIT action (Next Day, a day tab, or a
+//  fresh week), never automatically just from finishing a day's
+//  items or from a routine page read. getCurrentBatch() used to
+//  auto-advance on every read, which meant the dashboard's
+//  "today is done" chill screen could never actually show —
+//  the server had already jumped to tomorrow by the time the
+//  page re-fetched. See getCurrentBatch()'s own comment below.
 //
 //  A fresh weekly plan is computed once per calendar week (the
 //  first time it's needed that week) and its per-day record
@@ -178,12 +184,19 @@ function buildBatchForDay(state, dayIndex, byRecord) {
     };
 }
 
-// Returns the batch for whichever day the state is currently on,
-// auto-advancing past anything already fully done first.
+// Returns the batch for whichever day the state is currently on.
+// Deliberately does NOT auto-advance past a fully-done day — this is
+// called on every routine page load/refresh, including the very next
+// one right after marking the last item of the day done. Advancing
+// here would silently jump to tomorrow before the dashboard ever gets
+// a chance to render "today is done" (its chill-mode screen), which
+// defeats the point of that screen entirely. Moving to the next day
+// now only happens via an explicit action — the Next Day button,
+// goToDay, or a fresh week — never as a side effect of just reading
+// the current state.
 function getCurrentBatch(allServices) {
     const byRecord = new Map(allServices.map(s => [s.record, s]));
-    let state = ensureCurrentWeekState(allServices);
-    state = advancePastDone(state, byRecord);
+    const state = ensureCurrentWeekState(allServices);
     return buildBatchForDay(state, state.dayIndex, byRecord);
 }
 

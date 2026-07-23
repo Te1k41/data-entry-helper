@@ -35,7 +35,7 @@ function showBanner(options) {
 
     div.innerHTML = `
         <div style="font-weight: bold; margin-bottom: 4px;">${options.title}</div>
-        <div style="opacity: 0.85;">${options.message}</div>
+        <div style="opacity: 1;">${options.message}</div>
     `;
 
     div.style.cssText = BANNER_STYLE;
@@ -54,14 +54,47 @@ function removeBanner() {
 // so a real warning stays fully visible and the confirmation just
 // sits underneath it instead of overlapping or replacing it.
 
-const SUCCESS_GAP = 10; // px gap between the warning banner and this one
+const SUCCESS_GAP = 10; // px gap between stacked right-side banners
+
+// Right-side banners (warning, success, suggestion) all stack in that
+// same order rather than each independently computing "below the
+// warning banner" — two of them independently computing the same
+// position used to mean a success confirmation and a suggestion
+// banner could land in the exact same spot and overlap. Pass the IDs
+// of whichever banners sit ABOVE this one in the stack.
+function getStackedBannerTop(idsAbove) {
+    let top = 52; // base position, under the notification toggle button
+    for (const id of idsAbove) {
+        const el = document.getElementById(id);
+        if (!el || el.style.display === "none") continue;
+        const rect = el.getBoundingClientRect();
+        top = Math.max(top, rect.bottom + SUCCESS_GAP);
+    }
+    return `${top}px`;
+}
 
 function getSuccessBannerTop() {
-    const warningBanner = document.getElementById("tt-banner");
-    if (!warningBanner || warningBanner.style.display === "none") return "52px";
+    return getStackedBannerTop(["tt-banner"]);
+}
 
-    const rect = warningBanner.getBoundingClientRect();
-    return `${rect.bottom + SUCCESS_GAP}px`;
+// The three right-side banners can each be created/changed/removed
+// independently and asynchronously (e.g. the upload-proof warning
+// resolves from a chrome.storage read, so it can easily show up
+// AFTER a suggestion banner already rendered assuming no warning
+// existed yet). getSuccessBannerTop()/getSuggestionBannerTop() only
+// compute the right position at the MOMENT a banner is built — this
+// re-applies that position to whichever of the two already exist,
+// any time something in the stack might have changed, so they stay
+// correctly stacked instead of freezing at whatever was true when
+// each one first appeared. Called from applyNotificationVisibility()
+// so every existing call site (show/hide/clear, for any banner type)
+// gets this for free.
+function repositionStackedBanners() {
+    const success = document.getElementById("tt-success-banner");
+    if (success) success.style.top = getSuccessBannerTop();
+
+    const suggestion = document.getElementById("tt-suggestion-banner");
+    if (suggestion) suggestion.style.top = getSuggestionBannerTop();
 }
 
 function buildSuccessStyle() {
@@ -82,7 +115,7 @@ function buildSuccessStyle() {
         box-shadow: 3px 3px 0px #1e7d1e;
         min-width: 260px;
         max-width: 340px;
-        opacity: 0.95;
+        opacity: 1;
     `;
 }
 
@@ -155,16 +188,17 @@ function setInfoBanner(info) {
 // Uses its OWN element (#tt-suggestion-banner), styled purple —
 // distinct from the centered blue "info" banner (used for the
 // persistent "Basing on: X" status) and from the warning/success
-// banners. Stacks below the warning banner, same as the success
-// banner does, so it lives on the right with everything else
-// EXCEPT the centered info banner.
+// banners. Stacks below BOTH the warning and the success banner (if
+// either is currently showing) — a fresh success confirmation firing
+// while a suggestion is up pushes the suggestion down instead of the
+// two overlapping, and repositionStackedBanners() (called from
+// applyNotificationVisibility(), plus explicitly wherever a banner
+// disappears outside that path) keeps it correct live as banners
+// above it appear, resize, or clear — not just a snapshot taken once
+// when this banner was first built.
 
 function getSuggestionBannerTop() {
-    const warningBanner = document.getElementById("tt-banner");
-    if (!warningBanner || warningBanner.style.display === "none") return "52px";
-
-    const rect = warningBanner.getBoundingClientRect();
-    return `${rect.bottom + SUCCESS_GAP}px`;
+    return getStackedBannerTop(["tt-banner", "tt-success-banner"]);
 }
 
 function buildSuggestionStyle() {
@@ -185,7 +219,7 @@ function buildSuggestionStyle() {
         box-shadow: 3px 3px 0px #6e1e9e;
         min-width: 260px;
         max-width: 340px;
-        opacity: 0.95;
+        opacity: 1;
     `;
 }
 
@@ -231,7 +265,7 @@ function showTemporaryBanner(options, durationMs = 3000) {
 
     div.innerHTML = `
         <div style="font-weight: bold; margin-bottom: 4px;">${options.title}</div>
-        <div style="opacity: 0.85;">${options.message}</div>
+        <div style="opacity: 1;">${options.message}</div>
     `;
 
     div.style.cssText = buildSuccessStyle();
@@ -242,6 +276,7 @@ function showTemporaryBanner(options, durationMs = 3000) {
     successBannerTimer = setTimeout(() => {
         successBannerTimer = null;
         removeSuccessBanner();
+        repositionStackedBanners(); // success banner just disappeared — suggestion below it (if any) can move back up
     }, durationMs);
 }
 
@@ -264,7 +299,7 @@ const BANNER_STYLE = `
     box-shadow: 3px 3px 0px #000000;
     min-width: 260px;
     max-width: 340px;
-    opacity: 0.9;
+    opacity: 1;
 `;
 
 // Registers (or clears, if warning is null) one feature's warning,
@@ -286,6 +321,7 @@ function renderWarnings() {
 
     if (warnings.length === 0) {
         removeBanner();
+        repositionStackedBanners(); // warning banner just disappeared — success/suggestion below it need to move up
         return;
     }
 
@@ -309,7 +345,7 @@ function showCombinedBanner(warnings) {
     const items = warnings.map((w, i) => `
         <div style="${i > 0 ? "margin-top: 6px; padding-top: 6px; border-top: 1px dashed #000000;" : ""}">
             <div style="font-weight: bold;">${w.title}</div>
-            <div style="opacity: 0.85;">${w.message}</div>
+            <div style="opacity: 1;">${w.message}</div>
         </div>
     `).join("");
 
@@ -331,7 +367,7 @@ function showCombinedBanner(warnings) {
 // keep updating normally underneath, so un-hiding always shows
 // current, up-to-date content rather than something stale.
 
-const ALL_BANNER_IDS = ["tt-banner", "tt-success-banner", "tt-info-banner", "tt-suggestion-banner"];
+const ALL_BANNER_IDS = ["tt-banner", "tt-success-banner", "tt-info-banner", "tt-suggestion-banner", "tt-notes-sidebar"];
 
 let notificationsHidden = localStorage.getItem("tt-notifications-hidden") === "1";
 
@@ -340,42 +376,26 @@ function applyNotificationVisibility() {
         const el = document.getElementById(id);
         if (el) el.style.display = notificationsHidden ? "none" : "";
     });
+    repositionStackedBanners();
 }
 
 function toggleNotificationVisibility() {
     notificationsHidden = !notificationsHidden;
     localStorage.setItem("tt-notifications-hidden", notificationsHidden ? "1" : "0");
     applyNotificationVisibility();
-
-    const btn = document.getElementById("tt-notif-toggle");
-    if (btn) btn.textContent = notificationsHidden ? "🔔 Show" : "🔕 Hide";
+    Toolbar.updateLabel("tt-notif-toggle", notificationsHidden ? "🔔 Show notifications" : "🔕 Hide notifications");
 }
 
+// Was its own fixed top-right button — moved into the shared Tools panel:
+// Toolbar already runs once per Tradetech frame same as this file does, so a
+// second independent floating button on top of it just doubled the same
+// per-frame duplication (visible as two stacked "Show" buttons).
 function createNotificationToggle() {
-    if (document.getElementById("tt-notif-toggle")) return;
-
-    const btn = document.createElement("button");
-    btn.id = "tt-notif-toggle";
-    btn.type = "button";
-    btn.textContent = notificationsHidden ? "🔔 Show" : "🔕 Hide";
-    btn.style.cssText = `
-        position: fixed;
-        top: 16px;
-        right: 16px;
-        z-index: 1000000;
-        background: #ffffff;
-        color: #000000;
-        border: 2px solid #000000;
-        border-radius: 0px;
-        padding: 4px 10px;
-        font-family: monospace;
-        font-size: 10px;
-        letter-spacing: 0.5px;
-        cursor: pointer;
-        box-shadow: 2px 2px 0px #000000;
-    `;
-    btn.addEventListener("click", toggleNotificationVisibility);
-    document.body.appendChild(btn);
+    Toolbar.register({
+        id: "tt-notif-toggle",
+        label: notificationsHidden ? "🔔 Show notifications" : "🔕 Hide notifications",
+        onClick: toggleNotificationVisibility
+    });
 }
 
 createNotificationToggle();

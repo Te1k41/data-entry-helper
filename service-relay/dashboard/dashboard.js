@@ -13,6 +13,234 @@ const COLUMNS = [
     { key: 'actions',        label: '',           sortable: false }
 ];
 
+// ── ASCII box-drawing helpers ──────────────────────────────────
+// The charm this dashboard is going for lives in this repo's own
+// docs (Readme.txt's block-letter banner + hand-drawn ┌─┬─┐ tables).
+// Column widths there are typed by hand; here they're computed from
+// the actual data so alignment can't drift when a carrier code or a
+// count gets longer.
+function padEnd(s, n)   { return s + ' '.repeat(Math.max(0, n - s.length)); }
+function padStart(s, n) { return ' '.repeat(Math.max(0, n - s.length)) + s; }
+
+// 6-row "ANSI Shadow" style figlet font — same font Readme.txt's own
+// big banner uses. D and A here are copied verbatim from that banner
+// (proven correct); S/H/B/O/R are reconstructed to match the same
+// style and checked for internal width-consistency below, but weren't
+// copied from an existing verified source — flag it if any letter
+// looks wrong.
+const BLOCK_FONT = {
+    D: ['██████╗ ', '██╔══██╗', '██║  ██║', '██║  ██║', '██████╔╝', '╚═════╝ '],
+    A: [' █████╗ ', '██╔══██╗', '███████║', '██╔══██║', '██║  ██║', '╚═╝  ╚═╝'],
+    S: ['███████╗', '██╔════╝', '███████╗', '╚════██║', '███████║', '╚══════╝'],
+    H: ['██╗  ██╗', '██║  ██║', '███████║', '██╔══██║', '██║  ██║', '╚═╝  ╚═╝'],
+    B: ['██████╗ ', '██╔══██╗', '██████╔╝', '██╔══██╗', '██████╔╝', '╚═════╝ '],
+    O: [' ██████╗ ', '██╔═══██╗', '██║   ██║', '██║   ██║', '╚██████╔╝', ' ╚═════╝ '],
+    R: ['██████╗ ', '██╔══██╗', '██████╔╝', '██╔══██╗', '██║  ██║', '╚═╝  ╚═╝']
+};
+
+function bigWord(word) {
+    const letters = [...word].map(c => BLOCK_FONT[c]);
+    for (const l of letters) {
+        for (const row of l) {
+            if ([...row].length !== [...l[0]].length) throw new Error(`BLOCK_FONT glyph width mismatch in "${word}"`);
+        }
+    }
+    return [0, 1, 2, 3, 4, 5].map(r => letters.map(l => l[r]).join(' ')).join('\n');
+}
+
+function centerText(s, w) {
+    const total = w - s.length;
+    const l = Math.floor(total / 2);
+    const r = total - l;
+    return ' '.repeat(Math.max(0, l)) + s + ' '.repeat(Math.max(0, r));
+}
+
+function spacedCaps(s) { return s.toUpperCase().split('').join(' '); }
+
+// Fixed ASCII starfield behind everything — generated once (it's
+// decorative, not data), each star a random glyph/position/twinkle
+// timing so it doesn't look like a repeating tile.
+function renderStarfield() {
+    const el = document.getElementById('starfield');
+    if (!el) return;
+    const chars  = ['.', '·', '*', '✦', '⋆'];
+    // Mostly plain white, with a handful of colored ones (same status
+    // hues used everywhere else) scattered in for variety.
+    const colors = ['', '', '', '', 'c-blue', 'c-green', 'c-amber', 'c-red'];
+    let html = '';
+    for (let i = 0; i < 260; i++) {
+        const char     = chars[Math.floor(Math.random() * chars.length)];
+        const colorCls = colors[Math.floor(Math.random() * colors.length)];
+        const top      = (Math.random() * 100).toFixed(2);
+        const left     = (Math.random() * 100).toFixed(2);
+        const size     = (Math.random() * 10 + 8).toFixed(1);
+        const delay    = (Math.random() * 6).toFixed(2);
+        const duration = (Math.random() * 3 + 3).toFixed(2);
+        html += `<span class="star ${colorCls}" style="top:${top}%;left:${left}%;font-size:${size}px;animation-delay:${delay}s;animation-duration:${duration}s">${char}</span>`;
+    }
+    // Shooting stars — mostly invisible, then streak across in the
+    // first ~15% of their own long cycle, so each one only fires a
+    // few times a minute instead of constantly.
+    for (let i = 0; i < 6; i++) {
+        const top      = (Math.random() * 55).toFixed(2);
+        const left     = (Math.random() * 70).toFixed(2);
+        const dx       = (150 + Math.random() * 220).toFixed(0);
+        const dy       = (80 + Math.random() * 140).toFixed(0);
+        const delay    = (Math.random() * 14).toFixed(2);
+        const duration = (7 + Math.random() * 6).toFixed(2);
+        html += `<span class="shootingStar" style="top:${top}%;left:${left}%;--dx:${dx}px;--dy:${dy}px;animation-delay:${delay}s;animation-duration:${duration}s">✦</span>`;
+    }
+    el.innerHTML = html;
+}
+
+const DEEP_FIELD_HEIGHT = 3500; // px — only matters in background-only mode (see toggleBgOnly)
+
+// A second, TALLER star layer that scrolls normally (unlike the fixed
+// #starfield twinkle layer above it) — this is what background-only
+// mode actually gives you something to scroll through. A handful of
+// big glowing "landmarks" are scattered down it so scrolling has a
+// destination, not just more of the same dots.
+function renderDeepField() {
+    const el = document.getElementById('deepField');
+    if (!el) return;
+    const chars  = ['.', '·', '*', '✦', '⋆'];
+    const colors = ['', '', '', '', 'c-blue', 'c-green', 'c-amber', 'c-red'];
+    let html = '';
+    for (let i = 0; i < 320; i++) {
+        const char     = chars[Math.floor(Math.random() * chars.length)];
+        const colorCls = colors[Math.floor(Math.random() * colors.length)];
+        const top      = (Math.random() * DEEP_FIELD_HEIGHT).toFixed(0);
+        const left     = (Math.random() * 100).toFixed(2);
+        const size     = (Math.random() * 10 + 8).toFixed(1);
+        const delay    = (Math.random() * 6).toFixed(2);
+        const duration = (Math.random() * 3 + 3).toFixed(2);
+        html += `<span class="star ${colorCls}" style="top:${top}px;left:${left}%;font-size:${size}px;animation-delay:${delay}s;animation-duration:${duration}s">${char}</span>`;
+    }
+
+    const landmarks = [
+        { y: 550,  glyph: '🪐', label: 'a ringed something, far off' },
+        { y: 1300, glyph: '🌕', label: 'just a moon. nothing due today.' },
+        { y: 2050, glyph: '✧ ⋆ ✦ ⋆ ✧', label: 'a small cluster' },
+        { y: 2850, glyph: '🌌', label: 'the rest of it, further out' }
+    ];
+    for (const lm of landmarks) {
+        html += `<div class="landmark" style="top:${lm.y}px"><div class="landmarkGlyph">${lm.glyph}</div><div class="landmarkLabel">${lm.label}</div></div>`;
+    }
+
+    el.innerHTML = html;
+}
+
+// Subtle depth: the whole field drifts a few px opposite the mouse,
+// like a slow parallax layer behind the page.
+function initStarfieldParallax() {
+    const el = document.getElementById('starfield');
+    if (!el) return;
+    document.addEventListener('mousemove', (e) => {
+        const dx = (e.clientX / window.innerWidth  - 0.5) * -16;
+        const dy = (e.clientY / window.innerHeight - 0.5) * -16;
+        el.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+    });
+}
+
+// A little click-anywhere sparkle burst — purely for fun, no data
+// behind it. Appended to <body> (not #starfield) so it isn't stuck
+// behind the page content the way #starfield's z-index:-1 subtree is.
+function initClickBurst() {
+    const chars = ['✦', '·', '⋆'];
+    document.addEventListener('click', (e) => {
+        for (let i = 0; i < 8; i++) {
+            const angle = (Math.PI * 2 * i) / 8 + Math.random() * 0.3;
+            const dist  = 30 + Math.random() * 20;
+            const dx    = (Math.cos(angle) * dist).toFixed(1);
+            const dy    = (Math.sin(angle) * dist).toFixed(1);
+            const span  = document.createElement('span');
+            span.className = 'burstParticle';
+            span.textContent = chars[Math.floor(Math.random() * chars.length)];
+            span.style.left = e.clientX + 'px';
+            span.style.top  = e.clientY + 'px';
+            span.style.setProperty('--dx', dx + 'px');
+            span.style.setProperty('--dy', dy + 'px');
+            document.body.appendChild(span);
+            span.addEventListener('animationend', () => span.remove());
+        }
+    });
+}
+
+// Hides everything except the starfield — the button itself stays
+// visible (it's outside #workArea/#banner) so there's always a way
+// back. localStorage'd so it survives a refresh.
+function toggleBgOnly() {
+    const on = document.body.classList.toggle('bgOnlyMode');
+    document.getElementById('bgOnlyToggle').textContent = on ? '✕ Exit background-only' : '🌌 Background only';
+    try { localStorage.setItem('bgOnlyMode', on ? 'true' : 'false'); } catch (e) { /* fine if unavailable */ }
+}
+
+function loadBgOnlyPreference() {
+    let on = false;
+    try { on = localStorage.getItem('bgOnlyMode') === 'true'; } catch (e) { /* default false */ }
+    if (on) {
+        document.body.classList.add('bgOnlyMode');
+        document.getElementById('bgOnlyToggle').textContent = '✕ Exit background-only';
+    }
+}
+
+// Boxed banner, same convention as Readme.txt's: a ╔═╗ frame around
+// the block-letter word, a spaced-caps line, and a plain detail line
+// — but every width here is computed (see /tmp/banner_test.js check
+// during development), never hand-counted, so it can't go crooked.
+function renderBanner() {
+    const el = document.getElementById('banner');
+    if (!el) return;
+
+    const wordLines = bigWord('DASHBOARD').split('\n');
+    const subtitle1 = spacedCaps('Services Due For Update');
+    const subtitle2 = 'Tradetech Dashboard — auto-updated from live scans';
+    const width = Math.max(...wordLines.map(l => l.length), subtitle1.length, subtitle2.length);
+
+    const body = [
+        '',
+        ...wordLines.map(l => centerText(l, width)),
+        '',
+        centerText(subtitle1, width),
+        '',
+        centerText(subtitle2, width),
+        ''
+    ];
+    const top = '╔' + '═'.repeat(width + 4) + '╗';
+    const bot = '╚' + '═'.repeat(width + 4) + '╝';
+    const mid = body.map(l => '║  ' + padEnd(l, width) + '  ║').join('\n');
+
+    el.textContent = `${top}\n${mid}\n${bot}`;
+}
+
+// headers: array of strings. rows: array of arrays, each cell either
+// a plain string or { text, cls } for a colored value. rightAlign:
+// array of booleans, one per column.
+function renderAsciiTable(headers, rows, rightAlign = []) {
+    const cellText = (c) => (typeof c === 'string' ? c : c.text);
+    const widths = headers.map((h, i) => Math.max(h.length, ...rows.map(r => cellText(r[i]).length)));
+
+    const border = (l, m, r) => l + widths.map(w => '─'.repeat(w + 2)).join(m) + r;
+    const line = (cells, forceCls) => '│ ' + cells.map((c, i) => {
+        const text  = cellText(c);
+        const cls   = forceCls || (typeof c === 'string' ? '' : c.cls);
+        const padded = (rightAlign[i] ? padStart : padEnd)(text, widths[i]);
+        return cls ? `<span class="${cls}">${padded}</span>` : padded;
+    }).join(' │ ') + ' │';
+
+    // Body rows are wrapped in a span so CSS can zebra-stripe them —
+    // readability on a wide monospace table benefits from a row
+    // highlight the same way the real due-services table below has.
+    const out = [
+        border('┌', '┬', '┐'),
+        line(headers, 'taHead'),
+        border('├', '┼', '┤'),
+        ...rows.map((r, i) => `<span class="taRow${i % 2 ? ' taRowAlt' : ''}">${line(r)}</span>`),
+        border('└', '┴', '┘')
+    ];
+    return `<pre class="asciiTable">${out.join('\n')}</pre>`;
+}
+
 function daysUntil(dateStr) {
     // expects "DD-MON-YYYY" e.g. "11-JUL-2026"
     const months = { JAN:0, FEB:1, MAR:2, APR:3, MAY:4, JUN:5, JUL:6, AUG:7, SEP:8, OCT:9, NOV:10, DEC:11 };
@@ -123,7 +351,6 @@ function copyService(serviceName, event) {
     }).catch(err => console.error('Clipboard copy failed:', err));
 }
 
-let historyPoints   = [];
 let activityPoints  = [];
 let activityStreak  = 0;
 let currentBatch    = [];
@@ -140,14 +367,6 @@ async function load() {
         : '# no scan received yet -- run the scanner on the Tradetech list page first';
 
     allServices = data.services || [];
-
-    try {
-        const histRes = await fetch('/due-services/history');
-        const histData = await histRes.json();
-        historyPoints = histData.points || [];
-    } catch (e) {
-        historyPoints = [];
-    }
 
     try {
         const actRes = await fetch('/due-services/activity');
@@ -218,13 +437,15 @@ function renderStats() {
         const days = daysUntil(s.nextUpdateDate);
         counts[statusOf(s, days)]++;
     }
-    document.getElementById('stats').innerHTML = `
-        <div class="stat"><b>${allServices.length}</b> total</div>
-        <div class="stat overdue"><b>${counts.overdue}</b> overdue</div>
-        <div class="stat due-soon"><b>${counts['due-soon']}</b> due soon</div>
-        <div class="stat"><b>${counts.ok}</b> ok</div>
-        <div class="stat done"><b>${counts.done}</b> done</div>
-    `;
+    const row = [
+        String(allServices.length),
+        { text: String(counts.overdue),          cls: 'c-red' },
+        { text: String(counts['due-soon']),      cls: 'c-amber' },
+        String(counts.ok),
+        { text: String(counts.done),             cls: 'c-green' }
+    ];
+    document.getElementById('stats').innerHTML =
+        renderAsciiTable(['TOTAL', 'OVERDUE', 'DUE SOON', 'OK', 'DONE'], [row], [true, true, true, true, true]);
     return counts;
 }
 
@@ -235,46 +456,38 @@ function renderCarrierChart() {
         byCarrier[c] = (byCarrier[c] || 0) + 1;
     }
     const entries = Object.entries(byCarrier).sort((a, b) => b[1] - a[1]);
-    const max = entries.length ? entries[0][1] : 1;
-    const BAR_WIDTH = 30; // characters
 
+    const BAR_WIDTH = 20;
+    const max = entries.length ? entries[0][1] : 1;
     const rows = entries.map(([carrier, count]) => {
         const filled = Math.max(1, Math.round((count / max) * BAR_WIDTH));
         const bar = '█'.repeat(filled) + '░'.repeat(BAR_WIDTH - filled);
-        return `<div class="barRow">
-            <div class="barLabel">${carrier}</div>
-            <div class="barTrack"><span class="fill">${bar}</span></div>
-            <div class="barCount">${count}</div>
-        </div>`;
-    }).join('');
+        return [carrier, String(count), bar];
+    });
+
+    const body = entries.length
+        ? renderAsciiTable(['CARRIER', 'COUNT', ''], rows, [false, true, false])
+        : '<div id="noHistory">-- no data --</div>';
 
     return `<div class="chartPanel">
         <h2>by carrier</h2>
-        ${rows || '<div id="noHistory">-- no data --</div>'}
+        ${body}
     </div>`;
 }
 
 function renderStatusChart(counts) {
     const total = allServices.length || 1;
-    const BAR_WIDTH = 30;
+    const pct = (n) => Math.round((n / total) * 100) + '%';
     const rows = [
-        ['overdue', 'overdue', counts.overdue],
-        ['due-soon', 'due soon', counts['due-soon']],
-        ['ok', 'ok', counts.ok],
-        ['done', 'done', counts.done]
-    ].map(([cls, label, count]) => {
-        const filled = Math.max(count > 0 ? 1 : 0, Math.round((count / total) * BAR_WIDTH));
-        const bar = '█'.repeat(filled) + '░'.repeat(BAR_WIDTH - filled);
-        return `<div class="barRow">
-            <div class="barLabel">${label}</div>
-            <div class="barTrack"><span class="fill ${cls}">${bar}</span></div>
-            <div class="barCount">${count}</div>
-        </div>`;
-    }).join('');
+        [{ text: 'Overdue',  cls: 'c-red' },   { text: String(counts.overdue),      cls: 'c-red' },   pct(counts.overdue)],
+        [{ text: 'Due Soon', cls: 'c-amber' }, { text: String(counts['due-soon']),  cls: 'c-amber' },  pct(counts['due-soon'])],
+        ['OK',                                 String(counts.ok),                                     pct(counts.ok)],
+        [{ text: 'Done',     cls: 'c-green' }, { text: String(counts.done),         cls: 'c-green' },  pct(counts.done)]
+    ];
 
     return `<div class="chartPanel">
         <h2>by status</h2>
-        ${rows}
+        ${renderAsciiTable(['STATUS', 'COUNT', '%'], rows, [false, true, true])}
     </div>`;
 }
 
@@ -310,39 +523,6 @@ function renderHistogram() {
         <h2>next 14 days (day of month, day 0 = overdue)</h2>
         <div class="histogram">${bars}</div>
         <div class="histLabels">${labelsHtml}</div>
-    </div>`;
-}
-
-function renderTrendChart() {
-    const scannedPoints = historyPoints.filter(p => !p.noScan);
-
-    if (scannedPoints.length < 2) {
-        return `<div class="chartPanel wide">
-            <h2>trend, last 30 days</h2>
-            <div id="noHistory">-- need at least 2 days of scans to show a trend --</div>
-        </div>`;
-    }
-
-    const max = Math.max(1, ...scannedPoints.map(p => p.total));
-
-    const bars = historyPoints.map(p => {
-        if (p.noScan) {
-            return `<div class="trendBar noScan" style="height:2%" title="${p.date}: no scan"></div>`;
-        }
-        return `<div class="trendBar ${p.overdue > 0 ? 'hasOverdue' : ''}" style="height:${Math.round((p.total / max) * 100)}%" title="${p.date}: ${p.total} total, ${p.overdue} overdue"></div>`;
-    }).join('');
-
-    const labels = historyPoints.map((p, i) => {
-        // label every ~5th day to avoid crowding 30 labels together
-        const show = i % 5 === 0 || i === historyPoints.length - 1;
-        const d = p.date.slice(5); // "MM-DD"
-        return `<span>${show ? d : ''}</span>`;
-    }).join('');
-
-    return `<div class="chartPanel wide">
-        <h2>total queue size, last 30 days</h2>
-        <div class="trendLine">${bars}</div>
-        <div class="histLabels">${labels}</div>
     </div>`;
 }
 
@@ -453,21 +633,46 @@ function render() {
         }).join('');
     }
 
+    const remainingToday = (batchInfo && !batchInfo.weekComplete)
+        ? currentBatch.filter(s => !s.done).length
+        : null;
+
     // Floating "N left today" badge — stays visible on the right edge
     // of the screen regardless of scroll position, counting undone
     // items in TODAY's actual batch (not the full service list).
     const remainingBadge = document.getElementById('remainingTodayBadge');
     if (remainingBadge) {
-        if (!batchInfo || batchInfo.weekComplete) {
+        if (remainingToday === null) {
             remainingBadge.style.display = 'none';
         } else {
-            const remaining = currentBatch.filter(s => !s.done).length;
             remainingBadge.style.display = 'block';
-            remainingBadge.className = remaining === 0 ? 'doneToday' : '';
-            remainingBadge.innerHTML = remaining === 0
+            remainingBadge.className = remainingToday === 0 ? 'doneToday' : '';
+            remainingBadge.innerHTML = remainingToday === 0
                 ? `✅<br>all done`
-                : `<b>${remaining}</b><br>left today`;
+                : `<b>${remainingToday}</b><br>left today`;
         }
+    }
+
+    // Chill mode — nothing left to do today, whether that's because
+    // every assigned item is done OR because nothing was assigned to
+    // today at all (an empty day-slot is just as chill-worthy — both
+    // mean remainingToday === 0). Stop showing the backlog/charts
+    // (that's tomorrow's problem, literally) and give a clear
+    // "you're off the hook" screen instead, until Next Day is clicked.
+    const isChillMode = remainingToday === 0;
+    document.getElementById('stats').style.display = isChillMode ? 'none' : '';
+    document.getElementById('charts').style.display = isChillMode ? 'none' : '';
+
+    if (isChillMode) {
+        document.getElementById('content').innerHTML = `
+            <div class="chillZone">
+                <div class="chillArt">✦&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;⋆&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;🌙&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⋆&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;✦</div>
+                <div class="chillTitle">Today's batch is clear.</div>
+                <div class="chillSub">Nothing else needs you right now. Go be somewhere else for a while.</div>
+                <button class="chillNextBtn" onclick="nextBatch()">🌙 See tomorrow's batch →</button>
+            </div>`;
+        document.getElementById('count').textContent = '';
+        return;
     }
 
     document.getElementById('charts').innerHTML =
@@ -475,8 +680,7 @@ function render() {
         renderCarrierChart() +
         renderHistogram() +
         renderWeeklyPlanChart() +
-        renderActivityChart() +
-        renderTrendChart();
+        renderActivityChart();
 
     const content = document.getElementById('content');
 
@@ -828,5 +1032,11 @@ function snoozeWellnessBanner() {
     }, WELLNESS_SNOOZE_MS);
 }
 
+renderStarfield();
+renderDeepField();
+loadBgOnlyPreference();
+initStarfieldParallax();
+initClickBurst();
+renderBanner();
 loadWellnessPreference();
 load();

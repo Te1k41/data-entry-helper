@@ -171,18 +171,20 @@ const VesselRecommendation = {
     // highlight in validation.js).
     clearSuggestionHighlights() {
         document.querySelectorAll('input[data-tt-suggested]').forEach(field => {
-            field.style.outline         = "";
+            field.style.outline = "";
             field.style.backgroundColor = "";
             delete field.dataset.ttSuggested;
         });
     },
 
+    // Fill only in light mode — see port-highlighting.js's applyHighlight()
+    // for why dark mode stays outline-only.
     applySuggestionHighlights(fields) {
         this.clearSuggestionHighlights();
         fields.forEach(field => {
             if (!field) return;
             field.style.outline         = this.SUGGESTION_HIGHLIGHT.outline;
-            field.style.backgroundColor = this.SUGGESTION_HIGHLIGHT.backgroundColor;
+            field.style.backgroundColor = TradetechStars.darkModeOn ? "" : this.SUGGESTION_HIGHLIGHT.backgroundColor;
             field.dataset.ttSuggested   = "1";
         });
     },

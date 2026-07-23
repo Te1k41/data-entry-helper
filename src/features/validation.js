@@ -67,22 +67,24 @@ const SP001DateValidation = {
     clearBasingHighlight() {
         const previous = document.querySelector('input[data-tt-basing-on]');
         if (previous) {
-            previous.style.outline         = "";
+            previous.style.outline = "";
             previous.style.backgroundColor = "";
             delete previous.dataset.ttBasingOn;
         }
     },
 
+    // Fill only in light mode — see port-highlighting.js's applyHighlight()
+    // for why dark mode stays outline-only.
     applyBasingHighlight(field) {
         const previous = document.querySelector('input[data-tt-basing-on]');
         if (previous && previous !== field) {
-            previous.style.outline         = "";
+            previous.style.outline = "";
             previous.style.backgroundColor = "";
             delete previous.dataset.ttBasingOn;
         }
 
         field.style.outline         = this.BASING_HIGHLIGHT.outline;
-        field.style.backgroundColor = this.BASING_HIGHLIGHT.backgroundColor;
+        field.style.backgroundColor = TradetechStars.darkModeOn ? "" : this.BASING_HIGHLIGHT.backgroundColor;
         field.dataset.ttBasingOn    = "1";
     },
 
