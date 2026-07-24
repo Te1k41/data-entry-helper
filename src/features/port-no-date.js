@@ -58,7 +58,7 @@ const DetectPortNoDate = {
             if (!hasArrival && !hasDepart) {
                 missing.push(field.value.trim());
                 field.style.outline = "2px solid #cc0000";
-                field.style.backgroundColor = TradetechStars.darkModeOn ? "" : "#fff0f0";
+                field.style.backgroundColor = "#fff0f0";
                 field.dataset.ttPortNoDateFlagged = "1";
             }
         }

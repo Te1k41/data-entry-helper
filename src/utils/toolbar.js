@@ -204,14 +204,52 @@ const Toolbar = {
         });
     },
 
+    // User-arranged order persists across reloads. Unknown ids (never
+    // seen before, e.g. a freshly-added feature) fall in at the end in
+    // whatever order they registered — the saved order only ever needs
+    // to name ids it actually knows about.
+    _loadOrder() {
+        try {
+            return JSON.parse(localStorage.getItem("tt-toolbar-order")) || [];
+        } catch {
+            return [];
+        }
+    },
+
+    _saveOrder(order) {
+        localStorage.setItem("tt-toolbar-order", JSON.stringify(order));
+    },
+
+    _orderedActions() {
+        const order = this._loadOrder();
+        const ordered = order
+            .map(id => this._actions.find(a => a.id === id))
+            .filter(Boolean);
+        const rest = this._actions.filter(a => !order.includes(a.id));
+        return [...ordered, ...rest];
+    },
+
+    // Moves draggedId to sit just before targetId in the persisted order,
+    // then re-renders.
+    _reorder(draggedId, targetId) {
+        const current = this._orderedActions().map(a => a.id);
+        const from = current.indexOf(draggedId);
+        if (from === -1 || draggedId === targetId) return;
+        current.splice(from, 1);
+        current.splice(current.indexOf(targetId), 0, draggedId);
+        this._saveOrder(current);
+        this._render();
+    },
+
     _render() {
         this._ensurePanel();
         this._listContainer.innerHTML = "";
 
-        this._actions.forEach(action => {
+        this._orderedActions().forEach(action => {
             const btn = document.createElement("button");
             btn.type        = "button";
             btn.textContent = action.label;
+            btn.draggable   = true;
             btn.style.cssText = `
                 display: block !important;
                 width: 100% !important;
@@ -224,11 +262,33 @@ const Toolbar = {
                 font-family: monospace !important;
                 font-size: 11px !important;
                 letter-spacing: 0.5px !important;
-                cursor: pointer !important;
+                cursor: grab !important;
             `;
             btn.addEventListener("mouseenter", () => { btn.style.background = "#e8f2fa"; });
             btn.addEventListener("mouseleave", () => { btn.style.background = "#ffffff"; });
             btn.addEventListener("click", action.onClick);
+
+            // Drag-to-reorder — native HTML5 drag/drop, no library needed.
+            // Drop position is "insert before whatever you dropped it on."
+            btn.addEventListener("dragstart", (e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", action.id);
+                btn.style.opacity = "0.4";
+            });
+            btn.addEventListener("dragend", () => { btn.style.opacity = "1"; });
+            btn.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                btn.style.borderTop = "2px solid #1e5f9e";
+            });
+            btn.addEventListener("dragleave", () => {
+                btn.style.borderTop = "1px solid #dddddd";
+            });
+            btn.addEventListener("drop", (e) => {
+                e.preventDefault();
+                const draggedId = e.dataTransfer.getData("text/plain");
+                this._reorder(draggedId, action.id);
+            });
+
             this._listContainer.appendChild(btn);
         });
     }

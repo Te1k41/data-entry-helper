@@ -39,8 +39,8 @@ const VDirection = {
 
         const direction = serviceMatch[1].toUpperCase();
 
-        if (!value.trim()) return;           // nothing typed yet
-        if (/[A-Za-z]$/.test(value)) return; // already has a letter suffix — don't double up
+        if (!value.trim()) return;        // nothing typed yet
+        if (/[A-Za-z]/.test(value)) return; // already has a letter anywhere in it — don't touch it
 
         setFieldValue(target, value + direction);
     },

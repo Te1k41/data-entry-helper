@@ -28,6 +28,9 @@ const FEATURES = [
     TradetechStars,
     SP001DateValidation,
     DateSyncing,
+    ManualEtdHighlight,
+    ArrivalDepartOrderCheck,
+    PortNameReminder,
     PortHighlighting,
     VesselVoyageCorrection,
     DetectVesselNoDate,
@@ -72,5 +75,15 @@ document.addEventListener("change", (event) => {
 document.addEventListener("blur", (event) => {
     FEATURES.forEach(feature => {
         if (feature.handleBlur) feature.handleBlur(event);
+    });
+}, true);
+
+// Same again, but for "focus" (a field gaining focus). Like "blur",
+// "focus" doesn't bubble on its own — capture phase (the `true` third
+// argument) is what makes delegating it from one document-level listener
+// work. Optional part of the feature interface, most features don't need it.
+document.addEventListener("focus", (event) => {
+    FEATURES.forEach(feature => {
+        if (feature.handleFocus) feature.handleFocus(event);
     });
 }, true);

@@ -177,14 +177,12 @@ const VesselRecommendation = {
         });
     },
 
-    // Fill only in light mode — see port-highlighting.js's applyHighlight()
-    // for why dark mode stays outline-only.
     applySuggestionHighlights(fields) {
         this.clearSuggestionHighlights();
         fields.forEach(field => {
             if (!field) return;
             field.style.outline         = this.SUGGESTION_HIGHLIGHT.outline;
-            field.style.backgroundColor = TradetechStars.darkModeOn ? "" : this.SUGGESTION_HIGHLIGHT.backgroundColor;
+            field.style.backgroundColor = this.SUGGESTION_HIGHLIGHT.backgroundColor;
             field.dataset.ttSuggested   = "1";
         });
     },

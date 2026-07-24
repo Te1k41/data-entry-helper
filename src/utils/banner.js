@@ -160,6 +160,8 @@ function buildInfoStyle() {
     `;
 }
 
+const INFO_BANNER_TEXT_SHADOW = "0 0 4px #dceeff, 0 0 4px #dceeff, 0 0 6px #dceeff";
+
 function removeInfoBanner() {
     document.getElementById("tt-info-banner")?.remove();
 }
@@ -174,8 +176,8 @@ function setInfoBanner(info) {
     div.id = "tt-info-banner";
 
     div.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: 4px; text-shadow: 0 0 4px #dceeff, 0 0 4px #dceeff, 0 0 6px #dceeff;">${info.title}</div>
-        <div style="font-weight: bold; font-size: 13px; text-shadow: 0 0 4px #dceeff, 0 0 4px #dceeff, 0 0 6px #dceeff;">${info.message}</div>
+        <div style="font-weight: bold; margin-bottom: 4px; text-shadow: ${INFO_BANNER_TEXT_SHADOW};">${info.title}</div>
+        <div style="font-weight: bold; font-size: 13px; text-shadow: ${INFO_BANNER_TEXT_SHADOW};">${info.message}</div>
     `;
 
     div.style.cssText = buildInfoStyle();

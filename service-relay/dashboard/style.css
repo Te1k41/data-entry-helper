@@ -1,7 +1,10 @@
 /* Dark navy base (fits the starfield) with muted, desaturated status
    colors — not the harsh neon from earlier. Priority still reads via
    brightness/weight (see .c-red's font-weight) as well as hue, so it
-   stays legible even for anyone who can't distinguish the hues. */
+   stays legible even for anyone who can't distinguish the hues.
+   (--text-strong and --muted are brightened slightly past their original
+   values — a plain readability fix, kept even after backing out the
+   Tradetech-style sync this file briefly went through.) */
 :root {
         --bg:         #07080c;
         --bg-alt:     #10121a;
@@ -9,8 +12,8 @@
         --border:     #2a2e3d;
         --border-soft:#1c1f2a;
         --text:       #cfd3e0;
-        --text-strong:#ffffff;
-        --muted:      #8890a6;
+        --text-strong:#fafafa;
+        --muted:      #b0b0b0;
         --dim:        #565b6e;
         --blue:       #6fb8e0;
         --blue-soft:  rgba(111, 184, 224, 0.12);
@@ -167,7 +170,16 @@
        from the text in dashboard.js (renderBanner) instead of typed
        by hand, so it can't go crooked. ── */
     pre.banner {
-        color: var(--muted);
+        /* Whole banner (box border + block letters + subtitles) is one
+           plain textContent string (see renderBanner() in dashboard.js) —
+           .bannerWord below was never actually wired up as a separate
+           element, so this color/spacing applies to all of it uniformly.
+           Letter-spacing is safe to add here even though it's a monospace
+           ASCII box: it's applied equally to every character (border chars
+           included), so the box's alignment scales proportionally instead
+           of breaking. */
+        color: var(--text-strong);
+        letter-spacing: 2px;
         text-align: center;
         max-width: 1200px;
         margin: 0 auto;

@@ -89,8 +89,20 @@ const KeyboardFieldNav = {
     //   Shift+Tab  on depart_date  (row N)   → arrival_date  (row N)
     //   Shift+Tab  on arrival_date (row N)   → depart_date   (row N-1)
     //
+    // SV rows (Vessels tab) get a simpler rule instead: Tab on
+    // start_voyage or depart_date just stays in that same column,
+    // next/previous row — like ArrowDown/ArrowUp — rather than following
+    // Tradetech's native tab order sideways into One-Off/Skipped Ports.
+    //
     // Every other field is left alone — normal browser tab order.
     handleTab(prefix, row, width, rowStr, field, event) {
+        if (prefix === "SV") {
+            if (field === "start_voyage" || field === "depart_date") {
+                this.moveVertical(prefix, row, width, field, event.shiftKey ? -1 : 1, event);
+            }
+            return;
+        }
+
         if (prefix !== "SP") return; // arrival/depart pair only exists on SP rows
 
         if (event.shiftKey) {
