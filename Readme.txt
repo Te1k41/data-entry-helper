@@ -9,7 +9,7 @@
 ║    ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝    ╚══════╝╚═╝  ╚═══╝   ╚═╝     ║
 ║                                                                      ║
 ║              H E L P E R   —   Chrome Extension                      ║
-║            Tradetech Shipping Form Automation v3.0                   ║
+║                Shipping Form Automation v3.0                         ║
 ║                                                                      ║
 ╚══════════════════════════════════════════════════════════════════════╝
 ```
