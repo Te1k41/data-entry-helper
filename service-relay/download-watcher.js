@@ -10,6 +10,7 @@ const path     = require("path");
 const chokidar = require("chokidar");
 const { WATCH_FOLDER, WATCH_EXTS } = require("./config");
 const relayState = require("./relay-state");
+const { extractAndSave } = require("./proof-extract");
 
 function startWatcher() {
     const watcher = chokidar.watch(WATCH_FOLDER, {
@@ -65,8 +66,22 @@ function startWatcher() {
             }
 
             fs.rename(filePath, finalPath, (err) => {
-                if (err) console.error("❌ Rename failed:", err);
-                else     console.log(`✅ Renamed: ${path.basename(filePath)} → ${path.basename(finalPath)}`);
+                if (err) {
+                    console.error("❌ Rename failed:", err);
+                    return;
+                }
+                console.log(`✅ Renamed: ${path.basename(filePath)} → ${path.basename(finalPath)}`);
+
+                // Best-effort — a proof that fails to parse (wrong operator
+                // parser, unsupported type, no active guideline yet) must
+                // never break renaming for the next file in the queue.
+                extractAndSave(finalPath)
+                    .then(({ service, vessels }) => {
+                        console.log(`📄 Auto-extracted proof for ${service}: ${vessels} vessel(s) → extracted-proofs.xlsx`);
+                    })
+                    .catch(err => {
+                        console.warn(`⚠ Auto-extract skipped for ${path.basename(finalPath)}: ${err.message}`);
+                    });
             });
         }, 300);
     });

@@ -8,6 +8,7 @@
 const WebSocket = require("ws");
 const relayState = require("./relay-state");
 const { runMergeCleanup } = require("./merge-cleanup");
+const scheduleGuidelineStore = require("./schedule-guideline-store");
 
 let wss = null;
 
@@ -61,6 +62,10 @@ function init(httpServer) {
                     setTimeout(runMergeCleanup, 3000);
                 }
 
+                if (data.type === "schedule-snapshot") {
+                    scheduleGuidelineStore.recordSnapshot(ws, data);
+                }
+
             } catch (err) {
                 console.error("❌ Bad message:", err);
             }
@@ -68,6 +73,11 @@ function init(httpServer) {
 
         ws.on("close", () => {
             console.log("🔌 Client disconnected");
+            try {
+                scheduleGuidelineStore.releaseIfOwner(ws);
+            } catch (err) {
+                console.error("❌ releaseIfOwner failed:", err);
+            }
         });
     });
 

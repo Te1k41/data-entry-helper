@@ -45,10 +45,20 @@ function handleSettingsJs(req, res) {
     serveFile(res, "settings.js", "application/javascript");
 }
 
+function handlePortsPage(req, res) {
+    serveFile(res, "ports.html", "text/html");
+}
+
+function handlePortsJs(req, res) {
+    serveFile(res, "ports.js", "application/javascript");
+}
+
 module.exports = {
     handleDashboardIndex,
     handleDashboardCss,
     handleDashboardJs,
     handleSettingsPage,
     handleSettingsJs,
+    handlePortsPage,
+    handlePortsJs,
 };

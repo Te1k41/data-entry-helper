@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "chokidar": "^5.0.0",
-    "ws": "^8.21.0"
+    "pdf-parse": "^2.4.5",
+    "ws": "^8.21.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz"
   }
 }

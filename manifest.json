@@ -46,6 +46,7 @@
             "src/features/voyage-direction.js",
             "src/features/resize-toggle.js",
             "src/features/service-relay-send.js",
+            "src/features/schedule-capture.js",
             "src/features/schedule-cascade.js",
             "src/features/vessel-recommendation.js",
             "src/features/rearrange-vessels.js",

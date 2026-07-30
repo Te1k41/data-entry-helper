@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>tt-mappings</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+<style>
+    .portsForm { max-width: 720px; margin: 0 auto; }
+    table.portsTable { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    table.portsTable th, table.portsTable td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
+    table.portsTable th { color: var(--blue); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+    table.portsTable input { width: 100%; font-family: var(--mono); font-size: 13px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+    table.portsTable input:focus { outline: none; border-color: var(--blue); }
+    #saveMsg { margin-top: 14px; font-size: 12px; }
+    #saveMsg.ok { color: var(--green); }
+    #saveMsg.err { color: var(--red); }
+    .empty { color: var(--dim); font-style: italic; padding: 16px; text-align: center; }
+    .sectionGap { margin-top: 32px; }
+    .saveBar {
+        position: sticky; top: 0; z-index: 10; text-align: center; padding: 10px 0;
+        background: var(--bg); border-bottom: 1px solid var(--border-soft); margin-bottom: 16px;
+    }
+    .saveBar button { font-size: 14px; padding: 8px 20px; }
+
+    .batchPanel {
+        position: fixed; top: 90px; right: 16px; width: 200px; max-height: 70vh;
+        overflow-y: auto; background: var(--bg); border: 1px solid var(--border-soft);
+        border-radius: 6px; padding: 10px 12px; font-size: 12px;
+    }
+    .batchPanel h3 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--blue); }
+    .batchDay { font-weight: bold; margin-bottom: 6px; }
+    .batchList { list-style: none; margin: 0; padding: 0; }
+    .batchList li { padding: 3px 0; border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .batchList li.batchDone { color: var(--dim); text-decoration: line-through; }
+    .batchList li span:first-child { cursor: pointer; flex: 1; }
+    .batchList li span:first-child:hover { color: var(--blue); }
+    .batchCarrier { color: var(--dim); font-size: 11px; }
+    .batchBtn { padding: 1px 6px; font-size: 11px; line-height: 1.4; flex-shrink: 0; }
+    @media (max-width: 1100px) { .batchPanel { display: none; } }
+</style>
+</head>
+<body>
+<pre class="banner">╔══════════════════════════════════════════╗
+║  PORT &amp; VESSEL MAPPINGS — TT DATA ENTRY   ║
+╚══════════════════════════════════════════╝</pre>
+<div style="text-align:center; margin-bottom: 12px;">
+    <button onclick="location.href='/dashboard'">← Dashboard</button>
+    <button onclick="loadAll()">↻ Refresh</button>
+</div>
+
+<div class="saveBar">
+    <button onclick="saveEverything()">💾 Save Everything</button>
+    <button onclick="recalc()" title="Re-scan the watch folder for this service's proof file and refresh the Ports/Vessels listing below">🔁 Recalculate</button>
+    <span id="saveMsg"></span>
+</div>
+
+<div class="batchPanel">
+    <h3>Current Batch</h3>
+    <div id="batchWrap"><div class="empty">Loading…</div></div>
+</div>
+
+<main>
+    <div class="chartPanel wide portsForm">
+        <h2>learn port mappings</h2>
+        <div id="tableWrap"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="chartPanel wide portsForm sectionGap">
+        <h2>vessel name → lloyds code (global, shared across every service)</h2>
+        <div id="vesselsWrap"><div class="empty">Loading…</div></div>
+        <div style="margin-top:16px;">
+            <input type="text" id="newVessel" placeholder="Add a vessel not seen yet" style="width:45%; padding:6px 8px;">
+            <input type="text" id="newCode" placeholder="Lloyds code" style="width:25%; padding:6px 8px;">
+        </div>
+    </div>
+</main>
+
+<script src="/dashboard/ports.js"></script>
+</body>
+</html>

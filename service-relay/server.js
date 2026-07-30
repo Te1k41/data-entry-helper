@@ -14,15 +14,40 @@ const filesRoutes       = require("./routes/files");
 const dueServicesRoutes = require("./routes/due-services");
 const dashboardRoutes   = require("./routes/dashboard");
 const settingsRoutes    = require("./routes/settings");
+const proofExtractRoutes = require("./routes/proof-extract");
+const scheduleGuidelineRoutes = require("./routes/schedule-guideline");
+const resultRoutes = require("./routes/result");
+const vesselDictionaryRoutes = require("./routes/vessel-dictionary");
 
 const relaySocket     = require("./relay-socket");
 const downloadWatcher = require("./download-watcher");
 const dueServicesStore = require("./due-services-store");
+const scheduleGuidelineStore = require("./schedule-guideline-store");
+const portDictionary = require("./port-dictionary");
+const vesselDictionary = require("./vessel-dictionary");
 
 dueServicesStore.loadFromDisk();
+scheduleGuidelineStore.loadFromDisk();
+portDictionary.loadFromDisk();
+vesselDictionary.loadFromDisk();
 
 // ── HTTP Server ──────────────────────────────────────────────
+// Wrapped in try/catch so a bug in one route (a sync throw, not
+// caught by that route's own async handler) returns a 500 instead
+// of crashing the whole process and taking every other route with it.
 const server = http.createServer((req, res) => {
+    try {
+        handleRequest(req, res);
+    } catch (err) {
+        console.error("❌ Unhandled route error:", err);
+        if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+    }
+});
+
+function handleRequest(req, res) {
     res.setHeader("Access-Control-Allow-Origin",  "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -47,6 +72,30 @@ const server = http.createServer((req, res) => {
 
     if (req.method === "GET" && req.url.startsWith("/file")) {
         return filesRoutes.handleFile(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/proof/extract") {
+        return proofExtractRoutes.handleExtract(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/proof/extract/confirm") {
+        return proofExtractRoutes.handleConfirm(req, res);
+    }
+
+    if (req.method === "GET" && req.url.startsWith("/schedule-guideline")) {
+        return scheduleGuidelineRoutes.handleGetGuideline(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/result/rebuild") {
+        return resultRoutes.handleRebuild(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/port-dictionary/import") {
+        return resultRoutes.handleImportMappings(req, res);
+    }
+
+    if (req.method === "GET" && req.url === "/result") {
+        return resultRoutes.handleGetResult(req, res);
     }
 
     if (req.method === "POST" && req.url === "/due-services") {
@@ -125,9 +174,33 @@ const server = http.createServer((req, res) => {
         return dashboardRoutes.handleSettingsJs(req, res);
     }
 
+    if (req.method === "GET" && req.url === "/dashboard/ports") {
+        return dashboardRoutes.handlePortsPage(req, res);
+    }
+
+    if (req.method === "GET" && req.url === "/dashboard/ports.js") {
+        return dashboardRoutes.handlePortsJs(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/port-dictionary/learn-batch") {
+        return resultRoutes.handleLearnBatch(req, res);
+    }
+
+    if (req.method === "GET" && req.url === "/vessel-dictionary") {
+        return vesselDictionaryRoutes.handleGetAll(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/vessel-dictionary/learn-batch") {
+        return vesselDictionaryRoutes.handleLearnBatch(req, res);
+    }
+
+    if (req.method === "POST" && req.url === "/vessel-dictionary/remove") {
+        return vesselDictionaryRoutes.handleRemove(req, res);
+    }
+
     res.writeHead(404);
     res.end("Not found");
-});
+}
 
 // ── WebSocket + Download Watcher ─────────────────────────────
 relaySocket.init(server);

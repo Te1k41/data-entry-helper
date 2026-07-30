@@ -39,6 +39,7 @@ const FEATURES = [
     VDirection,
     ResizeToggleOff,
     ServiceRelaySend,
+    ScheduleCapture,
     ScheduleCascade,
     VesselRecommendation,
     RearrangeVessels,
