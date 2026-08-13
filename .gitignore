@@ -1,3 +1,4 @@
 node_modules/
 service-relay/node_modules/
 service-relay/settings.json
+graphify-out/
