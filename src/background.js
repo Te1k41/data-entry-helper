@@ -26,6 +26,17 @@ function connectWebSocket() {
                 renamingEnabled  = data.renamingEnabled !== false;
                 chrome.storage.local.set({ renamingEnabled });
                 console.log("📥 Init state received:", lastServiceCode, renamingEnabled);
+
+                // This fires on every (re)connect — server restart, the
+                // service worker waking from suspend, a network blip —
+                // not just the very first connect. Any tab whose button
+                // was already open before that reconnect has a LOCAL
+                // `enabled` that can now be stale against the server's
+                // authoritative value (e.g. relay-state.js resets to its
+                // hardcoded default on every server restart). Without
+                // this broadcast, that tab's button silently drifts out
+                // of sync with what the server will actually enforce.
+                broadcastRenameState();
             }
 
             if (data.type === "service") {

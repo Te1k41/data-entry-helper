@@ -17,6 +17,7 @@ const store = require("../due-services-store");
 const activityLog = require("../activity-log-store");
 const currentBatchStore = require("../current-batch-store");
 const { computeWeeklyPlan } = require("../due-services-trim");
+const relaySocket = require("../relay-socket");
 
 function readBody(req) {
     return new Promise((resolve, reject) => {
@@ -34,42 +35,19 @@ function readBody(req) {
 
 // Extension posts its latest scan of Tradetech's due-soon services here.
 //
-// IMPORTANT: a fresh scan is merged with what we already have, not a
-// blind replace. Without this, marking a service "Done" (which sets a
-// LOCAL nextUpdateDate override, not a change on Tradetech itself)
-// would get silently wiped out the next time you scan, since Tradetech
-// would still report its old, unchanged date. The merge keeps a
-// service's "done" override in place until Tradetech's own real date
-// catches up to (or passes) it — at which point the real update
-// actually happened, so we drop the override and trust Tradetech again.
+// Blind replace — whatever Tradetech reports right now IS the truth.
+// No local "done" override survives a rescan: Mark Done only hides a
+// service until the NEXT scan, not until Tradetech's own date catches
+// up to some locally-invented target. This is deliberately simple —
+// see git history for the previous date-comparison merge approach,
+// which was more "clever" but harder to reason about and trust.
 async function handlePostDueServices(req, res) {
     try {
         const parsed  = await readBody(req);
         const incoming = Array.isArray(parsed.services) ? parsed.services : [];
         console.log(`📋 Due-services scan received: ${incoming.length} total service(s) from extension — storing ALL of them`);
 
-        const previousByRecord = new Map(store.getAll().map(s => [s.record, s]));
-
-        const merged = incoming.map(fresh => {
-            const prev = previousByRecord.get(fresh.record);
-
-            if (prev?.done) {
-                const prevDate  = parseTTDate(prev.nextUpdateDate);
-                const freshDate = parseTTDate(fresh.nextUpdateDate);
-
-                // Real Tradetech date hasn't caught up to our local
-                // "done" target yet — keep showing our override.
-                if (prevDate && freshDate && freshDate < prevDate) {
-                    return { ...fresh, nextUpdateDate: prev.nextUpdateDate, done: true };
-                }
-                // Otherwise Tradetech's real date now matches/exceeds
-                // it — the update genuinely happened, trust it.
-            }
-
-            return fresh;
-        });
-
-        store.setAll(merged, new Date().toISOString());
+        store.setAll(incoming, new Date().toISOString());
         store.save();
 
         // Validate the batch state IMMEDIATELY, right when fresh data
@@ -79,10 +57,16 @@ async function handlePostDueServices(req, res) {
         // means that check (and any correction) happens on every scan,
         // so the batch is never sitting around wrong/stale between
         // scans, even if nobody's looked at the dashboard in a while.
-        currentBatchStore.getCurrentBatch(merged);
+        currentBatchStore.getCurrentBatch(incoming);
+
+        // Tell any open dashboard tab a fresh scan landed — the scan
+        // itself comes in from the extension on a different tab (the
+        // Tradetech page), so without this push an already-open
+        // dashboard has no way to know new data is sitting there.
+        relaySocket.broadcast({ type: "due-services-updated" });
 
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true, count: merged.length }));
+        res.end(JSON.stringify({ success: true, count: incoming.length }));
     } catch (err) {
         console.error("❌ Bad /due-services body:", err);
         res.writeHead(400, { "Content-Type": "application/json" });

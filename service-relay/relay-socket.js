@@ -47,12 +47,14 @@ function init(httpServer) {
 
                 if (data.type === "renaming") {
                     relayState.renamingEnabled = data.enabled;
+                    relayState.save();
                     console.log("🔄 Renaming enabled:", relayState.renamingEnabled);
                     broadcast({ type: "renaming", enabled: relayState.renamingEnabled });
                 }
 
                 if (data.type === "toolbar-collapsed") {
                     relayState.toolbarCollapsed = data.collapsed;
+                    relayState.save();
                     console.log("🧰 Toolbar collapsed:", relayState.toolbarCollapsed);
                     broadcast({ type: "toolbar-collapsed", collapsed: relayState.toolbarCollapsed });
                 }

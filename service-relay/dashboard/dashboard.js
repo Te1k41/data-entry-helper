@@ -1032,6 +1032,21 @@ function snoozeWellnessBanner() {
     }, WELLNESS_SNOOZE_MS);
 }
 
+// Live-refresh when the extension posts a fresh scan from the
+// Tradetech tab — that POST lands on the server, not on this page,
+// so without this the dashboard would just sit there showing stale
+// data until manually reloaded.
+function connectLiveUpdates() {
+    const ws = new WebSocket(`ws://${location.host}`);
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === "due-services-updated") load();
+        } catch (e) { /* ignore non-JSON / unrelated messages */ }
+    };
+    ws.onclose = () => setTimeout(connectLiveUpdates, 2000);
+}
+
 renderStarfield();
 renderDeepField();
 loadBgOnlyPreference();
@@ -1040,3 +1055,4 @@ initClickBurst();
 renderBanner();
 loadWellnessPreference();
 load();
+connectLiveUpdates();
