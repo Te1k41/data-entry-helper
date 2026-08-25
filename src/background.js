@@ -7,6 +7,24 @@ let lastServiceCode  = "";
 let renamingEnabled  = true;
 let ws               = null;
 
+// Set whenever a toggle click can't reach the server immediately (WS
+// not open — mid-reconnect after a service-worker suspend, a network
+// blip, a server restart). Without this, that click silently updates
+// the local tabs/storage only, the server never learns about it, and
+// the NEXT reconnect's "init" then pushes the server's still-OLD
+// value back out — clobbering the click with no indication it never
+// actually took effect. Flushed the moment the socket reopens.
+let pendingRenamingSend  = null;
+
+// True from the moment a pending send is flushed until its echo comes
+// back (or a safety timeout fires). The server's "init" on reconnect
+// is sent the instant it accepts the connection — using its OLD
+// value, before it's seen our flushed message — and is guaranteed to
+// arrive before that message's own "renaming" echo does. Without this
+// guard, applying init's stale value would flash the button to the
+// wrong label for one round trip before self-correcting.
+let awaitingRenamingEcho = false;
+
 console.log("🛰 Background script loaded");
 
 // ── WebSocket Connection ─────────────────────────────────────
@@ -15,6 +33,22 @@ function connectWebSocket() {
 
     ws.addEventListener("open", () => {
         console.log("🔌 Background connected to relay");
+
+        // Deliver whatever click(s) couldn't reach the server while we
+        // were disconnected, before the server's own "init" (which
+        // arrives right after this on the same connection) has a
+        // chance to overwrite it with a stale value.
+        if (pendingRenamingSend !== null) {
+            ws.send(JSON.stringify({ type: "renaming", enabled: pendingRenamingSend }));
+            console.log("📤 Flushed pending renaming state after reconnect:", pendingRenamingSend);
+            pendingRenamingSend  = null;
+            awaitingRenamingEcho = true;
+            // Safety net: if the echo never comes back (e.g. disconnects
+            // again right away), don't get stuck ignoring every future
+            // "init" forever — give up waiting after 5s and go back to
+            // trusting the server normally.
+            setTimeout(() => { awaitingRenamingEcho = false; }, 5000);
+        }
     });
 
     ws.addEventListener("message", (event) => {
@@ -23,20 +57,27 @@ function connectWebSocket() {
 
             if (data.type === "init") {
                 lastServiceCode  = data.serviceCode   || "";
-                renamingEnabled  = data.renamingEnabled !== false;
-                chrome.storage.local.set({ renamingEnabled });
-                console.log("📥 Init state received:", lastServiceCode, renamingEnabled);
+                console.log("📥 Init state received:", lastServiceCode, data.renamingEnabled);
 
-                // This fires on every (re)connect — server restart, the
-                // service worker waking from suspend, a network blip —
-                // not just the very first connect. Any tab whose button
-                // was already open before that reconnect has a LOCAL
-                // `enabled` that can now be stale against the server's
-                // authoritative value (e.g. relay-state.js resets to its
-                // hardcoded default on every server restart). Without
-                // this broadcast, that tab's button silently drifts out
-                // of sync with what the server will actually enforce.
-                broadcastRenameState();
+                // Skip applying init's renamingEnabled if we just flushed
+                // a pending click and are waiting for ITS echo instead —
+                // init's value is guaranteed to be stale in that case
+                // (see awaitingRenamingEcho above).
+                if (!awaitingRenamingEcho) {
+                    renamingEnabled = data.renamingEnabled !== false;
+                    chrome.storage.local.set({ renamingEnabled });
+
+                    // This fires on every (re)connect — server restart, the
+                    // service worker waking from suspend, a network blip —
+                    // not just the very first connect. Any tab whose button
+                    // was already open before that reconnect has a LOCAL
+                    // `enabled` that can now be stale against the server's
+                    // authoritative value (e.g. relay-state.js resets to its
+                    // hardcoded default on every server restart). Without
+                    // this broadcast, that tab's button silently drifts out
+                    // of sync with what the server will actually enforce.
+                    broadcastRenameState();
+                }
             }
 
             if (data.type === "service") {
@@ -47,6 +88,7 @@ function connectWebSocket() {
             if (data.type === "renaming") {
                 renamingEnabled = data.enabled;
                 chrome.storage.local.set({ renamingEnabled });
+                awaitingRenamingEcho = false;
                 console.log("🔄 Renaming enabled:", renamingEnabled);
                 broadcastRenameState();
             }
@@ -97,6 +139,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         chrome.storage.local.set({ renamingEnabled });
         if (ws?.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "renaming", enabled: renamingEnabled }));
+        } else {
+            // Socket isn't open right now (reconnecting) — remember this
+            // so connectWebSocket()'s "open" handler sends it the moment
+            // the connection comes back, instead of the click just
+            // vanishing with the server never finding out.
+            pendingRenamingSend = renamingEnabled;
         }
         broadcastRenameState();
         return;
