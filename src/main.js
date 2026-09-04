@@ -10,11 +10,26 @@
 // a field using setFieldValue(), that fires a synthetic "change"
 // event, which would normally trigger this same listener again
 // and could cause an infinite loop of fields updating each other.
-// Any feature that writes to a field sets syncing = true before
-// the write and syncing = false after. Other features check
-// `if (syncing) return;` at the top of handle() to bail out
-// while a write is already in progress.
-let syncing = false;
+// Writers increment/decrement a depth counter rather than toggling a boolean.
+// A nested writer can therefore finish without exposing the still-running
+// outer write to change handlers.
+let syncingDepth = 0;
+
+function beginSync() {
+    syncingDepth++;
+}
+
+function endSync() {
+    if (syncingDepth === 0) {
+        console.error("❌ Sync guard released without a matching acquisition");
+        return;
+    }
+    syncingDepth--;
+}
+
+function isSyncing() {
+    return syncingDepth > 0;
+}
 
 console.log("🚀 ETA-to-ETD Extension Loaded");
 
@@ -30,9 +45,20 @@ const FEATURES = [
     DateSyncing,
     ManualEtdHighlight,
     ArrivalDepartOrderCheck,
+    PortDateOrderCheck,
+    InsertPort,
+    DeletePort,
+    PortActionHistory,
     PortNameReminder,
+    VesselNameReminder,
     PortHighlighting,
+    AwrFlag,
+    LastForeignPortCheck,
     VesselVoyageCorrection,
+    DuplicateVessel,
+    DeleteVessel,
+    VesselActionHistory,
+    DuplicateVesselCheck,
     DetectVesselNoDate,
     DetectPortNoDate,
     VesselTBA,
@@ -46,18 +72,35 @@ const FEATURES = [
     MergeDownloadSignal,
     UploadProof,
     KeyboardFieldNav,
+    SelectFieldOnFocus,
     AutoNavSchedules,
     DueServiceScanner,
+    SchedulePreviewTools,
     DateStepButtons,
     VoyageStepButtons,
+    DateCalculator,
+    LiveCheck,
 
     // Add new features here ↓
     // MyNewFeature,
 ];
 
+function runFeature(feature, method, event) {
+    if (typeof feature[method] !== "function") return;
+    try {
+        feature[method](event);
+    } catch (err) {
+        const name = feature && feature.constructor && feature.constructor.name !== "Object"
+            ? feature.constructor.name
+            : FEATURES.findIndex(candidate => candidate === feature);
+        console.error(`❌ Feature ${method} failed (${name}):`, err);
+    }
+}
+
 // Run every feature's one-time setup once, when the content
-// script first loads (creates buttons, does an initial scan, etc.)
-FEATURES.forEach(feature => feature.init());
+// script first loads (creates buttons, does an initial scan, etc.). A broken
+// feature is isolated so every later feature still receives this init pass.
+FEATURES.forEach(feature => runFeature(feature, "init"));
 
 // Single delegated listener on the whole document, using the
 // capture phase (the `true` third argument) so it fires before
@@ -67,16 +110,14 @@ FEATURES.forEach(feature => feature.init());
 // — each feature decides for itself (usually via event.target.name)
 // whether it actually cares about this particular field.
 document.addEventListener("change", (event) => {
-    FEATURES.forEach(feature => feature.handle(event));
+    FEATURES.forEach(feature => runFeature(feature, "handle", event));
 }, true);
 
 // Same delegation pattern, but for "blur" (focus leaving a field).
 // Only calls handleBlur on features that define it — this is an
 // optional part of the feature interface, most features don't need it.
 document.addEventListener("blur", (event) => {
-    FEATURES.forEach(feature => {
-        if (feature.handleBlur) feature.handleBlur(event);
-    });
+    FEATURES.forEach(feature => runFeature(feature, "handleBlur", event));
 }, true);
 
 // Same again, but for "focus" (a field gaining focus). Like "blur",
@@ -84,7 +125,5 @@ document.addEventListener("blur", (event) => {
 // argument) is what makes delegating it from one document-level listener
 // work. Optional part of the feature interface, most features don't need it.
 document.addEventListener("focus", (event) => {
-    FEATURES.forEach(feature => {
-        if (feature.handleFocus) feature.handleFocus(event);
-    });
+    FEATURES.forEach(feature => runFeature(feature, "handleFocus", event));
 }, true);

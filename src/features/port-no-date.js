@@ -46,8 +46,8 @@ const DetectPortNoDate = {
 
             const match = field.name.match(/^SP(\d+)_port_name$/);
             const num = match[1];
-            const arrivalField = document.querySelector(`input[name="SP${num}_arrival_date"]`);
-            const departField  = document.querySelector(`input[name="SP${num}_depart_date"]`);
+            const arrivalField = PortRow.field(num, "arrival_date");
+            const departField  = PortRow.field(num, "depart_date");
 
             const hasArrival = arrivalField && arrivalField.value.trim();
             const hasDepart  = departField && departField.value.trim();

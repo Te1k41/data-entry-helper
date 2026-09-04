@@ -41,7 +41,7 @@ const DetectVesselNoDate = {
 
             const match = field.name.match(/^SV(\d+)_vessel_name$/);
             const num = match[1];
-            const dateField = document.querySelector(`input[name="SV${num}_depart_date"]`);
+            const dateField = VesselRow.field(num, "depart_date");
 
             if (!dateField || !dateField.value.trim()) {
                 missing.push(field.value.trim());

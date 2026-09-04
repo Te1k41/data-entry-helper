@@ -10,6 +10,8 @@
 //    Toolbar.register({
 //        id:      "tt-my-action",
 //        label:   "🔧 Do The Thing",
+//        title:   "Explain the result of clicking it",
+//        group:   "misc",
 //        onClick: () => this.doTheThing()
 //    });
 //
@@ -28,6 +30,18 @@ const Toolbar = {
     _listContainer: null,
     _collapsed:     false,
     _ws:            null,
+    _socketClient:  null,
+    _relayStatus:   "connecting",
+    _relayUnsubscribe: null,
+
+    _groupOrder: ["vessel", "port", "date", "proof", "misc"],
+    _groupLabels: {
+        vessel: "VESSEL",
+        port:   "PORT",
+        date:   "DATE",
+        proof:  "PROOF",
+        misc:   "OTHER"
+    },
 
     register(action) {
         if (this._actions.find(a => a.id === action.id)) return; // avoid dupes if init() ever runs twice
@@ -35,10 +49,11 @@ const Toolbar = {
         this._render();
     },
 
-    updateLabel(id, newLabel) {
+    updateLabel(id, newLabel, newTitle) {
         const action = this._actions.find(a => a.id === id);
         if (!action) return;
         action.label = newLabel;
+        if (newTitle !== undefined) action.title = newTitle;
         this._render();
     },
 
@@ -48,15 +63,17 @@ const Toolbar = {
     // clicks broadcast their new state out; messages from OTHER tabs
     // update this tab's panel without re-broadcasting (no feedback loop).
     _connectWebSocket() {
-        if (this._ws) return; // already connecting/connected
+        if (this._socketClient) return; // helper already owns connecting/reconnecting
 
-        this._ws = new WebSocket("ws://localhost:3737");
-
-        this._ws.addEventListener("open", () => {
-            console.log("🔌 Toolbar connected to relay");
+        this._relayUnsubscribe = onRelayConnectionStatusChange((state) => {
+            this._relayStatus = state;
+            if (this._listContainer) this._render();
         });
 
-        this._ws.addEventListener("message", (event) => {
+        this._socketClient = connectRelaySocket({
+            onSocket: (socket) => { this._ws = socket; },
+
+            onMessage: (event) => {
             try {
                 const data = JSON.parse(event.data);
 
@@ -70,16 +87,7 @@ const Toolbar = {
             } catch (err) {
                 console.error("❌ Toolbar bad WebSocket message:", err);
             }
-        });
-
-        this._ws.addEventListener("close", () => {
-            console.log("🔌 Toolbar disconnected from relay — reconnecting in 3s");
-            this._ws = null;
-            setTimeout(() => this._connectWebSocket(), 3000);
-        });
-
-        this._ws.addEventListener("error", () => {
-            console.error("❌ Toolbar WebSocket error — will retry on close");
+            }
         });
     },
 
@@ -204,10 +212,10 @@ const Toolbar = {
         });
     },
 
-    // User-arranged order persists across reloads. Unknown ids (never
-    // seen before, e.g. a freshly-added feature) fall in at the end in
-    // whatever order they registered — the saved order only ever needs
-    // to name ids it actually knows about.
+    // User-arranged order persists across reloads. It is projected into
+    // each group rather than flattening the panel: old saved orders keep
+    // their relative choices, while newly-added actions land in their
+    // intended section instead of an unrelated end-of-list bucket.
     _loadOrder() {
         try {
             return JSON.parse(localStorage.getItem("tt-toolbar-order")) || [];
@@ -222,16 +230,32 @@ const Toolbar = {
 
     _orderedActions() {
         const order = this._loadOrder();
-        const ordered = order
-            .map(id => this._actions.find(a => a.id === id))
-            .filter(Boolean);
-        const rest = this._actions.filter(a => !order.includes(a.id));
-        return [...ordered, ...rest];
+        const savedIndex = new Map(order.map((id, index) => [id, index]));
+        const registrationIndex = new Map(this._actions.map((action, index) => [action.id, index]));
+        const groupIndex = group => {
+            const index = this._groupOrder.indexOf(group);
+            return index === -1 ? this._groupOrder.length : index;
+        };
+
+        return [...this._actions].sort((a, b) => {
+            const groupDifference = groupIndex(a.group) - groupIndex(b.group);
+            if (groupDifference) return groupDifference;
+
+            const aSaved = savedIndex.has(a.id);
+            const bSaved = savedIndex.has(b.id);
+            if (aSaved && bSaved) return savedIndex.get(a.id) - savedIndex.get(b.id);
+            if (aSaved !== bSaved) return aSaved ? -1 : 1;
+            return registrationIndex.get(a.id) - registrationIndex.get(b.id);
+        });
     },
 
     // Moves draggedId to sit just before targetId in the persisted order,
     // then re-renders.
     _reorder(draggedId, targetId) {
+        const dragged = this._actions.find(action => action.id === draggedId);
+        const target = this._actions.find(action => action.id === targetId);
+        if (!dragged || !target || dragged.group !== target.group) return;
+
         const current = this._orderedActions().map(a => a.id);
         const from = current.indexOf(draggedId);
         if (from === -1 || draggedId === targetId) return;
@@ -245,26 +269,51 @@ const Toolbar = {
         this._ensurePanel();
         this._listContainer.innerHTML = "";
 
+        let renderedGroup = null;
         this._orderedActions().forEach(action => {
+            const group = action.group || "misc";
+            if (group !== renderedGroup) {
+                const heading = document.createElement("div");
+                heading.textContent = this._groupLabels[group] || group.toUpperCase();
+                heading.style.cssText = `
+                    padding: 6px 10px 3px !important;
+                    color: #666666 !important;
+                    background: #f5f5f5 !important;
+                    border-top: 1px solid #dddddd !important;
+                    font-family: monospace !important;
+                    font-size: 9px !important;
+                    font-weight: bold !important;
+                    letter-spacing: 1px !important;
+                `;
+                this._listContainer.appendChild(heading);
+                renderedGroup = group;
+            }
+
             const btn = document.createElement("button");
             btn.type        = "button";
             btn.textContent = action.label;
-            btn.draggable   = true;
+            const relayUnavailable = action.requiresRelay && this._relayStatus !== "connected";
+            btn.title       = relayUnavailable
+                ? (this._relayStatus === "connecting" ? "Checking for local relay server…" : "Requires the optional local relay server")
+                : (action.title || action.label);
+            btn.disabled    = relayUnavailable;
+            btn.draggable   = action.draggable !== false;
             btn.style.cssText = `
                 display: block !important;
                 width: 100% !important;
                 text-align: left !important;
                 background: #ffffff !important;
-                color: #000000 !important;
+                color: ${relayUnavailable ? "#777777" : "#000000"} !important;
                 border: none !important;
                 border-top: 1px solid #dddddd !important;
                 padding: 7px 10px !important;
                 font-family: monospace !important;
                 font-size: 11px !important;
                 letter-spacing: 0.5px !important;
-                cursor: grab !important;
+                cursor: ${relayUnavailable ? "not-allowed" : (action.draggable !== false ? "grab" : "pointer")} !important;
+                opacity: ${relayUnavailable ? "0.65" : "1"} !important;
             `;
-            btn.addEventListener("mouseenter", () => { btn.style.background = "#e8f2fa"; });
+            btn.addEventListener("mouseenter", () => { if (!btn.disabled) btn.style.background = "#e8f2fa"; });
             btn.addEventListener("mouseleave", () => { btn.style.background = "#ffffff"; });
             btn.addEventListener("click", action.onClick);
 
@@ -285,6 +334,7 @@ const Toolbar = {
             });
             btn.addEventListener("drop", (e) => {
                 e.preventDefault();
+                btn.style.borderTop = "1px solid #dddddd";
                 const draggedId = e.dataTransfer.getData("text/plain");
                 this._reorder(draggedId, action.id);
             });
@@ -293,3 +343,28 @@ const Toolbar = {
         });
     }
 };
+
+// One deliberately rare action can afford a reload: inline draggable
+// buttons only read their defaults while being created. Reloading after
+// clearing every saved position restores those defaults consistently,
+// including buttons owned by features that are not currently visible.
+Toolbar.register({
+    id:      "tt-reset-layout",
+    label:   "🧭 Reset Layout",
+    title:   "Restore the toolbar and draggable row buttons to their default positions",
+    group:   "misc",
+    onClick: () => {
+        localStorage.removeItem("tt-toolbar-pos");
+        Object.keys(localStorage)
+            .filter(key => key.startsWith("btn-pos-"))
+            .forEach(key => localStorage.removeItem(key));
+
+        Toolbar._panel.style.top = "20px";
+        Toolbar._panel.style.left = "20px";
+        showTemporaryBanner({
+            title: "🧭 Layout reset",
+            message: "Refreshing once to restore draggable row buttons."
+        }, 1000);
+        setTimeout(() => window.location.reload(), 450);
+    }
+});

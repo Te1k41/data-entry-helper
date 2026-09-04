@@ -19,7 +19,15 @@ const UploadProof = {
         Toolbar.register({
             id:      "tt-upload-proof-btn",
             label:   "📤 Upload Proof",
+            title:   "Find this service's proof file and open the upload flow",
+            group:   "proof",
+            requiresRelay: true,
             onClick: () => this.startUpload()
+        });
+
+        onRelayConnectionStatusChange((state) => {
+            if (state !== "connected") setWarning("upload-proof-missing", null);
+            else this.checkUploadStatus();
         });
 
         this.checkUploadStatus();
@@ -52,6 +60,7 @@ const UploadProof = {
     // same system SP001 mismatch etc. use, so this combines cleanly with
     // any other active warning instead of fighting over the one banner).
     async checkUploadStatus() {
+        if (!isRelayConnected()) { setWarning("upload-proof-missing", null); return; }
         const serviceField = document.querySelector('input[name="service"]');
         const service = serviceField?.value.trim();
         if (!service) { setWarning("upload-proof-missing", null); return; }

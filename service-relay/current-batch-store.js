@@ -32,6 +32,7 @@ const fs = require("fs");
 const { CURRENT_BATCH_FILE, DATA_FOLDER } = require("./config");
 const { computeWeeklyPlan } = require("./due-services-trim");
 const { parseTTDate, formatTTDate } = require("./due-date-utils");
+const { writeFileAtomicSync } = require("./atomic-write");
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
@@ -68,7 +69,7 @@ function loadState() {
 
 function saveState(state) {
     ensureDataFolder();
-    fs.writeFileSync(CURRENT_BATCH_FILE, JSON.stringify(state, null, 2));
+    writeFileAtomicSync(CURRENT_BATCH_FILE, JSON.stringify(state, null, 2));
     console.log(
         `📦 Weekly batch state saved — week of ${state.weekStart}, ` +
         `day ${state.dayIndex} (${DAY_NAMES[state.dayIndex] || "week complete"})`

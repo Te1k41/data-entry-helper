@@ -16,24 +16,11 @@ const path = require("path");
 const { WATCH_FOLDER } = require("../config");
 const { extractProof, saveProofRows, cacheRows } = require("../proof-extract");
 const scheduleGuidelineStore = require("../schedule-guideline-store");
-
-function readBody(req) {
-    return new Promise((resolve, reject) => {
-        let body = "";
-        req.on("data", chunk => { body += chunk; });
-        req.on("end", () => {
-            try {
-                resolve(JSON.parse(body));
-            } catch (err) {
-                reject(err);
-            }
-        });
-    });
-}
+const { readJsonBody } = require("../read-json-body");
 
 async function handleExtract(req, res) {
     try {
-        const { file } = await readBody(req);
+        const { file } = await readJsonBody(req);
         if (!file) {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Missing file" }));
@@ -73,7 +60,7 @@ async function handleExtract(req, res) {
 // /proof/extract preview — this never writes anything unseen.
 async function handleConfirm(req, res) {
     try {
-        const { rows } = await readBody(req);
+        const { rows } = await readJsonBody(req);
         if (!Array.isArray(rows)) {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Missing rows" }));

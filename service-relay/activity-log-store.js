@@ -9,6 +9,7 @@
 
 const fs = require("fs");
 const { ACTIVITY_LOG_FILE, DATA_FOLDER } = require("./config");
+const { writeFileAtomicSync } = require("./atomic-write");
 
 function ensureDataFolder() {
     if (!fs.existsSync(DATA_FOLDER)) fs.mkdirSync(DATA_FOLDER, { recursive: true });
@@ -33,7 +34,7 @@ function logDone(record, service) {
     ensureDataFolder();
     const log = loadLog();
     log.push({ record, service, at: new Date().toISOString() });
-    fs.writeFileSync(ACTIVITY_LOG_FILE, JSON.stringify(log, null, 2));
+    writeFileAtomicSync(ACTIVITY_LOG_FILE, JSON.stringify(log, null, 2));
 }
 
 module.exports = { loadLog, logDone };

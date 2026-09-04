@@ -12,6 +12,7 @@
 const ScheduleCapture = {
 
     ws: null,
+    _socketClient: null,
     _sendTimer: null,
 
     isSchedulePage() {
@@ -25,10 +26,10 @@ const ScheduleCapture = {
     },
 
     connect() {
-        this.ws = new WebSocket("ws://localhost:3737");
-        this.ws.addEventListener("open", () => this.sendSnapshot());
-        this.ws.addEventListener("close", () => setTimeout(() => this.connect(), 3000));
-        this.ws.addEventListener("error", () => console.error("❌ ScheduleCapture WebSocket error"));
+        this._socketClient = connectRelaySocket({
+            onSocket: (socket) => { this.ws = socket; },
+            onOpen: () => this.sendSnapshot()
+        });
     },
 
     readPorts() {
@@ -44,9 +45,9 @@ const ScheduleCapture = {
             const code = codeField.value.trim();
             if (!code) return;
 
-            const nameField    = document.querySelector(`input[name="SP${row}_port_name"]`);
-            const arrivalField = document.querySelector(`input[name="SP${row}_arrival_date"]`);
-            const departField  = document.querySelector(`input[name="SP${row}_depart_date"]`);
+            const nameField    = PortRow.field(row, "port_name");
+            const arrivalField = PortRow.field(row, "arrival_date");
+            const departField  = PortRow.field(row, "depart_date");
 
             ports.push({
                 row,
@@ -73,14 +74,27 @@ const ScheduleCapture = {
             const name = nameField.value.trim();
             if (!name) return;
 
-            const voyageField = document.querySelector(`input[name="SV${row}_start_voyage"]`);
-            const departField = document.querySelector(`input[name="SV${row}_depart_date"]`);
+            const voyageField = VesselRow.field(row, "start_voyage");
+            const departField = VesselRow.field(row, "depart_date");
+            const codeField   = VesselRow.field(row, "lloyds_codeD");
+            const imo         = codeField?.value.trim() || "";
 
             vessels.push({
                 row,
                 name,
                 voyage: voyageField?.value.trim() || "",
-                depart: departField?.value.trim() || ""
+                depart: departField?.value.trim() || "",
+                // Lloyds/IMO code -- canonical identity (see
+                // duplicate-vessel.js), lets the backend match this
+                // vessel exactly instead of falling back to name/
+                // dictionary matching alone.
+                imo,
+                // "VESSEL TO BE ANNOUNCED" (vessel-to-be-announced.js's
+                // backtick shortcut) is a deliberate placeholder, not a
+                // real vessel identity -- flagged so the backend doesn't
+                // treat it as an expected vessel that's "missing from
+                // proof" forever, since it can never resolve.
+                isPlaceholder: name === "VESSEL TO BE ANNOUNCED"
             });
         });
 
@@ -109,7 +123,7 @@ const ScheduleCapture = {
         if (!match) return null;
 
         const row  = match[1];
-        const code = document.querySelector(`input[name="SP${row}_port_code"]`)?.value.trim() || "";
+        const code = PortRow.field(row, "port_code")?.value.trim() || "";
 
         return { row, code, name: field.value.trim() };
     },

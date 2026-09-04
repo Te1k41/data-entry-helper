@@ -146,19 +146,16 @@ function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
         : (hasAnchorOverride ? addDays(monday, asOfDayIndex) : realToday);
     const isMondayToday = isPreview ? true : (hasAnchorOverride ? asOfDayIndex === 0 : today.getDay() === 1);
 
-    // For the REAL current week, no upper cap: due-service-scanner.js
-    // deliberately leaves Tradetech's own date filter untouched and
-    // trusts the server to "work from whatever comes back" rather than
-    // assuming a full list — so if Tradetech's own default window spills
-    // a few days past this calendar week's Sunday, those items are still
-    // part of the currently-known workload and belong in the balance,
-    // not silently dropped. A PREVIEW week (Next/Previous Week) has no
-    // such source-of-truth window to defer to, so it stays capped to
-    // its own hypothetical Mon-Sun span.
+    // Always capped to this calendar week's Mon-Sun span, real week or
+    // preview alike. due-service-scanner.js deliberately leaves
+    // Tradetech's own date filter untouched, so a scan can return
+    // services due weeks out — those belong in a LATER week's plan,
+    // not folded into this one just because they happened to be in the
+    // same scan response.
     const thisWeek = services.filter(s => {
         const d = parseTTDate(s.nextUpdateDate);
         if (!d || d < monday) return false;
-        return isPreview ? d <= sunday : true;
+        return d <= sunday;
     });
     const oldBacklog = isPreview ? [] : services.filter(s => {
         const d = parseTTDate(s.nextUpdateDate);
@@ -178,12 +175,10 @@ function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
     const weekdaySet = new Set(weekdayDateStrs);
 
     // The breakdown/batch system only has 5 weekday slots (Mon-Fri) —
-    // any service due on a Saturday/Sunday of this week, OR (for the
-    // real current week, now that thisWeek has no upper cap) spilling
-    // past this week's Sunday entirely, has no slot to land in and
-    // would otherwise silently never appear in any batch, even though
-    // it's correctly counted in "this week"'s totals. Fold all such
-    // extra-dated items into Friday's group (the last working day)
+    // any service due on a Saturday/Sunday of this week has no slot to
+    // land in and would otherwise silently never appear in any batch,
+    // even though it's correctly counted in "this week"'s totals. Fold
+    // all such Sat/Sun items into Friday's group (the last working day)
     // instead of losing them.
     const fridayDateStr = weekdayDateStrs[4];
     const extraGroups = groups.filter(g => !weekdaySet.has(g.date));

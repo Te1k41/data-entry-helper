@@ -22,20 +22,7 @@
 const portDictionary = require("../port-dictionary");
 const { buildResult, importUnmappedFromResult, readResultForFill } = require("../build-result");
 const { getLastRows, recalcFromWatchFolder } = require("../proof-extract");
-
-function readBody(req) {
-    return new Promise((resolve, reject) => {
-        let body = "";
-        req.on("data", chunk => { body += chunk; });
-        req.on("end", () => {
-            try {
-                resolve(JSON.parse(body));
-            } catch (err) {
-                reject(err);
-            }
-        });
-    });
-}
+const { readJsonBody } = require("../read-json-body");
 
 // Scans the watch folder itself for the active guideline's proof file and
 // reruns the whole pipeline against it — no prior /proof/extract call
@@ -43,7 +30,7 @@ function readBody(req) {
 // parser fix all get picked up fresh.
 async function handleRebuild(req, res) {
     try {
-        await readBody(req);
+        await readJsonBody(req);
     } catch (err) {
         // no body / not JSON — fine, nothing read from it anyway
     }
@@ -93,7 +80,7 @@ function handleGetResult(req, res) {
 
 async function handleLearnBatch(req, res) {
     try {
-        const { mappings } = await readBody(req);
+        const { mappings } = await readJsonBody(req);
         if (!Array.isArray(mappings)) {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Missing mappings array" }));

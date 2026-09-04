@@ -6,6 +6,14 @@
 //  it. Works for straightforward schedule-table layouts; a
 //  service with a weirder layout gets its own parser module
 //  instead of fighting this one.
+//
+//  Image/OCR proof extraction (extractImage, and the Tesseract/
+//  PaddleOCR machinery it depended on) was removed -- schedule
+//  data now comes from real operator DOM scrapes (see
+//  src/features/schedule-table-scrape.js /
+//  proof-parsers/yangming-html.js) instead of recognizing pixels
+//  in a screenshot. extractExcel/extractPdf/extractText (real
+//  structured file formats, not image recognition) are unaffected.
 // ============================================================
 
 const fs   = require("fs");

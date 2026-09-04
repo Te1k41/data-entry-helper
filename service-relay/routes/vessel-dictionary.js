@@ -9,20 +9,7 @@
 // ============================================================
 
 const vesselDictionary = require("../vessel-dictionary");
-
-function readBody(req) {
-    return new Promise((resolve, reject) => {
-        let body = "";
-        req.on("data", chunk => { body += chunk; });
-        req.on("end", () => {
-            try {
-                resolve(JSON.parse(body));
-            } catch (err) {
-                reject(err);
-            }
-        });
-    });
-}
+const { readJsonBody } = require("../read-json-body");
 
 function handleGetAll(req, res) {
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -31,7 +18,7 @@ function handleGetAll(req, res) {
 
 async function handleLearnBatch(req, res) {
     try {
-        const { entries } = await readBody(req);
+        const { entries } = await readJsonBody(req);
         if (!Array.isArray(entries)) {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Missing entries array" }));
@@ -56,7 +43,7 @@ async function handleLearnBatch(req, res) {
 
 async function handleRemove(req, res) {
     try {
-        const { vessel } = await readBody(req);
+        const { vessel } = await readJsonBody(req);
         if (!vessel) {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Missing vessel" }));

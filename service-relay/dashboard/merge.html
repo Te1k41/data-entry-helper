@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>tt-merge</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+<style>
+    .mergeForm { max-width: 720px; margin: 0 auto; }
+    .dropRow { margin-bottom: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .dirGroup { font-size: 13px; color: var(--text); }
+    .dirGroup label { margin-right: 14px; cursor: pointer; }
+    .imgList { list-style: none; margin: 0; padding: 0; }
+    .imgList li {
+        display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+        border-bottom: 1px solid var(--border-soft); font-size: 13px;
+    }
+    .imgList li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .imgList .dim { color: var(--dim); font-size: 11px; }
+    .imgList button { padding: 1px 7px; font-size: 11px; line-height: 1.4; }
+    .capNote { font-size: 12px; color: var(--dim); margin-top: 6px; }
+    .mergeBar { text-align: center; margin-top: 18px; }
+    .mergeBar button { font-size: 14px; padding: 8px 20px; margin: 0 4px; }
+    #mergeMsg { margin-top: 12px; font-size: 12px; text-align: center; }
+    #mergeMsg.ok  { color: var(--green); }
+    #mergeMsg.err { color: var(--red); }
+    .previewWrap { margin-top: 18px; text-align: center; }
+    #previewCanvas { max-width: 100%; height: auto; border: 1px solid var(--border-soft); background: var(--bg); }
+    #previewCaption { margin-top: 6px; font-size: 12px; color: var(--dim); }
+</style>
+</head>
+<body>
+<pre class="banner">╔══════════════════════════════════════════╗
+║  MERGE IMAGES — TT DATA ENTRY HELPER     ║
+╚══════════════════════════════════════════╝</pre>
+<div style="text-align:center; margin-bottom: 12px;">
+    <button onclick="location.href='/dashboard'">← Dashboard</button>
+</div>
+<main>
+    <div class="chartPanel wide mergeForm">
+        <h2>merge screenshots (lossless, local — no external site)</h2>
+
+        <div class="dropRow">
+            <input type="file" id="fileInput" accept="image/png,image/jpeg" multiple>
+            <span class="dirGroup">
+                <label><input type="radio" name="dir" value="vertical"> Vertical</label>
+                <label><input type="radio" name="dir" value="horizontal" checked> Horizontal</label>
+            </span>
+        </div>
+        <div class="capNote" id="capNote">0 / 30 images selected</div>
+
+        <ul class="imgList" id="imgList"></ul>
+
+        <div class="mergeBar">
+            <button onclick="mergeAndDownload()">🖼 Merge &amp; Download</button>
+            <button onclick="resetAll()">↺ Reset</button>
+            <div id="mergeMsg"></div>
+        </div>
+
+        <div class="previewWrap">
+            <canvas id="previewCanvas" width="0" height="0"></canvas>
+            <div id="previewCaption"></div>
+        </div>
+    </div>
+</main>
+
+<script src="/dashboard/merge.js"></script>
+</body>
+</html>

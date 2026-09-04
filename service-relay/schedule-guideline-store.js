@@ -18,6 +18,7 @@ const fs   = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 const { DATA_FOLDER } = require("./config");
+const { writeFileAtomicSync } = require("./atomic-write");
 
 const STORE_FILE = path.join(DATA_FOLDER, "schedule-guideline.json");
 const XLSX_FILE  = path.join(DATA_FOLDER, "schedule-guideline.xlsx");
@@ -133,7 +134,7 @@ function persist() {
     ensureDataFolder();
     try {
         if (current) {
-            fs.writeFileSync(STORE_FILE, JSON.stringify(current, null, 2));
+            writeFileAtomicSync(STORE_FILE, JSON.stringify(current, null, 2));
         } else {
             fs.rmSync(STORE_FILE, { force: true });
         }

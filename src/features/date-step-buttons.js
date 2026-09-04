@@ -131,12 +131,12 @@ const DateStepButtons = {
         // it's true. Using it here means our own write to THIS field
         // doesn't trigger date-syncing's copy onto the other field —
         // arrival and depart can each be stepped on their own.
-        syncing = true;
+        beginSync();
         try {
             setFieldValue(field, DateUtils.format(next));
             this.keepArrivalBeforeDepart(field, next, deltaDays);
         } finally {
-            syncing = false; // always release the guard, even on error
+            endSync(); // always release the guard, even on error
         }
     },
 

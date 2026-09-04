@@ -1,6 +1,11 @@
 {
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
   "dependencies": {
     "chokidar": "^5.0.0",
+    "dommatrix": "^0.1.1",
+    "jsdom": "^30.0.1",
     "pdf-parse": "^2.4.5",
     "ws": "^8.21.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz"

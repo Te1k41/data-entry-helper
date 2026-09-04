@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fill Test Viewer</title>
+    <style>
+        :root { font-family: system-ui, sans-serif; color: #1f2937; background: #f3f4f6; }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        main { max-width: 1500px; margin: 0 auto; padding: 22px; }
+        h1, h2, h3 { margin: 0 0 10px; }
+        p { margin: 6px 0 12px; }
+        .panel { margin: 14px 0; padding: 16px; background: white; border: 1px solid #d1d5db; border-radius: 8px; }
+        .source-row, .summary-grid, .main-tabs, .workspace { display: flex; gap: 12px; }
+        .source-row { align-items: end; flex-wrap: wrap; }
+        .source-option { flex: 1 1 300px; }
+        button, input[type="file"], input[type="text"] { font: inherit; }
+        button { padding: 8px 12px; border: 1px solid #9ca3af; border-radius: 5px; background: #f9fafb; cursor: pointer; }
+        button:hover { background: #e5e7eb; }
+        button:disabled { cursor: not-allowed; opacity: .55; }
+        .hidden, [hidden] { display: none !important; }
+        .stale { opacity: .58; }
+        #error { margin: 14px 0; padding: 12px; border: 1px solid #ef4444; border-radius: 6px; background: #fef2f2; color: #991b1b; }
+        .warnings { margin-top: 12px; padding: 10px 14px; border-left: 5px solid #f59e0b; background: #fffbeb; color: #92400e; }
+        .summary-grid { flex-wrap: wrap; }
+        .summary-grid div { min-width: 180px; }
+        dt { color: #6b7280; font-size: .8rem; text-transform: uppercase; }
+        dd { margin: 3px 0 0; font-weight: 650; }
+        .main-tabs { border-bottom: 1px solid #d1d5db; }
+        .main-tab { border-radius: 6px 6px 0 0; border-bottom: 0; }
+        .main-tab[aria-selected="true"] { color: #1d4ed8; background: #eff6ff; box-shadow: inset 0 -3px #2563eb; }
+        .workspace { margin-top: 12px; align-items: stretch; min-height: 330px; }
+        .vessel-list { flex: 0 0 300px; max-height: 600px; overflow: auto; border: 1px solid #d1d5db; border-radius: 6px; padding: 7px; }
+        .vessel-button { width: 100%; margin: 3px 0; text-align: left; display: block; }
+        .vessel-button[aria-selected="true"] { border-color: #2563eb; background: #dbeafe; color: #1e40af; }
+        .vessel-button small { display: block; margin-top: 3px; color: inherit; opacity: .8; }
+        .rotation-main { min-width: 0; flex: 1; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+        th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
+        th { background: #f9fafb; white-space: nowrap; }
+        tr.past-loop { opacity: .55; background: #f3f4f6; }
+        .badge { display: inline-block; margin: 1px 4px 1px 0; padding: 2px 7px; border-radius: 999px; font-size: .76rem; font-weight: 700; white-space: nowrap; }
+        .good { background: #dcfce7; color: #166534; }
+        .warning-badge { background: #fef3c7; color: #92400e; }
+        .info { background: #e0e7ff; color: #3730a3; }
+        .neutral { background: #e5e7eb; color: #374151; }
+        .ocr { background: #ede9fe; color: #6d28d9; }
+        .suggestion { margin-top: 12px; padding: 13px; border: 2px solid #16a34a; border-radius: 7px; background: #f0fdf4; }
+        .suggestion strong { color: #166534; }
+        .suggestion-subtitle { margin: 2px 0 6px; color: #4b5563; font-size: .84rem; }
+        .suggestion button { margin-top: 8px; border-color: #16a34a; background: #dcfce7; }
+        tr.top-candidate, .end-vessel.top-candidate { background: #f0fdf4; }
+        tr.top-candidate { box-shadow: inset 4px 0 #16a34a; }
+        .end-vessel.top-candidate { border: 2px solid #16a34a; }
+        .status-note { display: block; margin-top: 3px; color: #6b7280; font-size: .82rem; }
+        .correction-note { display: block; margin-top: 5px; color: #92400e; font-size: .78rem; line-height: 1.35; }
+        .chronological-view { margin-top: 16px; padding-top: 12px; border-top: 1px solid #d1d5db; }
+        .sequence-warning { margin: 5px 0 8px; padding: 7px 9px; border-left: 4px solid #f59e0b; background: #fffbeb; color: #92400e; font-size: .84rem; }
+        .end-section { margin-top: 16px; }
+        .end-vessel { margin-top: 14px; padding: 12px; border: 1px solid #d1d5db; border-radius: 7px; }
+        .end-vessel h3 { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+        .empty { padding: 20px; color: #6b7280; text-align: center; }
+        details { margin-top: 10px; }
+        summary { cursor: pointer; font-weight: 700; }
+        .mapping-actions { margin-top: 10px; }
+        .mapping-feedback { margin-left: 8px; font-weight: 650; }
+        .mapping-feedback.error { color: #991b1b; }
+        .port-code-input { width: 9em; padding: 5px; }
+        code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; }
+        @media (max-width: 760px) {
+            main { padding: 10px; }
+            .workspace { flex-direction: column; }
+            .vessel-list { flex-basis: auto; max-height: 230px; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Fill Test Viewer</h1>
+    <p>Proof dates are shown exactly as extracted. The guideline supplies rotation order and the expected vessel checklist only.</p>
+
+    <section class="panel">
+        <div class="source-row">
+            <div class="source-option">
+                <strong>Live guideline and latest proof extraction</strong>
+                <p><button id="run-live" type="button">Run against current live data</button></p>
+            </div>
+            <div class="source-option">
+                <strong>Saved result</strong>
+                <p><input id="file-input" type="file" accept=".json,application/json"></p>
+            </div>
+        </div>
+        <div id="status">No result loaded.</div>
+    </section>
+    <div id="error" class="hidden" role="alert"></div>
+
+    <div id="results" class="hidden">
+        <section class="panel">
+            <h2>Summary</h2>
+            <dl class="summary-grid">
+                <div><dt>Service</dt><dd id="service"></dd></div>
+                <div><dt>Operator</dt><dd id="operator"></dd></div>
+                <div><dt>Rotation ports</dt><dd id="rotation-count"></dd></div>
+                <div><dt>Proof vessels</dt><dd id="vessel-count"></dd></div>
+                <div><dt>Proof input</dt><dd id="proof-input"></dd></div>
+            </dl>
+            <div id="warnings" class="warnings hidden"><strong>Warnings</strong><ul id="warning-list"></ul></div>
+        </section>
+
+        <section class="panel">
+            <h2>What to fill in</h2>
+            <div class="main-tabs" role="tablist" aria-label="Fill views">
+                <button id="rotations-tab" class="main-tab" role="tab" aria-controls="rotations-panel" aria-selected="true">Rotations</button>
+                <button id="identity-tab" class="main-tab" role="tab" aria-controls="identity-panel" aria-selected="false">Vessels and voyage numbers <span id="notice-count" class="badge warning-badge">0</span></button>
+                <button id="end-result-tab" class="main-tab" role="tab" aria-controls="end-result-panel" aria-selected="false">End result</button>
+            </div>
+            <div id="rotations-panel" role="tabpanel" aria-labelledby="rotations-tab">
+                <div id="suggested-vessel" class="suggestion hidden">
+                    <strong>Suggested vessel</strong>
+                    <div class="suggestion-subtitle">Combined from OCR rotation cleanliness and first-port date proximity.</div>
+                    <div id="suggested-vessel-summary"></div>
+                    <div id="suggested-vessel-reason" class="status-note"></div>
+                    <button id="select-suggested-vessel" type="button">Show this vessel</button>
+                </div>
+                <div class="workspace">
+                    <aside id="vessel-list" class="vessel-list" aria-label="Proof vessels"></aside>
+                    <div class="rotation-main">
+                        <h3 id="selected-vessel-heading">Select a vessel</h3>
+                        <p id="selected-vessel-note"></p>
+                        <h4>Rotation order (expected)</h4>
+                        <div class="table-wrap"><table>
+                            <thead><tr><th>#</th><th>Port</th><th>ETA from proof</th><th>ETD from proof</th><th>Source</th></tr></thead>
+                            <tbody id="rotation-body"></tbody>
+                        </table></div>
+                        <div id="selected-chronological"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="identity-panel" role="tabpanel" aria-labelledby="identity-tab" hidden>
+                <div class="table-wrap"><table>
+                    <thead><tr><th>Vessel Name</th><th>IMO</th><th>Voyage Number</th><th>Status</th></tr></thead>
+                    <tbody id="identity-body"></tbody>
+                </table></div>
+                <div id="no-identity-rows" class="empty hidden">No proof or guideline vessel entries are available.</div>
+            </div>
+            <div id="end-result-panel" role="tabpanel" aria-labelledby="end-result-tab" hidden>
+                <section class="end-section">
+                    <h3>Suggested entries for Tradetech</h3>
+                    <p>Curated from the combined vessel recommendation and upcoming proof voyages.</p>
+                    <div class="table-wrap"><table>
+                        <thead><tr><th>Vessel Name</th><th>Voyage Number</th><th>Role</th><th>First-port departure</th><th>Scores</th><th>Note</th></tr></thead>
+                        <tbody id="tradetech-vessel-body"></tbody>
+                    </table></div>
+                </section>
+                <section class="end-section">
+                    <h3>Decided vessel/voyage roster</h3>
+                    <p>Proof-derived identities to use. OCR values remain unverified.</p>
+                    <div class="table-wrap"><table>
+                        <thead><tr><th>Vessel Name</th><th>IMO</th><th>Voyage Number</th><th>First-port departure</th><th>Source</th></tr></thead>
+                        <tbody id="end-roster-body"></tbody>
+                    </table></div>
+                    <p id="end-missing-note" class="warnings hidden"></p>
+                </section>
+                <section class="end-section">
+                    <h3>Decided fill-in dates</h3>
+                    <p>Read top-to-bottom by vessel and rotation order. Blank dates mean the proof supplied no value.</p>
+                    <div id="end-fill-groups"></div>
+                    <div id="no-end-result" class="empty hidden">No proof vessels are available yet.</div>
+                </section>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Audit details</h2>
+            <p>Date policy: <strong id="date-policy"></strong></p>
+            <details>
+                <summary>Rotation structure</summary>
+                <div class="table-wrap"><table><thead><tr><th>#</th><th>Row</th><th>Code</th><th>Name</th><th>Boundary</th></tr></thead><tbody id="audit-rotation-body"></tbody></table></div>
+            </details>
+            <details>
+                <summary>Unmatched proof rows (<span id="unmatched-count">0</span>)</summary>
+                <div class="table-wrap"><table><thead><tr><th>Vessel</th><th>Voyage</th><th>Port</th><th>ETA</th><th>ETD</th><th>Source</th><th>Reason</th></tr></thead><tbody id="unmatched-body"></tbody></table></div>
+            </details>
+            <details>
+                <summary>Unresolved port labels (<span id="unresolved-count">0</span>)</summary>
+                <p id="mapping-guidance">Enter port codes here after a live run to teach these mappings.</p>
+                <div class="table-wrap"><table><thead><tr><th>Operator</th><th>Raw label</th><th>Occurrences</th><th>Example</th><th>Port code</th></tr></thead><tbody id="unresolved-body"></tbody></table></div>
+                <div id="mapping-actions" class="mapping-actions hidden">
+                    <button id="save-mappings" type="button">Save mappings</button>
+                    <span id="mapping-feedback" class="mapping-feedback" role="status"></span>
+                    <button id="rerun-after-save" class="hidden" type="button">Re-run now</button>
+                </div>
+            </details>
+            <details>
+                <summary>Vessels without IMO mappings (<span id="unresolved-vessel-count">0</span>)</summary>
+                <p id="vessel-mapping-guidance">Enter a 7-digit IMO/Lloyds code after a live run.</p>
+                <div class="table-wrap"><table><thead><tr><th>Vessel</th><th>Example voyage</th><th>Seen in</th><th>IMO / Lloyds code</th></tr></thead><tbody id="unresolved-vessel-body"></tbody></table></div>
+                <div id="vessel-mapping-actions" class="mapping-actions hidden">
+                    <button id="save-vessel-mappings" type="button">Save vessel mappings</button>
+                    <span id="vessel-mapping-feedback" class="mapping-feedback" role="status"></span>
+                    <button id="rerun-after-vessel-save" class="hidden" type="button">Re-run now</button>
+                </div>
+            </details>
+        </section>
+    </div>
+</main>
+<script>
+(() => {
+    "use strict";
+    const byId = id => document.getElementById(id);
+    const results = byId("results"), errorBox = byId("error"), status = byId("status");
+    const runButton = byId("run-live"), fileInput = byId("file-input");
+    const saveButton = byId("save-mappings"), rerunButton = byId("rerun-after-save");
+    const vesselSaveButton = byId("save-vessel-mappings"), vesselRerunButton = byId("rerun-after-vessel-save");
+    let generation = 0, currentUnresolved = [], currentUnresolvedVessels = [], currentSource = "unknown";
+    let selectRenderedVessel = () => {};
+
+    function text(value, fallback = "—") {
+        return value === undefined || value === null || value === "" ? fallback : String(value);
+    }
+    function cell(row, value) {
+        const element = document.createElement("td");
+        element.textContent = text(value);
+        row.appendChild(element);
+        return element;
+    }
+    function showError(message) { errorBox.textContent = message; errorBox.classList.remove("hidden"); }
+    function clearError() { errorBox.textContent = ""; errorBox.classList.add("hidden"); }
+    function sourceBadge(source, confidence) {
+        const badge = document.createElement("span");
+        badge.className = `badge ${source === "ocr" ? "ocr" : "neutral"}`;
+        badge.textContent = source === "ocr" ? "OCR — unverified" : text(source, "No proof data");
+        if (confidence) badge.title = confidence;
+        return badge;
+    }
+
+    function appendOcrCorrections(container, corrections) {
+        if (!Array.isArray(corrections) || !corrections.length) return;
+        const badge = document.createElement("span");
+        badge.className = "badge warning-badge";
+        badge.textContent = `Paddle corrected ${corrections.length}`;
+        badge.title = "Tesseract identity text was corrected by PaddleOCR";
+        container.appendChild(badge);
+        const note = document.createElement("span");
+        note.className = "correction-note";
+        note.textContent = corrections.map(correction =>
+            `${text(correction && correction.field, "identity")}: ${text(correction && correction.from, "?")} → ${text(correction && correction.to, "?")}`
+        ).join("; ");
+        container.appendChild(note);
+    }
+
+    function setMainTab(name) {
+        const rotations = name === "rotations";
+        const identity = name === "identity";
+        const endResult = name === "end-result";
+        byId("rotations-tab").setAttribute("aria-selected", String(rotations));
+        byId("identity-tab").setAttribute("aria-selected", String(identity));
+        byId("end-result-tab").setAttribute("aria-selected", String(endResult));
+        byId("rotations-panel").hidden = !rotations;
+        byId("identity-panel").hidden = !identity;
+        byId("end-result-panel").hidden = !endResult;
+    }
+    byId("rotations-tab").addEventListener("click", () => setMainTab("rotations"));
+    byId("identity-tab").addEventListener("click", () => setMainTab("identity"));
+    byId("end-result-tab").addEventListener("click", () => setMainTab("end-result"));
+
+    function renderChronologicalView(container, vessel) {
+        container.replaceChildren();
+        container.className = "chronological-view";
+        const heading = document.createElement("h4");
+        heading.textContent = "Chronological order (as observed)";
+        container.appendChild(heading);
+        if (!vessel || !Array.isArray(vessel.portsByDate)) {
+            const unavailable = document.createElement("p");
+            unavailable.className = "status-note";
+            unavailable.textContent = vessel
+                ? "Chronological proof order is not available in this older result."
+                : "Select a vessel to see its observed chronological order.";
+            container.appendChild(unavailable);
+            return;
+        }
+
+        const chronological = vessel.portsByDate;
+        const includedIndexes = new Set(chronological.map(port => port.rotationIndex));
+        const expectedIndexes = (Array.isArray(vessel.ports) ? vessel.ports : [])
+            .filter(port => port.hasData && includedIndexes.has(port.rotationIndex))
+            .map(port => port.rotationIndex);
+        const actualIndexes = chronological.map(port => port.rotationIndex);
+        const differs = expectedIndexes.length !== actualIndexes.length ||
+            expectedIndexes.some((rotationIndex, index) => rotationIndex !== actualIndexes[index]);
+        const note = document.createElement("p");
+        note.className = differs ? "sequence-warning" : "status-note";
+        note.textContent = differs
+            ? "⚠ Observed dates do not follow the expected rotation order. Compare the template positions below."
+            : "Observed dates follow the expected rotation order for every parseable proof call.";
+        container.appendChild(note);
+
+        const wrap = document.createElement("div");
+        wrap.className = "table-wrap";
+        const table = document.createElement("table");
+        const head = document.createElement("thead"), headRow = document.createElement("tr");
+        ["Observed #", "Template #", "Port", "ETA from proof", "ETD from proof", "Source"].forEach(label => {
+            const header = document.createElement("th"); header.textContent = label; headRow.appendChild(header);
+        });
+        head.appendChild(headRow);
+        const body = document.createElement("tbody");
+        chronological.forEach((port, index) => {
+            const row = document.createElement("tr");
+            if (port.pastLoopBoundary) row.className = "past-loop";
+            cell(row, index + 1);
+            cell(row, Number.isFinite(port.rotationIndex) ? port.rotationIndex + 1 : port.rotationIndex);
+            cell(row, `${text(port.port)}${port.portCode ? ` (${port.portCode})` : ""}`);
+            cell(row, port.eta);
+            cell(row, port.etd);
+            const sourceCell = document.createElement("td");
+            sourceCell.appendChild(sourceBadge(port.source, port.ocrConfidence));
+            appendOcrCorrections(sourceCell, port.ocrCorrections);
+            row.appendChild(sourceCell);
+            body.appendChild(row);
+        });
+        if (!chronological.length) {
+            const row = document.createElement("tr"), empty = cell(row, "No parseable observed dates are available");
+            empty.colSpan = 6; body.appendChild(row);
+        }
+        table.append(head, body); wrap.appendChild(table); container.appendChild(wrap);
+    }
+
+    function renderSelectedVessel(vessel, rotation) {
+        byId("selected-vessel-heading").textContent = vessel
+            ? `${text(vessel.vessel, "Unnamed vessel")} — IMO ${text(vessel.imo, "unknown")} — Voyage ${text(vessel.voyage, "?")}`
+            : "No proof vessel selected";
+        byId("selected-vessel-note").textContent = vessel
+            ? `Guideline checklist: ${vessel.guidelineMatch ? `${text(vessel.guidelineMatch.name)} / ${text(vessel.guidelineMatch.voyage)}` : text(vessel.identityStatus)}`
+            : "The bare guideline rotation is shown below.";
+        const body = byId("rotation-body");
+        body.replaceChildren();
+        for (const leg of rotation) {
+            const proofPort = vessel && Array.isArray(vessel.ports)
+                ? vessel.ports.find(port => port.rotationIndex === leg.index) : null;
+            const row = document.createElement("tr");
+            if (leg.pastLoopBoundary) row.className = "past-loop";
+            cell(row, leg.index + 1);
+            cell(row, `${text(leg.name)}${leg.code ? ` (${leg.code})` : ""}`);
+            cell(row, proofPort && proofPort.eta);
+            cell(row, proofPort && proofPort.etd);
+            const sourceCell = document.createElement("td");
+            sourceCell.appendChild(sourceBadge(proofPort && proofPort.source, proofPort && proofPort.ocrConfidence));
+            appendOcrCorrections(sourceCell, proofPort && proofPort.ocrCorrections);
+            row.appendChild(sourceCell);
+            body.appendChild(row);
+        }
+        if (!rotation.length) {
+            const row = document.createElement("tr");
+            const empty = cell(row, "No rotation ports available");
+            empty.colSpan = 5;
+            body.appendChild(row);
+        }
+        renderChronologicalView(byId("selected-chronological"), vessel);
+    }
+
+    function renderVessels(vessels, rotation) {
+        const list = byId("vessel-list");
+        list.replaceChildren();
+        const buttons = [];
+        function select(index) {
+            buttons.forEach((button, buttonIndex) => button.setAttribute("aria-selected", String(index === buttonIndex)));
+            renderSelectedVessel(vessels[index] || null, rotation);
+        }
+        selectRenderedVessel = select;
+        for (let index = 0; index < vessels.length; index++) {
+            const vessel = vessels[index];
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "vessel-button";
+            button.setAttribute("aria-selected", "false");
+            button.textContent = `${text(vessel.vessel, "Unnamed vessel")} — ${text(vessel.voyage, "?")}`;
+            const details = document.createElement("small");
+            const dated = Array.isArray(vessel.ports) ? vessel.ports.filter(port => port.hasData).length : 0;
+            details.textContent = `IMO ${text(vessel.imo, "unknown")} · ${dated}/${rotation.length} ports dated · ${text(vessel.identityStatus)}`;
+            button.appendChild(details);
+            button.addEventListener("click", () => select(index));
+            buttons.push(button);
+            list.appendChild(button);
+        }
+        if (vessels.length) select(0);
+        else {
+            const empty = document.createElement("div");
+            empty.className = "empty";
+            empty.textContent = "No vessels found in proof data.";
+            list.appendChild(empty);
+            renderSelectedVessel(null, rotation);
+        }
+    }
+
+    function renderSuggestion(suggestion, vessels) {
+        const callout = byId("suggested-vessel");
+        if (!suggestion || typeof suggestion !== "object") {
+            callout.classList.add("hidden");
+            return;
+        }
+        const port = suggestion.suggestedPort;
+        const basis = suggestion.scoringBasis || {};
+        const scoreParts = [];
+        if (suggestion.cleanlinessScore !== undefined && suggestion.cleanlinessScore !== null) {
+            scoreParts.push(`cleanliness ${suggestion.cleanlinessScore}%`);
+        }
+        if (suggestion.dateProximity !== undefined && suggestion.dateProximity !== null) {
+            const difference = suggestion.dateDifferenceDays === undefined || suggestion.dateDifferenceDays === null
+                ? "" : `, ${suggestion.dateDifferenceDays} day(s) from base`;
+            scoreParts.push(`date proximity ${suggestion.dateProximity}%${difference}`);
+        } else if (suggestion.dateProximityUnavailable) {
+            scoreParts.push(`date proximity unavailable: ${suggestion.dateProximityUnavailable}`);
+        }
+        if (suggestion.combinedScore !== undefined && suggestion.combinedScore !== null) {
+            scoreParts.push(`combined ${suggestion.combinedScore}%`);
+        }
+        byId("suggested-vessel-summary").textContent =
+            `${text(suggestion.vessel, "Unnamed vessel")} — Voyage ${text(suggestion.voyage, "?")} · first-port departure ${text(suggestion.firstPortDeparture, "No proof data")} · ${scoreParts.join(" · ") || "score details unavailable"} · informative port ${port ? `${text(port.port)}${port.portCode ? ` (${port.portCode})` : ""}` : "none"}.`;
+        const dateBasis = basis.baseDate
+            ? `Case ${text(basis.case, "?")} · base ${basis.baseDate} · window ${text(basis.windowStart)} to ${text(basis.windowEnd)}${basis.futureOnly ? " (future only)" : " (past and future)"}. `
+            : basis.dateClosenessUnavailable ? `Date scoring unavailable: ${basis.dateClosenessUnavailable}. ` : "";
+        byId("suggested-vessel-reason").textContent =
+            `${dateBasis}${text(basis.observedPortCount, 0)}/${text(basis.expectedPortCount, 0)} trustworthy rotation calls observed; ${text(basis.missingPortCount, 0)} missing; transition distance ${text(basis.transitionEditDistance, 0)}. ${port ? text(port.reason, "") : "No informative port was available."}`;
+        const index = vessels.findIndex(vessel => vessel.vessel === suggestion.vessel && vessel.voyage === suggestion.voyage);
+        const button = byId("select-suggested-vessel");
+        button.disabled = index === -1;
+        button.onclick = () => {
+            if (index === -1) return;
+            selectRenderedVessel(index);
+            byId("vessel-list").querySelectorAll(".vessel-button")[index]?.scrollIntoView({ block: "nearest" });
+        };
+        callout.classList.remove("hidden");
+    }
+
+    function appendStatus(row, label, badgeClass, note) {
+        const statusCell = document.createElement("td");
+        const badge = document.createElement("span");
+        badge.className = `badge ${badgeClass}`;
+        badge.textContent = label;
+        statusCell.appendChild(badge);
+        if (note) {
+            const detail = document.createElement("span");
+            detail.className = "status-note";
+            detail.textContent = note;
+            statusCell.appendChild(detail);
+        }
+        row.appendChild(statusCell);
+    }
+
+    function identityPresentation(vessel, notices) {
+        const proofAmbiguity = notices.find(notice => notice.type === "ambiguous-proof-voyage"
+            && notice.voyage === vessel.normalizedVoyage
+            && Array.isArray(notice.proofVessels) && notice.proofVessels.includes(vessel.vessel));
+        if (vessel.identityStatus === "matched") {
+            const otherClaimants = proofAmbiguity
+                ? proofAmbiguity.proofVessels.filter(name => name !== vessel.vessel) : [];
+            const ambiguityNote = otherClaimants.length ? ` Another OCR vessel also claims this voyage: ${otherClaimants.join(", ")}.` : "";
+            return { label: "Matched", badge: "good", issue: otherClaimants.length > 0, note: `Guideline: ${text(vessel.guidelineMatch && vessel.guidelineMatch.name)} / ${text(vessel.guidelineMatch && vessel.guidelineMatch.voyage)}.${ambiguityNote}` };
+        }
+        if (proofAmbiguity) {
+            const others = proofAmbiguity.proofVessels.filter(name => name !== vessel.vessel);
+            return { label: "Ambiguous voyage", badge: "warning-badge", note: `Also claimed by ${others.join(", ") || "another OCR vessel"}.` };
+        }
+        if (vessel.identityStatus === "ambiguous-guideline-voyage") {
+            const candidates = Array.isArray(vessel.guidelineCandidates)
+                ? vessel.guidelineCandidates.map(candidate => `${text(candidate.name)} / ${text(candidate.voyage)}`) : [];
+            return { label: "Ambiguous voyage", badge: "warning-badge", note: `Matches guideline candidates: ${candidates.join(", ")}.` };
+        }
+        if (vessel.identityStatus === "vessel-name-mismatch") {
+            return { label: "Name mismatch", badge: "warning-badge", note: `Guideline expects ${text(vessel.guidelineMatch && vessel.guidelineMatch.name)} / ${text(vessel.guidelineMatch && vessel.guidelineMatch.voyage)}.` };
+        }
+        return { label: "Not in guideline", badge: "info", note: "Proof-derived vessel/voyage has no guideline counterpart." };
+    }
+
+    function renderIdentityTable(vessels, notices) {
+        const body = byId("identity-body");
+        body.replaceChildren();
+        let issueCount = 0;
+        for (const vessel of vessels) {
+            const presentation = identityPresentation(vessel, notices);
+            if (presentation.label !== "Matched" || presentation.issue) issueCount++;
+            const row = document.createElement("tr");
+            cell(row, vessel.vessel);
+            cell(row, text(vessel.imo, "Unknown"));
+            cell(row, vessel.voyage);
+            appendStatus(row, presentation.label, presentation.badge, presentation.note);
+            body.appendChild(row);
+        }
+        const missing = notices.filter(notice => notice.type === "missing-in-ocr");
+        for (const notice of missing) {
+            issueCount++;
+            const row = document.createElement("tr");
+            cell(row, notice.guidelineVessel);
+            cell(row, text(notice.guidelineImo, "Unknown"));
+            cell(row, notice.guidelineVoyage);
+            appendStatus(row, "Missing", "warning-badge", "Expected by the guideline but absent from proof data.");
+            body.appendChild(row);
+        }
+        byId("notice-count").textContent = String(issueCount);
+        byId("no-identity-rows").classList.toggle("hidden", Boolean(vessels.length || missing.length));
+    }
+
+    function vesselSource(vessel, proofSummary) {
+        const proofPort = Array.isArray(vessel.ports) ? vessel.ports.find(port => port.source) : null;
+        if (proofPort) return { source: proofPort.source, confidence: proofPort.ocrConfidence };
+        if (proofSummary && proofSummary.received > 0 && proofSummary.ocrProofCount === proofSummary.received) {
+            return { source: "ocr", confidence: "unverified" };
+        }
+        return { source: "proof", confidence: null };
+    }
+
+    function renderEndResult(vessels, rotation, notices, proofSummary, candidates, tradetechVesselList) {
+        const rosterBody = byId("end-roster-body");
+        const groups = byId("end-fill-groups");
+        const curatedBody = byId("tradetech-vessel-body");
+        rosterBody.replaceChildren();
+        groups.replaceChildren();
+        curatedBody.replaceChildren();
+        const topCandidateKeys = new Set((Array.isArray(candidates) ? candidates : []).slice(0, 3)
+            .map(candidate => JSON.stringify([candidate.vessel, candidate.voyage])));
+        for (const entry of Array.isArray(tradetechVesselList) ? tradetechVesselList : []) {
+            const row = document.createElement("tr");
+            cell(row, entry.vessel);
+            cell(row, entry.voyage);
+            const roleLabels = { "one-off-earlier": "Earlier voyage", base: "Base", later: "Later" };
+            cell(row, roleLabels[entry.role] || entry.role);
+            cell(row, entry.firstPortDeparture || "No proof data");
+            const scores = [];
+            if (entry.cleanlinessScore !== null && entry.cleanlinessScore !== undefined) scores.push(`clean ${entry.cleanlinessScore}%`);
+            if (entry.combinedScore !== null && entry.combinedScore !== undefined) scores.push(`combined ${entry.combinedScore}%`);
+            cell(row, scores.join(" · ") || "Not scored");
+            cell(row, entry.note || "");
+            curatedBody.appendChild(row);
+        }
+        if (!Array.isArray(tradetechVesselList) || !tradetechVesselList.length) {
+            const row = document.createElement("tr"), empty = cell(row, "No eligible suggested entries are available");
+            empty.colSpan = 6; curatedBody.appendChild(row);
+        }
+        for (const vessel of vessels) {
+            const isTopCandidate = topCandidateKeys.has(JSON.stringify([vessel.vessel, vessel.voyage]));
+            const provenance = vesselSource(vessel, proofSummary);
+            const rosterRow = document.createElement("tr");
+            if (isTopCandidate) rosterRow.className = "top-candidate";
+            cell(rosterRow, vessel.vessel);
+            cell(rosterRow, text(vessel.imo, "Unknown"));
+            cell(rosterRow, vessel.voyage);
+            const firstPort = Array.isArray(vessel.ports)
+                ? vessel.ports.find(port => port.rotationIndex === 0) : null;
+            const departureCell = document.createElement("td");
+            const firstPortDeparture = firstPort && (firstPort.etd || firstPort.eta);
+            departureCell.append(document.createTextNode(text(firstPortDeparture, "No proof data")));
+            if (firstPort && firstPort.source) {
+                departureCell.append(document.createTextNode(" "));
+                departureCell.appendChild(sourceBadge(firstPort.source, firstPort.ocrConfidence));
+            }
+            rosterRow.appendChild(departureCell);
+            const rosterSource = document.createElement("td");
+            rosterSource.appendChild(sourceBadge(provenance.source, provenance.confidence));
+            rosterRow.appendChild(rosterSource);
+            rosterBody.appendChild(rosterRow);
+
+            const group = document.createElement("section");
+            group.className = "end-vessel";
+            if (isTopCandidate) group.classList.add("top-candidate");
+            const heading = document.createElement("h3");
+            heading.append(document.createTextNode(`${text(vessel.vessel, "Unnamed vessel")} — Voyage ${text(vessel.voyage, "?")} `));
+            heading.appendChild(sourceBadge(provenance.source, provenance.confidence));
+            const tableWrap = document.createElement("div");
+            tableWrap.className = "table-wrap";
+            const table = document.createElement("table");
+            const head = document.createElement("thead");
+            const headRow = document.createElement("tr");
+            ["#", "Port", "ETA to fill", "ETD to fill", "Source"].forEach(label => {
+                const header = document.createElement("th"); header.textContent = label; headRow.appendChild(header);
+            });
+            head.appendChild(headRow);
+            const body = document.createElement("tbody");
+            for (const leg of rotation) {
+                const port = Array.isArray(vessel.ports) ? vessel.ports.find(item => item.rotationIndex === leg.index) : null;
+                const row = document.createElement("tr");
+                if (leg.pastLoopBoundary) row.className = "past-loop";
+                cell(row, leg.index + 1);
+                cell(row, `${text(leg.name)}${leg.code ? ` (${leg.code})` : ""}`);
+                cell(row, port && port.eta);
+                cell(row, port && port.etd);
+                const sourceCell = document.createElement("td");
+                sourceCell.appendChild(sourceBadge(port && port.source, port && port.ocrConfidence));
+                appendOcrCorrections(sourceCell, port && port.ocrCorrections);
+                row.appendChild(sourceCell);
+                body.appendChild(row);
+            }
+            table.append(head, body); tableWrap.appendChild(table); group.append(heading, tableWrap);
+            const chronological = document.createElement("div");
+            renderChronologicalView(chronological, vessel);
+            group.appendChild(chronological);
+            groups.appendChild(group);
+        }
+        if (!vessels.length) {
+            const row = document.createElement("tr"), empty = cell(row, "No proof-derived vessel/voyage entries");
+            empty.colSpan = 5; rosterBody.appendChild(row);
+        }
+        byId("no-end-result").classList.toggle("hidden", vessels.length !== 0);
+        const missing = notices.filter(notice => notice.type === "missing-in-ocr");
+        const missingNote = byId("end-missing-note");
+        missingNote.textContent = missing.length
+            ? `Still needed, not available in proof data: ${missing.map(item => `${text(item.guidelineVessel)} / ${text(item.guidelineVoyage)}`).join(", ")}.`
+            : "";
+        missingNote.classList.toggle("hidden", !missing.length);
+    }
+
+    function renderAudit(data, resultSource) {
+        byId("date-policy").textContent = text(data.explain && data.explain.datePolicy, "proof-only");
+        const rotationBody = byId("audit-rotation-body");
+        rotationBody.replaceChildren();
+        for (const leg of data.rotation) {
+            const row = document.createElement("tr");
+            if (leg.pastLoopBoundary) row.className = "past-loop";
+            [leg.index + 1, leg.row, leg.code, leg.name,
+                leg.pastLoopBoundary ? "past loop boundary" : leg.isLoopClosure ? "loop closure" : "in rotation"]
+                .forEach(value => cell(row, value));
+            rotationBody.appendChild(row);
+        }
+
+        const unmatched = data.explain && Array.isArray(data.explain.unmatchedProofs) ? data.explain.unmatchedProofs : [];
+        byId("unmatched-count").textContent = String(unmatched.length);
+        const unmatchedBody = byId("unmatched-body");
+        unmatchedBody.replaceChildren();
+        for (const item of unmatched) {
+            const proof = item.proof || {}, row = document.createElement("tr");
+            [proof.vessel, proof.voyage, proof.port, proof.eta, proof.etd].forEach(value => cell(row, value));
+            const sourceCell = document.createElement("td");
+            sourceCell.appendChild(sourceBadge(proof.source, proof.ocrConfidence));
+            row.appendChild(sourceCell);
+            cell(row, item.reason);
+            unmatchedBody.appendChild(row);
+        }
+        if (!unmatched.length) {
+            const row = document.createElement("tr"), empty = cell(row, "All resolvable proof rows were placed in the rotation");
+            empty.colSpan = 7; unmatchedBody.appendChild(row);
+        }
+
+        currentUnresolved = data.unresolvedPortLabels;
+        currentSource = resultSource;
+        byId("unresolved-count").textContent = String(currentUnresolved.length);
+        const unresolvedBody = byId("unresolved-body");
+        unresolvedBody.replaceChildren();
+        for (let index = 0; index < currentUnresolved.length; index++) {
+            const item = currentUnresolved[index], row = document.createElement("tr");
+            [item.operator, item.rawLabel, item.occurrences, `${text(item.exampleVessel)} / ${text(item.exampleVoyage)}`].forEach(value => cell(row, value));
+            const inputCell = document.createElement("td"), input = document.createElement("input");
+            input.type = "text"; input.className = "port-code-input"; input.dataset.mappingIndex = String(index);
+            input.placeholder = "Port code"; input.disabled = resultSource !== "live";
+            inputCell.appendChild(input); row.appendChild(inputCell); unresolvedBody.appendChild(row);
+        }
+        if (!currentUnresolved.length) {
+            const row = document.createElement("tr"), empty = cell(row, "All proof port labels resolved");
+            empty.colSpan = 5; unresolvedBody.appendChild(row);
+        }
+        byId("mapping-actions").classList.toggle("hidden", !currentUnresolved.length);
+        saveButton.disabled = resultSource !== "live";
+        rerunButton.classList.add("hidden");
+        byId("mapping-feedback").textContent = "";
+        byId("mapping-guidance").textContent = resultSource === "live"
+            ? "Enter Tradetech port codes and save them so the next run can place these proof dates in the rotation."
+            : "Mapping edits are disabled for saved files. Run live before teaching mappings.";
+
+        currentUnresolvedVessels = Array.isArray(data.unresolvedVesselMappings) ? data.unresolvedVesselMappings : [];
+        byId("unresolved-vessel-count").textContent = String(currentUnresolvedVessels.length);
+        const vesselBody = byId("unresolved-vessel-body");
+        vesselBody.replaceChildren();
+        for (let index = 0; index < currentUnresolvedVessels.length; index++) {
+            const item = currentUnresolvedVessels[index], row = document.createElement("tr");
+            [item.vessel, item.exampleVoyage, item.source].forEach(value => cell(row, value));
+            const inputCell = document.createElement("td"), input = document.createElement("input");
+            input.type = "text"; input.inputMode = "numeric"; input.maxLength = 7;
+            input.pattern = "[0-9]{7}"; input.className = "vessel-imo-input";
+            input.dataset.mappingIndex = String(index); input.placeholder = "7-digit IMO";
+            input.disabled = resultSource !== "live";
+            inputCell.appendChild(input); row.appendChild(inputCell); vesselBody.appendChild(row);
+        }
+        if (!currentUnresolvedVessels.length) {
+            const row = document.createElement("tr"), empty = cell(row, "Every displayed vessel has an IMO mapping");
+            empty.colSpan = 4; vesselBody.appendChild(row);
+        }
+        byId("vessel-mapping-actions").classList.toggle("hidden", !currentUnresolvedVessels.length);
+        vesselSaveButton.disabled = resultSource !== "live";
+        vesselRerunButton.classList.add("hidden");
+        byId("vessel-mapping-feedback").textContent = "";
+        byId("vessel-mapping-guidance").textContent = resultSource === "live"
+            ? "Enter the ship's 7-digit IMO (also called Lloyds code) and save it for future identity matching."
+            : "Vessel mapping edits are disabled for saved files. Run live before teaching mappings.";
+    }
+
+    function render(data, resultSource) {
+        if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("The JSON root must be an object.");
+        if (data.formatVersion !== 2 || !Array.isArray(data.rotation) || !Array.isArray(data.vessels) || !Array.isArray(data.notices)) {
+            throw new Error("This result predates the current proof-driven format. Please re-run the Fill calculation.");
+        }
+        if (!Array.isArray(data.unresolvedPortLabels)) data.unresolvedPortLabels = [];
+        if (!Array.isArray(data.unresolvedVesselMappings)) data.unresolvedVesselMappings = [];
+        byId("service").textContent = text(data.service);
+        byId("operator").textContent = text(data.operator);
+        byId("rotation-count").textContent = String(data.rotation.length);
+        byId("vessel-count").textContent = String(data.vessels.length);
+        const summary = data.proofSummary || {};
+        const sourceLabels = {
+            "on-demand-search": "found and extracted now",
+            "request-body": "request-provided fixture",
+            "last-extraction": "cached last extraction",
+            "none": "no matching proof file",
+        };
+        const source = sourceLabels[data.proofSource] || text(data.proofSource, "not recorded");
+        const count = Number.isFinite(data.proofCount) ? data.proofCount : summary.received;
+        let proofText = `${source} / ${text(count, "unknown")} row(s)`;
+        if (data.proofFile) proofText += ` from ${data.proofFile}`;
+        if (summary.ocrProofCount > 0) proofText += ` (${summary.ocrProofCount} OCR — unverified; ${summary.structuredProofCount || 0} structured)`;
+        byId("proof-input").textContent = proofText;
+        const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+        const warningList = byId("warning-list"); warningList.replaceChildren();
+        for (const warning of warnings) { const item = document.createElement("li"); item.textContent = text(warning); warningList.appendChild(item); }
+        byId("warnings").classList.toggle("hidden", !warnings.length);
+        setMainTab("rotations");
+        renderVessels(data.vessels, data.rotation);
+        renderSuggestion(data.suggestedVessel, data.vessels);
+        renderIdentityTable(data.vessels, data.notices);
+        renderEndResult(
+            data.vessels, data.rotation, data.notices, summary,
+            data.explain && data.explain.cleanlinessCandidates,
+            data.tradetechVesselList
+        );
+        renderAudit(data, resultSource);
+        results.classList.remove("hidden", "stale");
+    }
+
+    async function runLive() {
+        const ownGeneration = ++generation;
+        clearError();
+        if (!results.classList.contains("hidden")) results.classList.add("stale");
+        runButton.disabled = true; status.textContent = "Running…";
+        try {
+            const response = await fetch("/fill-test/run", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+            });
+            const data = await response.json();
+            if (ownGeneration !== generation) return;
+            if (!response.ok || data.error) throw new Error(data.error || `Request failed (${response.status})`);
+            render(data, "live");
+            status.textContent = `Live result loaded: ${data.vessels.length} proof vessel(s).`;
+        } catch (error) {
+            if (ownGeneration !== generation) return;
+            showError(`Could not run calculation: ${error.message || error}`);
+            status.textContent = "Live run failed; the previous result remains visible.";
+        } finally {
+            if (ownGeneration === generation) runButton.disabled = false;
+        }
+    }
+
+    runButton.addEventListener("click", runLive);
+    rerunButton.addEventListener("click", runLive);
+    vesselRerunButton.addEventListener("click", runLive);
+    fileInput.addEventListener("change", () => {
+        const ownGeneration = ++generation, file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        clearError(); status.textContent = `Reading ${file.name}…`;
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (ownGeneration !== generation) return;
+            try { render(JSON.parse(reader.result), "file"); status.textContent = `Loaded ${file.name}.`; }
+            catch (error) { showError(error.message || String(error)); status.textContent = "File could not be loaded."; }
+        };
+        reader.onerror = () => { if (ownGeneration === generation) showError(`Could not read ${file.name}.`); };
+        reader.readAsText(file);
+    });
+
+    saveButton.addEventListener("click", async () => {
+        const mappings = [];
+        document.querySelectorAll(".port-code-input").forEach(input => {
+            const portCode = input.value.trim();
+            const item = currentUnresolved[Number(input.dataset.mappingIndex)];
+            if (portCode && item) mappings.push({ operator: item.operator, rawLabel: item.rawLabel, portCode });
+        });
+        const feedback = byId("mapping-feedback"); feedback.classList.remove("error");
+        if (currentSource !== "live") { feedback.textContent = "Run live before saving mappings."; feedback.classList.add("error"); return; }
+        if (!mappings.length) { feedback.textContent = "Enter at least one port code."; feedback.classList.add("error"); return; }
+        saveButton.disabled = true;
+        try {
+            const response = await fetch("/port-dictionary/learn-batch", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mappings }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.error || `Request failed (${response.status})`);
+            feedback.textContent = `${data.learned || 0} mapping(s) learned.`;
+            rerunButton.classList.remove("hidden");
+        } catch (error) {
+            feedback.textContent = `Save failed: ${error.message || error}`; feedback.classList.add("error");
+        } finally { saveButton.disabled = false; }
+    });
+
+    vesselSaveButton.addEventListener("click", async () => {
+        const entries = [];
+        let invalid = false;
+        document.querySelectorAll(".vessel-imo-input").forEach(input => {
+            const lloydsCode = input.value.trim();
+            const item = currentUnresolvedVessels[Number(input.dataset.mappingIndex)];
+            if (!lloydsCode) return;
+            if (!/^\d{7}$/.test(lloydsCode)) invalid = true;
+            else if (item) entries.push({ vessel: item.vessel, lloydsCode });
+        });
+        const feedback = byId("vessel-mapping-feedback"); feedback.classList.remove("error");
+        if (currentSource !== "live") { feedback.textContent = "Run live before saving vessel mappings."; feedback.classList.add("error"); return; }
+        if (invalid) { feedback.textContent = "Every entered IMO must contain exactly 7 digits."; feedback.classList.add("error"); return; }
+        if (!entries.length) { feedback.textContent = "Enter at least one IMO number."; feedback.classList.add("error"); return; }
+        vesselSaveButton.disabled = true;
+        try {
+            const response = await fetch("/vessel-dictionary/learn-batch", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entries }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.error || `Request failed (${response.status})`);
+            feedback.textContent = `${data.learned || 0} vessel mapping(s) learned.`;
+            vesselRerunButton.classList.remove("hidden");
+        } catch (error) {
+            feedback.textContent = `Save failed: ${error.message || error}`; feedback.classList.add("error");
+        } finally { vesselSaveButton.disabled = false; }
+    });
+})();
+</script>
+</body>
+</html>

@@ -10,6 +10,7 @@
 const fs   = require("fs");
 const path = require("path");
 const { DATA_FOLDER, HISTORY_FOLDER, DUE_SERVICES_FILE } = require("./config");
+const { writeFileAtomicSync } = require("./atomic-write");
 
 let dueServices     = []; // [{ record, service, carrier, assignedTo, nextUpdateDate, done? }]
 let dueServicesAsOf = null; // ISO timestamp of the last scan received
@@ -39,10 +40,10 @@ function save() {
 
     const payload = JSON.stringify({ asOf: dueServicesAsOf, services: dueServices }, null, 2);
 
-    fs.writeFileSync(DUE_SERVICES_FILE, payload);
+    writeFileAtomicSync(DUE_SERVICES_FILE, payload);
 
     const historyPath = path.join(HISTORY_FOLDER, `due-services-${timestampForFilename()}.json`);
-    fs.writeFileSync(historyPath, payload);
+    writeFileAtomicSync(historyPath, payload);
 
     console.log(`💾 Saved due-services (${dueServices.length} service(s)) → ${DUE_SERVICES_FILE}`);
     console.log(`💾 History snapshot → ${historyPath}`);

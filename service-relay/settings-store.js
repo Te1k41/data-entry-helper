@@ -19,6 +19,7 @@
 const fs   = require("fs");
 const os   = require("os");
 const path = require("path");
+const { writeFileAtomicSync } = require("./atomic-write");
 
 const SETTINGS_FILE = path.join(__dirname, "settings.json");
 const PLATFORM_KEYS = ["watchFolder", "dataFolder"];
@@ -103,7 +104,7 @@ function save(partialSettings) {
         merged[key] = byPlatform;
     }
 
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2));
+    writeFileAtomicSync(SETTINGS_FILE, JSON.stringify(merged, null, 2));
     console.log("⚙️ Settings saved:", merged);
 
     return load();

@@ -120,15 +120,21 @@ const KeyboardFieldNav = {
         }
     },
 
-    // Focuses a field AND selects all its text — like landing on a
-    // cell in a spreadsheet, so typing immediately overwrites whatever
-    // was there instead of you needing to select/clear it first.
-    // Every navigation jump in this feature goes through this one
-    // helper so the select-all behavior stays consistent everywhere.
+    // Focuses a field AND selects its text — like landing on a cell in
+    // a spreadsheet, so typing immediately overwrites whatever was
+    // there instead of you needing to select/clear it first. Uses
+    // selectFieldSmart() (src/utils/dom.js) rather than a plain
+    // field.select() so a port-name field selects the same narrowed
+    // range here as it does on a plain mouse click (select-field-on-
+    // focus.js) — this used to call field.select() directly, which ran
+    // AFTER that click-driven selection and always silently widened it
+    // back to the full value. Every navigation jump in this feature
+    // goes through this one helper so behavior stays consistent
+    // everywhere.
     focusField(field, event) {
         event.preventDefault();
         field.focus();
-        field.select();
+        selectFieldSmart(field);
     },
 
     // Focuses a specific named field in the same row, if it exists.

@@ -21,6 +21,7 @@
 const RenameToggle = {
 
     enabled: true,
+    relayAvailable: false,
 
     init() {
         // Ask the background service worker for the current state,
@@ -32,18 +33,22 @@ const RenameToggle = {
             if (chrome.runtime.lastError) {
                 // Background worker unreachable (rare) — fall back to
                 // the default so the button still appears rather than
-                // silently never showing up.
+                // silently never showing up. relayAvailable stays false
+                // (its initial value), so the button reflects "relay
+                // status unknown yet" until a later RELAY_STATUS_CHANGED
+                // message corrects it.
                 this.createToggleButton();
                 return;
             }
 
             this.enabled = response?.enabled !== false;
+            this.relayAvailable = response?.relayAvailable === true;
 
             // On mergeimagesonline.com, always force renaming back ON
             // whenever this page loads/reconnects (e.g. a reload
             // after a merge session), regardless of whatever state
             // was left on from before.
-            if (location.hostname === "mergeimagesonline.com" && !this.enabled) {
+            if (this.relayAvailable && location.hostname === "mergeimagesonline.com" && !this.enabled) {
                 this.enabled = true;
                 this.broadcastEnabled();
                 console.log("📁 mergeimagesonline.com loaded — forcing Rename: ON");
@@ -59,12 +64,19 @@ const RenameToggle = {
                 this.enabled = message.enabled;
                 this.updateButton();
             }
+            if (message?.type === "RELAY_STATUS_CHANGED") {
+                this.relayAvailable = message.available === true;
+                this.updateButton();
+            }
         });
     },
 
     updateButton() {
         const btn = document.getElementById("tt-rename-toggle");
-        if (btn) btn.textContent = `📁 Rename: ${this.enabled ? "ON" : "OFF"}`;
+        if (btn) {
+            btn.textContent = `📁 Rename: ${this.enabled ? "ON" : "OFF"}`;
+            btn.style.display = this.relayAvailable ? "block" : "none";
+        }
     },
 
     // Tells the background service worker about the new state, which
@@ -87,6 +99,7 @@ const RenameToggle = {
                 this.updateButton();
             }
         });
+        this.updateButton();
     },
 
     handle(_event)    {},
