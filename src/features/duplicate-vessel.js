@@ -131,7 +131,7 @@ const DuplicateVessel = {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.textContent = "⧉";
-        btn.title = "Duplicate: copy this vessel into the next empty row, voyage number incremented, no dates";
+        btn.title = "Duplicate: copy this vessel into the next empty row, voyage number chained forward each click";
 
         btn.style.cssText = `
             display: inline-block !important;
@@ -152,9 +152,19 @@ const DuplicateVessel = {
             box-sizing: border-box !important;
         `;
 
+        // Per-button voyage chain state: null until this row's vessel has
+        // been duplicated at least once this page-session. Lets repeated
+        // clicks on the SAME original row chain the voyage forward
+        // (201 -> 202 -> 203) instead of recomputing from the unchanged
+        // source every time — see duplicate()'s `chain` parameter.
+        let lastVoyage = null;
+
         btn.addEventListener("click", (e) => {
             e.preventDefault();
-            this.duplicate(field);
+            this.duplicate(field, {
+                get: () => lastVoyage,
+                set: (value) => { lastVoyage = value; }
+            });
         });
 
         insertActionButtonAfter(field, btn);
@@ -185,7 +195,7 @@ const DuplicateVessel = {
         return this.allRows().find(r => (!r.codeField || !r.codeField.value.trim()) && !r.nameField.value.trim());
     },
 
-    duplicate(sourceNameField) {
+    duplicate(sourceNameField, chain) {
         const rowMatch = sourceNameField.name.match(/^SV(\d+)_vessel_name$/);
         const sourceRow = rowMatch ? rowMatch[1] : null;
         const sourceCodeField = sourceRow ? vesselCodeField(sourceRow) : null;
@@ -211,6 +221,7 @@ const DuplicateVessel = {
         const oldTargetName   = target.nameField.value;
         const oldTargetVoyage = targetVoyageField ? targetVoyageField.value : null;
         const oldTargetCode   = readVesselCode(target.row);
+        const previousLastVoyage = chain.get();
 
         VesselActionHistory.push({
             label: `Duplicate → SV${target.row} ("${vesselName}")`,
@@ -226,6 +237,11 @@ const DuplicateVessel = {
                     const pvVoyage = document.querySelector(`input[name="PV_${targetVoyageField.name}"]`);
                     if (pvVoyage) pvVoyage.value = targetVoyageField.value;
                 }
+
+                // Roll the voyage chain back too, so the next click on
+                // this same button continues from before this (now-
+                // undone) duplicate, not from its result.
+                chain.set(previousLastVoyage);
             }
         });
 
@@ -244,18 +260,37 @@ const DuplicateVessel = {
 
         console.log(`⧉ Duplicated ${sourceNameField.name} → ${target.nameField.name}: "${vesselName}" (code ${sourceCodeField.value})`);
 
-        if (sourceVoyageField && targetVoyageField && sourceVoyageField.value.trim()) {
+        if (sourceVoyageField && targetVoyageField) {
             const increment = VesselVoyageCorrection.getVoyageIncrement();
-            const newCode = VoyageUtils.step(sourceVoyageField.value, increment);
 
-            setFieldValue(targetVoyageField, newCode);
+            // increment > 0: chain forward from the LAST voyage this same
+            // button produced (not the source's unchanged DOM value), so
+            // repeated clicks on one original row give 201 -> 202 -> 203
+            // instead of 202 every time. increment <= 0: always reuse the
+            // source's own value unchanged ("keep the voyage number of
+            // the duplicate") — never stepped, regardless of click count.
+            // Deliberately a different policy than getShiftMagnitude()'s
+            // non-positive fallback (voyage-step-buttons.js) — that one's
+            // for a manual step button where doing nothing would be bad
+            // UX; here the spec for <=0 is "copy, don't step."
+            const baseVoyage = (increment > 0 && previousLastVoyage !== null)
+                ? previousLastVoyage
+                : sourceVoyageField.value;
 
-            // Mirror into the hidden PV_ duplicate, same as every other
-            // feature that writes a voyage code.
-            const pvField = document.querySelector(`input[name="PV_${targetVoyageField.name}"]`);
-            if (pvField) pvField.value = targetVoyageField.value;
+            if (baseVoyage.trim()) {
+                const newCode = increment > 0 ? VoyageUtils.step(baseVoyage, increment) : baseVoyage;
 
-            console.log(`🔢 ${targetVoyageField.name} → ${targetVoyageField.value}`);
+                setFieldValue(targetVoyageField, newCode);
+
+                // Mirror into the hidden PV_ duplicate, same as every other
+                // feature that writes a voyage code.
+                const pvField = document.querySelector(`input[name="PV_${targetVoyageField.name}"]`);
+                if (pvField) pvField.value = targetVoyageField.value;
+
+                console.log(`🔢 ${targetVoyageField.name} → ${targetVoyageField.value}`);
+
+                chain.set(newCode);
+            }
         }
 
         // Deliberately nothing written to SV{target.row}_depart_date —
