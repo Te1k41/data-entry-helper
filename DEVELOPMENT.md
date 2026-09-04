@@ -29,11 +29,18 @@ To develop/test the no-relay community experience instead, run `node scripts/bui
 
 ## The community-build script
 
-`node scripts/build-community.js [outDir]` (default `outDir`: `community-version/`) copies `manifest.json` + `src/` (no server, no dev docs) plus `README.md`/`FEATURES.md` generated from the checked-in templates in `docs/community-*-template.md`, then runs a set of automated checks before declaring success:
+`node scripts/build-community.js [outDir]` (default `outDir`: `community-version/`) copies `manifest.json` + `src/` (no server, no dev docs) plus `README.md`/`FEATURES.md` generated from the checked-in templates in `docs/community-*-template.md`, then applies two more transforms before running its checks:
+
+- **Excludes** relay-only feature files entirely (`EXCLUDED_SRC_FILES` in the script — Scan & Save, Upload Proof, rename-toggle, Schedule preview tools, and a few silent relay-only integrations). These have zero value with no server, so the code itself is left out rather than shipped disabled.
+- **Overrides** a few files that mix relay logic with genuine local-only value, with a trimmed variant from `community-overrides/` instead of a straight copy: `manifest.json` (its `content_scripts` blocks drop the excluded files' entries), `src/main.js` (its `FEATURES` array drops the excluded features' identifiers — required, since a bare reference to a name nothing declares is a `ReferenceError` the instant that array literal runs, which would crash every other feature too, not just the missing one), `src/background.js` (keeps Full Page Capture, drops the relay-socket/rename-state code), `src/utils/toolbar.js` (keeps everything, no-ops just the cross-tab relay-socket sync), and `src/features/live-check.js` (keeps only its local duplicate-IMO check). If you change the real counterpart of any of these five files, check whether `community-overrides/` needs the same change.
+
+Then it verifies:
 
 - `node --check` on every copied `.js` file
 - the manifest parses and every script path it references actually exists in the output
-- byte-for-byte parity against the real `src/` tree
+- every identifier in `main.js`'s `FEATURES` array is actually declared somewhere in the shipped bundle (catches exactly the crash-everything `ReferenceError` risk above)
+- byte-for-byte parity against the real `src/` tree, for every file that isn't deliberately excluded or overridden
+- the exclusions and overrides were both actually applied (not silently left as the straight copy)
 - no non-comment reference to `service-relay/` leaked into the shipped source
 
 Exits non-zero on any failure. Re-run it whenever mainline changes and the community edition needs to catch up — it always rebuilds from a clean output directory, so stale files from a previous run never linger. Still worth one real "Load unpacked" smoke test in Chrome before actually sharing a build; the script only does static checks.

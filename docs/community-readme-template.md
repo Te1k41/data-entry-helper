@@ -14,14 +14,15 @@ Chrome will load the extension immediately. Keep this folder in place while the 
 
 ## No server required
 
-This community version works without installing or running a local server. Validation, highlighting, date syncing, notes, navigation, vessel and port helpers, and full-page capture continue to work normally.
+This is a self-contained edition with no local server involved at all — not just optional, genuinely not included. Validation, highlighting, date syncing, notes, navigation, vessel and port helpers, and full-page capture all work normally.
 
-A few workstation-specific features depend on an optional local relay server that is not included or required here:
+A handful of workstation-specific features from the full version depend on a local relay server that only makes sense on the original developer's own machine, so they're left out of this build entirely rather than shipped as disabled buttons:
 
-- Scan & Save
+- Scan & Save (automated due-service scanning)
 - Upload Proof
-- Live Check
-- Rename toggle
+- Full Live Check (proof/DOM-scrape comparison — the local duplicate-IMO consistency check is still included, since that part never needed a server)
+- Rename toggle (server-side downloaded-file renaming)
 - Schedule preview tools
+- Quiet background integrations (schedule snapshot sharing, service-code sharing, merge-download cleanup, Yang Ming schedule-table capture)
 
-When the relay is unavailable, those features are hidden or shown disabled/grayed out with a **Requires the optional local relay server** tooltip. They do not prevent the rest of the extension from working.
+See [FEATURES.md](FEATURES.md) for exactly what's included instead.
