@@ -8,20 +8,7 @@
 // ============================================================
 
 const settingsStore = require("../settings-store");
-
-function readBody(req) {
-    return new Promise((resolve, reject) => {
-        let body = "";
-        req.on("data", chunk => { body += chunk; });
-        req.on("end", () => {
-            try {
-                resolve(JSON.parse(body));
-            } catch (err) {
-                reject(err);
-            }
-        });
-    });
-}
+const { readJsonBody } = require("../read-json-body");
 
 function handleGetSettings(req, res) {
     const settings = settingsStore.load();
@@ -31,7 +18,7 @@ function handleGetSettings(req, res) {
 
 async function handlePostSettings(req, res) {
     try {
-        const body = await readBody(req);
+        const body = await readJsonBody(req);
 
         // Only accept known fields — don't let an unexpected payload
         // write arbitrary keys into settings.json.

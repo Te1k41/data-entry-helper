@@ -15,7 +15,7 @@ const settings = settingsStore.load();
 const PORT = 3737;
 
 const WATCH_FOLDER = settings.watchFolder;
-const WATCH_EXTS   = [".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".pdf"];
+const WATCH_EXTS   = [".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".pdf", ".txt", ".html", ".htm"];
 
 // Root folder for anything this server needs to remember across
 // restarts. Structured so new features (vessel positions, future

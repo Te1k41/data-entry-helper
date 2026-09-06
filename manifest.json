@@ -9,12 +9,16 @@
   
   "permissions": [
     "downloads",
-    "storage"
+    "storage",
+    "activeTab",
+    "scripting"
   ],
-  
+
   "host_permissions": [
       "http://localhost:3737/*"
   ],
+
+  "action": {},
 
 "content_scripts": [
     {
@@ -25,10 +29,14 @@
         "js": [
             "src/utils/date.js",
             "src/utils/button.js",
+            "src/utils/relay-socket-client.js",
             "src/utils/toolbar.js",
+            "src/utils/toolbar-relay.js",
             "src/utils/banner.js",
             "src/utils/dom.js",
             "src/utils/voyage.js",
+            "src/utils/vessel-row.js",
+            "src/utils/port-row.js",
             "src/core/boundary.js",
             "src/features/notes.js",
             "src/features/notes-sidebar.js",
@@ -37,28 +45,48 @@
             "src/features/date-syncing.js",
             "src/features/manual-etd-highlight.js",
             "src/features/arrival-depart-order-check.js",
+            "src/features/port-date-order-check.js",
+            "src/features/insert-port.js",
             "src/features/port-name-reminder.js",
+            "src/features/vessel-name-reminder.js",
             "src/features/port-highlighting.js",
+            "src/features/awr-flag.js",
+            "src/features/last-foreign-port-check.js",
             "src/features/vessel-correction.js",
+            "src/features/duplicate-vessel.js",
+            "src/features/duplicate-vessel-check.js",
             "src/features/vessel-no-date.js",
             "src/features/port-no-date.js",
             "src/features/vessel-to-be-announced.js",
             "src/features/voyage-direction.js",
             "src/features/resize-toggle.js",
-            "src/features/service-relay-send.js",
+            "src/features/service-relay-send-relay.js",
+            "src/features/schedule-capture-relay.js",
             "src/features/schedule-cascade.js",
             "src/features/vessel-recommendation.js",
             "src/features/rearrange-vessels.js",
-            "src/features/merge-download-signal.js",
-            "src/features/upload-proof.js",
+            "src/features/merge-download-signal-relay.js",
+            "src/features/upload-proof-relay.js",
             "src/features/keyboard-navigation.js",
+            "src/features/select-field-on-focus.js",
             "src/features/auto-nav-schedules.js",
-            "src/features/due-service-scanner.js",
+            "src/features/due-service-scanner-relay.js",
+            "src/features/schedule-preview-tools-relay.js",
             "src/features/date-step-buttons.js",
             "src/features/voyage-step-buttons.js",
+            "src/features/date-calculator.js",
+            "src/features/live-check.js",
+            "src/features/live-check-relay.js",
             "src/main.js"
         ],
         "all_frames": true,
+        "run_at": "document_idle"
+    },
+    {
+        "matches": ["https://www.yangming.com/*"],
+        "js": [
+            "src/features/schedule-table-scrape-relay.js"
+        ],
         "run_at": "document_idle"
     },
     {
@@ -66,8 +94,8 @@
   "exclude_matches": ["https://www.tradetech.net/*"],
   "js": [
     "src/utils/button.js",
-    "src/features/rename-toggle.js",
-    "src/rename-toggle-init.js"
+    "src/features/rename-toggle-relay.js",
+    "src/rename-toggle-init-relay.js"
   ],
   "run_at": "document_idle"
 },
@@ -80,6 +108,13 @@
   "world": "MAIN",
   "all_frames": true,
   "run_at": "document_start"
+},
+{
+  "matches": ["<all_urls>"],
+  "js": [
+    "src/features/highlighter.js"
+  ],
+  "run_at": "document_idle"
 }
 ]
 }

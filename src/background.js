@@ -1,122 +1,211 @@
 // ============================================================
-//  background.js
-//  Connects to relay via WebSocket for real-time state sync.
+// Full Page Capture always runs. Rename-state sync, DOM-scrape
+// relaying, and schedule HTML side-capture live in the relay companion.
 // ============================================================
+importScripts("background-relay.js");
 
-let lastServiceCode  = "";
-let renamingEnabled  = true;
-let ws               = null;
+// The imported companion may already have registered a side-capture.
+var fpcExtraCaptures = globalThis.fpcExtraCaptures || [];
 
-console.log("🛰 Background script loaded");
-
-// ── WebSocket Connection ─────────────────────────────────────
-function connectWebSocket() {
-    ws = new WebSocket("ws://localhost:3737");
-
-    ws.addEventListener("open", () => {
-        console.log("🔌 Background connected to relay");
-    });
-
-    ws.addEventListener("message", (event) => {
-        try {
-            const data = JSON.parse(event.data);
-
-            if (data.type === "init") {
-                lastServiceCode  = data.serviceCode   || "";
-                renamingEnabled  = data.renamingEnabled !== false;
-                chrome.storage.local.set({ renamingEnabled });
-                console.log("📥 Init state received:", lastServiceCode, renamingEnabled);
-            }
-
-            if (data.type === "service") {
-                lastServiceCode = data.code || "";
-                console.log("📥 Service code updated:", lastServiceCode);
-            }
-
-            if (data.type === "renaming") {
-                renamingEnabled = data.enabled;
-                chrome.storage.local.set({ renamingEnabled });
-                console.log("🔄 Renaming enabled:", renamingEnabled);
-                broadcastRenameState();
-            }
-
-        } catch (err) {
-            console.error("❌ Bad message:", err);
-        }
-    });
-
-    ws.addEventListener("close", () => {
-        console.log("🔌 Background disconnected — reconnecting in 3s");
-        setTimeout(connectWebSocket, 3000);
-    });
-
-    ws.addEventListener("error", () => {
-        console.error("❌ WebSocket error — will retry");
-    });
-}
-
-connectWebSocket();
-
-// ── Message relay for content scripts that can't open their own
-// WebSocket ────────────────────────────────────────────────────
-// rename-toggle.js runs on <all_urls> (except Tradetech), and some
-// sites (e.g. Maersk) set a Content-Security-Policy connect-src that
-// doesn't include ws://localhost:3737 — the browser blocks that
-// connection before it even leaves the machine, no matter how well
-// the relay server is running, because the connection is being
-// opened from INSIDE the page's own context, which the page's own
-// CSP governs. This service worker is NOT part of any page and isn't
-// bound by any page's CSP, so content scripts ask IT for the current
-// state (and tell IT about changes) via chrome.runtime.sendMessage
-// instead of opening a direct socket of their own.
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === "GET_RENAME_STATE") {
-        // Read from storage (survives service-worker restarts) instead
-        // of trusting renamingEnabled, which resets to its hardcoded
-        // default every time the worker wakes back up from being
-        // suspended, before the WebSocket reconnects and corrects it.
-        chrome.storage.local.get("renamingEnabled", (data) => {
-            sendResponse({ enabled: data.renamingEnabled ?? renamingEnabled });
-        });
-        return true; // async sendResponse — keep the channel open
-    }
-
-    if (message?.type === "SET_RENAME_STATE") {
-        renamingEnabled = message.enabled;
-        chrome.storage.local.set({ renamingEnabled });
-        if (ws?.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "renaming", enabled: renamingEnabled }));
-        }
-        broadcastRenameState();
+chrome.runtime.onMessage.addListener((message, sender) => {
+    // window.close() from a content script only works if the tab has a
+    // live window.opener reference (opened via a script/target="_blank"
+    // link) — Tradetech's own Preview link doesn't reliably preserve
+    // that, so schedule-preview-tools-relay.js's Mark Done button asks the
+    // background script to close its tab instead. chrome.tabs.remove()
+    // is a privileged extension API, not page-script window.close(), so
+    // it isn't subject to that same-opener restriction at all.
+    if (message?.type === "CLOSE_TAB") {
+        if (sender.tab?.id) chrome.tabs.remove(sender.tab.id);
         return;
     }
+
 });
 
-// Pushes the current renaming state out to every open tab's content
-// script, so every rename-toggle.js instance (one per open tab) stays
-// in sync whether the change came from another tab's button click or
-// from the relay server's own "renaming" broadcast (e.g. someone
-// toggled it from a different browser entirely).
-function broadcastRenameState() {
-    chrome.tabs.query({}, (tabs) => {
-        for (const tab of tabs) {
-            chrome.tabs.sendMessage(
-                tab.id,
-                { type: "RENAME_STATE_CHANGED", enabled: renamingEnabled },
-                () => {
-                    // Tabs with no content script (chrome://, other
-                    // extensions' pages, etc.) throw "Receiving end
-                    // does not exist" — expected and safe to ignore.
-                    void chrome.runtime.lastError;
-                }
-            );
+// ── Full Page Capture ────────────────────────────────────────
+// GoFullPage replacement. Triggered by the toolbar icon (an activeTab
+// gesture), NOT a popup — manifest.json's "action" has no default_popup,
+// so this fires directly on click. Only the service worker can call
+// captureVisibleTab(), but it has no DOM/canvas access in MV3, so the
+// actual stitching happens in an on-demand-injected content script
+// (full-page-capture-inject.js) — never added to a static content_scripts
+// block, since this must work on whatever site the user happens to be on.
+// The finished PNG is saved via a plain chrome.downloads.download() with
+// a throwaway filename — the relay server's download-watcher.js already
+// renames ANY new matching file per the existing Rename-toggle pipeline,
+// so no relay-side change or custom rename step is needed here.
+
+const FPC_MAX_DIMENSION  = 32767;      // same Firefox/Chrome canvas ceiling as service-relay/dashboard/merge.js
+const FPC_MAX_AREA       = 268435456;
+const FPC_SLICE_DELAY_MS = 600;        // ponytail: one knob covers both scroll-repaint settle AND the
+                                        // ~2 calls/sec captureVisibleTab rate limit — bump this first if
+                                        // MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND errors ever show up
+
+let fpcInProgress = false; // ponytail: global lock, not per-tab — one capture per profile at a time
+                            // is the only realistic case here; per-tab lock is the upgrade path
+
+chrome.action.onClicked.addListener((tab) => {
+    runFullPageCapture(tab).catch((err) => {
+        console.error("[FullPageCapture]", err);
+        reportCaptureError(tab.id, err.message);
+    });
+});
+
+async function runFullPageCapture(tab) {
+    if (fpcInProgress) return;
+    fpcInProgress = true;
+    try {
+        // Independent of the screenshot flow below -- runs alongside it,
+        // not blocking on its multi-second scroll-and-stitch process.
+        fpcExtraCaptures.forEach(capture => capture(tab));
+
+        const [{ result: metrics }] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => ({
+                totalHeight:    Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
+                viewportWidth:  window.innerWidth,
+                viewportHeight: window.innerHeight,
+                dpr:            window.devicePixelRatio || 1,
+                originalX:      window.scrollX,
+                originalY:      window.scrollY,
+            })
+        });
+
+        // captureVisibleTab returns device-pixel images (CSS px * dpr) —
+        // the stitched canvas must be sized/positioned in that space too.
+        const canvasWidth  = Math.round(metrics.viewportWidth * metrics.dpr);
+        const canvasHeight = Math.round(metrics.totalHeight   * metrics.dpr);
+
+        if (canvasWidth > FPC_MAX_DIMENSION || canvasHeight > FPC_MAX_DIMENSION) {
+            throw new Error(`Page is too large to capture (${canvasWidth}×${canvasHeight}px exceeds the ${FPC_MAX_DIMENSION}px canvas limit).`);
         }
+        if (canvasWidth * canvasHeight > FPC_MAX_AREA) {
+            throw new Error(`Page is too large to capture (${canvasWidth}×${canvasHeight}px exceeds the browser's canvas area limit).`);
+        }
+
+        await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ["src/features/full-page-capture-inject.js"]
+        });
+
+        const startResp = await sendToTab(tab.id, { type: "FPC_START", canvasWidth, canvasHeight });
+        if (!startResp?.ok) throw new Error(startResp?.error || "Could not start capture canvas");
+
+        // GoFullPage-style: hide every position:fixed/sticky element (sticky
+        // headers, floating toolbars — including our own rename-toggle
+        // button) before scrolling, so it doesn't get captured once per
+        // slice. visibility:hidden (not display:none) keeps layout/height
+        // stable rather than reflowing the page mid-capture. Always
+        // restored in the finally block below, even on error.
+        await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => {
+                document.querySelectorAll("*").forEach((el) => {
+                    const cs = getComputedStyle(el);
+                    if (cs.position === "fixed" || cs.position === "sticky") {
+                        el.dataset.ttFpcPrevVisibility = el.style.visibility || "";
+                        el.style.visibility = "hidden";
+                    }
+                });
+            }
+        });
+
+        try {
+            const slices = Math.max(1, Math.ceil(metrics.totalHeight / metrics.viewportHeight));
+            for (let i = 0; i < slices; i++) {
+                const scrollY = Math.min(i * metrics.viewportHeight, metrics.totalHeight - metrics.viewportHeight);
+
+                await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: (y) => window.scrollTo(0, y),
+                    args: [scrollY]
+                });
+
+                // ponytail: fixed delay, no scroll-completion/lazy-image-load
+                // detection. Upgrade path if a real page proves flaky: double
+                // rAF or a short MutationObserver-based debounce before capture.
+                await sleep(FPC_SLICE_DELAY_MS);
+
+                const dataUrl = await captureWithRetry(tab.windowId);
+
+                const sliceResp = await sendToTab(tab.id, {
+                    type: "FPC_SLICE",
+                    dataUrl,
+                    y: Math.round(scrollY * metrics.dpr)
+                });
+                if (!sliceResp?.ok) throw new Error(sliceResp?.error || `Could not draw slice ${i + 1}/${slices}`);
+            }
+        } finally {
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                    document.querySelectorAll("[data-tt-fpc-prev-visibility]").forEach((el) => {
+                        el.style.visibility = el.dataset.ttFpcPrevVisibility;
+                        delete el.dataset.ttFpcPrevVisibility;
+                    });
+                }
+            }).catch(() => {}); // tab may have navigated/closed mid-capture — best effort only
+        }
+
+        await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: (x, y) => window.scrollTo(x, y),
+            args: [metrics.originalX, metrics.originalY]
+        });
+
+        const finishResp = await sendToTab(tab.id, { type: "FPC_FINISH" });
+        if (!finishResp?.ok) throw new Error(finishResp?.error || "Stitching failed");
+
+        // Fixed "fullcapture-" name, independent of the current service
+        // code / Rename toggle — chrome.downloads.download's filename is
+        // set directly here regardless of Rename state, so this is always
+        // a clear, recognizable name whether Rename is on or off. Not
+        // meant to be renamed to {service}-{date} like a normal proof
+        // screenshot — service-relay/merge-cleanup.js's STEP 1 recognizes
+        // this same "fullcapture-" prefix and deletes today's leftover
+        // raw captures once a dashboard merge finishes downloading.
+        await chrome.downloads.download({
+            url: finishResp.dataUrl,
+            filename: `fullcapture-${Date.now()}.png`
+        });
+    } finally {
+        fpcInProgress = false;
+    }
+}
+
+function sendToTab(tabId, message) {
+    return new Promise((resolve) => {
+        chrome.tabs.sendMessage(tabId, message, (response) => {
+            if (chrome.runtime.lastError) {
+                resolve({ ok: false, error: chrome.runtime.lastError.message });
+                return;
+            }
+            resolve(response);
+        });
     });
 }
 
-// ── Download Rename ──────────────────────────────────────────
-chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
-    // server-side watcher handles renaming now
-    suggest({ filename: downloadItem.filename });
-    return true;
-});
+async function captureWithRetry(windowId) {
+    try {
+        return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+    } catch (err) {
+        // Most likely MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND — back off once and retry.
+        await sleep(1000);
+        return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+    }
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// No chrome.notifications permission/icon added for this — simplest option
+// that needs no new permission and is unmissable in the same tab the user
+// just tried to capture.
+function reportCaptureError(tabId, message) {
+    chrome.scripting.executeScript({
+        target: { tabId },
+        func: (msg) => alert("Full Page Capture failed: " + msg),
+        args: [message]
+    }).catch(() => {}); // tab may have navigated/closed mid-capture — best effort only
+}

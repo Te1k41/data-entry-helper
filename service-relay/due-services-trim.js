@@ -146,9 +146,16 @@ function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
         : (hasAnchorOverride ? addDays(monday, asOfDayIndex) : realToday);
     const isMondayToday = isPreview ? true : (hasAnchorOverride ? asOfDayIndex === 0 : today.getDay() === 1);
 
+    // Always capped to this calendar week's Mon-Sun span, real week or
+    // preview alike. due-service-scanner.js deliberately leaves
+    // Tradetech's own date filter untouched, so a scan can return
+    // services due weeks out — those belong in a LATER week's plan,
+    // not folded into this one just because they happened to be in the
+    // same scan response.
     const thisWeek = services.filter(s => {
         const d = parseTTDate(s.nextUpdateDate);
-        return d && d >= monday && d <= sunday;
+        if (!d || d < monday) return false;
+        return d <= sunday;
     });
     const oldBacklog = isPreview ? [] : services.filter(s => {
         const d = parseTTDate(s.nextUpdateDate);
@@ -156,35 +163,6 @@ function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
     });
 
     let groups = groupByDay(thisWeek);
-
-    // The breakdown/batch system only has 5 weekday slots (Mon-Fri) —
-    // any service due on a Saturday or Sunday of this week has no
-    // slot to land in and would otherwise silently never appear in
-    // any batch, even though it's correctly counted in "this week"'s
-    // totals. Fold weekend-dated items into Friday's group (the last
-    // working day of the week) instead of losing them.
-    const fridayDateStr = formatTTDate(addDays(monday, 4));
-    const weekendGroups = groups.filter(g => {
-        const gd = parseTTDate(g.date);
-        return gd && (gd.getDay() === 0 || gd.getDay() === 6); // Sun=0, Sat=6
-    });
-
-    if (weekendGroups.length > 0) {
-        const weekendItems = weekendGroups.flatMap(g => g.items);
-        const fridayGroup = groups.find(g => g.date === fridayDateStr);
-
-        if (fridayGroup) {
-            fridayGroup.items.push(...weekendItems);
-        } else {
-            groups.push({ date: fridayDateStr, items: weekendItems });
-        }
-
-        groups = groups
-            .filter(g => !weekendGroups.includes(g))
-            .sort((a, b) => parseTTDate(a.date) - parseTTDate(b.date));
-
-        console.log(`📅 Folded ${weekendItems.length} weekend-dated service(s) into Friday (${fridayDateStr})`);
-    }
 
     // All 5 weekday date strings this week, guaranteed to exist as
     // pool slots even when a day has ZERO services — without this, a
@@ -194,6 +172,34 @@ function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
     // Wed=30, Thu=10, Fri=40 should divide by 5 (→ target 20), not by
     // 4 real groups (→ target 25) just because Monday had nothing.
     const weekdayDateStrs = [0, 1, 2, 3, 4].map(i => formatTTDate(addDays(monday, i)));
+    const weekdaySet = new Set(weekdayDateStrs);
+
+    // The breakdown/batch system only has 5 weekday slots (Mon-Fri) —
+    // any service due on a Saturday/Sunday of this week has no slot to
+    // land in and would otherwise silently never appear in any batch,
+    // even though it's correctly counted in "this week"'s totals. Fold
+    // all such Sat/Sun items into Friday's group (the last working day)
+    // instead of losing them.
+    const fridayDateStr = weekdayDateStrs[4];
+    const extraGroups = groups.filter(g => !weekdaySet.has(g.date));
+
+    if (extraGroups.length > 0) {
+        const extraItems = extraGroups.flatMap(g => g.items);
+        const fridayGroup = groups.find(g => g.date === fridayDateStr);
+
+        if (fridayGroup) {
+            fridayGroup.items.push(...extraItems);
+        } else {
+            groups.push({ date: fridayDateStr, items: extraItems });
+        }
+
+        groups = groups
+            .filter(g => !extraGroups.includes(g))
+            .sort((a, b) => parseTTDate(a.date) - parseTTDate(b.date));
+
+        console.log(`📅 Folded ${extraItems.length} out-of-slot-dated service(s) into Friday (${fridayDateStr})`);
+    }
+
     const groupsByDate = new Map(groups.map(g => [g.date, g]));
     const emptySlot = (dateStr) => ({ date: dateStr, items: [] });
 

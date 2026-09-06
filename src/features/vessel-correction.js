@@ -41,6 +41,18 @@ const VesselVoyageCorrection = {
             const date = DateUtils.parse(dateField.value);
             if (!date) continue;
 
+            // One-off vessels are excluded entirely — not just skipped
+            // from being pushed forward, but also never considered for
+            // `baseDate` (the "furthest vessel" anchor below), since an
+            // intentionally-standalone one-off call shouldn't silently
+            // become the reference point every lagging vessel gets
+            // cascaded from either.
+            const rowMatch = dateField.name.match(/^SV(\d+)_depart_date$/);
+            if (rowMatch) {
+                const oneOffField = document.querySelector(`input[name="SV${rowMatch[1]}_one-off"]`);
+                if (oneOffField?.checked) continue;
+            }
+
             const voyageName  = dateField.name.replace("_depart_date", "_start_voyage");
             const voyageField = document.querySelector(
                 `input[name="${voyageName}"]:not([name^="PV_"])`
@@ -69,7 +81,7 @@ const VesselVoyageCorrection = {
         console.log(`📅 Base (furthest vessel): ${DateUtils.format(baseDate)}`);
         console.log(`🚢 Lagging vessels: ${lagging.length}`);
 
-        syncing = true; // guard against triggering other listeners mid-write
+        beginSync(); // guard against triggering other listeners mid-write
         try {
             lagging.forEach((vessel, index) => {
                 // Each lagging vessel gets pushed to a date one week
@@ -108,7 +120,7 @@ const VesselVoyageCorrection = {
                 }
             });
         } finally {
-            syncing = false;
+            endSync();
         }
 
         console.log("🎉 Vessel date correction complete.");
@@ -119,6 +131,8 @@ const VesselVoyageCorrection = {
         Toolbar.register({
         id:      "tt-fix-vessels-btn",
         label:   "🛠 Fix Vessel Dates",
+        title:   "Recalculate vessel departure dates from matching port calls",
+        group:   "vessel",
         onClick: () => {
             console.log("🖱 Fix Vessel Dates clicked");
             this.fixVesselDates();

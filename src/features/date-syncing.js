@@ -14,7 +14,7 @@ const DateSyncing = {
 
     handle(event) {
         // Bail if a write is already in progress (loop guard, see main.js)
-        if (syncing) return;
+        if (isSyncing()) return;
 
         const target = event.target;
         if (target.tagName !== "INPUT" || !target.name) return;
@@ -24,15 +24,22 @@ const DateSyncing = {
             const arrivalInput = document.querySelector('input[name="SP001_arrival_date"]');
             if (!arrivalInput) return;
 
+            // Don't duplicate a wrong/incomplete value into arrival — only
+            // sync once depart is an actually-parseable date.
+            if (!DateUtils.parse(target.value)) {
+                console.log("⏭ SP001 ETD not a valid date yet — skipping sync");
+                return;
+            }
+
             console.log("🔄 SP001 ETD changed, syncing → arrival");
-            syncing = true;
+            beginSync();
             try {
                 setFieldValue(arrivalInput, target.value);
                 console.log("🎉 Synced SP001_depart_date → SP001_arrival_date");
             } catch (err) {
                 console.error("❌ Error syncing SP001:", err);
             } finally {
-                syncing = false; // always release the guard, even on error
+                endSync(); // always release the guard, even on error
             }
 
             // SP001's dates just changed, so re-check the mismatch banner.
@@ -44,6 +51,13 @@ const DateSyncing = {
         if (!target.name.endsWith("_arrival_date")) return;
 
         console.log("🎯 Arrival date changed:", target.name, "→", target.value);
+
+        // Don't duplicate a wrong/incomplete value into depart — only sync
+        // once arrival is an actually-parseable date.
+        if (!DateUtils.parse(target.value)) {
+            console.log("⏭ Arrival date not a valid date yet — skipping sync");
+            return;
+        }
 
         // Extract the row number (e.g. "SP004_arrival_date" → 4) and
         // check whether this row sits past the route's loop-back point.
@@ -66,14 +80,14 @@ const DateSyncing = {
             return;
         }
 
-        syncing = true;
+        beginSync();
         try {
             setFieldValue(departInput, target.value);
             console.log(`🎉 Synced ${target.name} → ${departName}`);
         } catch (err) {
             console.error("❌ Error syncing dates:", err);
         } finally {
-            syncing = false;
+            endSync();
         }
 
         // SP001's arrival indirectly affects the validation banner too.

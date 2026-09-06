@@ -53,6 +53,7 @@ const DueServiceScanner = {
 
     FLAG_AUTO_SEARCH_RUN: "tt_dueScanAutoSearchRun", // sessionStorage — per TAB, avoids re-searching on every reload within the same tab
     FLAG_LAST_AUTO_SCAN_DATE: "tt_dueScan_lastAutoScanDate", // localStorage — per CALENDAR DAY, shared across all tabs
+    _autoStarted: false,
 
     todayDateString() {
         const d = new Date();
@@ -74,31 +75,33 @@ const DueServiceScanner = {
         // The WHOLE routine (search + scan + post) only runs once per
         // calendar day now — not once per tab. If today's already
         // done, don't even auto-fill/search again in a new tab.
-        if (onSearchPage && !this.hasAutoScannedToday() && !sessionStorage.getItem(this.FLAG_AUTO_SEARCH_RUN)) {
-            sessionStorage.setItem(this.FLAG_AUTO_SEARCH_RUN, "1");
-            this.fillAssignedToAndSearch();
-        }
-
-        // The SCAN+POST itself only runs once per calendar day — this is
-        // the meaningful, once-daily action (searching alone doesn't
-        // accomplish anything without it). Landing on a results page
-        // again later the same day (new tab, manual browsing, etc.)
-        // won't re-trigger it; tomorrow it's live again automatically.
         if (onResultsPage) {
             this.createScanButton();
-
-            if (!this.hasAutoScannedToday()) {
-                this.scanAndReport();
-            } else {
-                console.log(`📅 Already auto-scanned today (${this.todayDateString()}) — use "🔄 Scan & Save" to re-scan manually`);
-            }
         }
+
+        // Searching and posting are relay-backed workflows. Wait until
+        // the shared socket proves the optional server is available;
+        // community installs otherwise leave Tradetech's page untouched.
+        onRelayConnectionStatusChange((state) => {
+            if (state !== "connected" || this._autoStarted || this.hasAutoScannedToday()) return;
+            this._autoStarted = true;
+            if (onSearchPage && !sessionStorage.getItem(this.FLAG_AUTO_SEARCH_RUN)) {
+                sessionStorage.setItem(this.FLAG_AUTO_SEARCH_RUN, "1");
+                this.fillAssignedToAndSearch();
+            } else if (onResultsPage) {
+                this.scanAndReport();
+            }
+        });
     },
 
     createScanButton() {
         Toolbar.register({
             id:      "tt-due-scan-save",
             label:   "🔄 Scan & Save",
+            title:   "Rescan due services and save the latest report",
+            group:   "proof",
+            draggable: false,
+            requiresRelay: true,
             onClick: () => this.scanAndReport()
         });
     },
@@ -136,7 +139,7 @@ const DueServiceScanner = {
                     console.warn("⚠ No Tradetech username set yet — visit http://localhost:3737/settings-page");
                 }
             } catch (err) {
-                console.warn("⚠ Could not reach relay for settings — fill in Assigned To manually:", err.message);
+                return; // relay disappeared mid-request; do not submit a broad/unassigned search
             }
         }
 
@@ -231,7 +234,7 @@ const DueServiceScanner = {
     // Last Updated, Proofed, Next Update Date, Expire Date, ...].
     // Posts the FULL parsed list as-is — no trimming here, the relay
     // server decides how many/which services actually get kept.
-    scanAndReport() {
+    async scanAndReport() {
         const recordInputs = document.querySelectorAll('input[name$="_REC"]');
         const services = [];
 
@@ -255,20 +258,25 @@ const DueServiceScanner = {
 
         console.log(`📋 Due Service Scanner: parsed ${services.length} total assigned service(s) — posting as-is`);
 
-        // Mark today as auto-scanned BEFORE posting — this is what stops
-        // any other tab (today or later today) from auto-scanning again.
-        // Manual re-scans still always work via the "🔄 Scan & Save"
-        // button, regardless of this flag.
-        this.markAutoScannedToday();
-
-        fetch("http://localhost:3737/due-services", {
-            method:  "POST",
-            headers: { "Content-Type": "application/json" },
-            body:    JSON.stringify({ services })
-        })
-        .then(res => res.json())
-        .then(data => console.log(`✅ Posted — relay kept ${data.count} service(s) after its own trimming — view at http://localhost:3737/dashboard`))
-        .catch(err => console.error("❌ Could not reach relay server:", err));
+        try {
+            const res = await fetch("http://localhost:3737/due-services", {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify({ services })
+            });
+            if (!res.ok) throw new Error(`relay returned ${res.status}`);
+            const data = await res.json();
+            this.markAutoScannedToday();
+            console.log(`✅ Posted — relay kept ${data.count} service(s) after its own trimming — view at http://localhost:3737/dashboard`);
+        } catch (err) {
+            // Keep today's flag unset so reconnecting (or a manual retry)
+            // can still save this scan. A relay that's simply absent is
+            // already explained by the disabled toolbar state — this log
+            // is for the case where the relay IS connected but the post
+            // still failed for a real reason (bad response, thrown error,
+            // etc.), which would otherwise be invisible.
+            console.error("❌ Due Service Scanner: post to relay failed:", err);
+        }
     },
 
     handle(_event)     {},

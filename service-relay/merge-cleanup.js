@@ -11,7 +11,27 @@ const path = require("path");
 const { WATCH_FOLDER } = require("./config");
 const relayState = require("./relay-state");
 
+// A rapid double "merge-download" signal (or overlapping timers from
+// relay-socket.js's own 3s delay) must never run this concurrently --
+// two passes racing on the same rename/delete of the same files can
+// throw on a file the other pass already removed, or promote the wrong
+// file to the clean name.
+let running = false;
+
 function runMergeCleanup() {
+    if (running) {
+        console.log("🧹 Merge cleanup already running -- skipping this signal");
+        return;
+    }
+    running = true;
+    try {
+        runMergeCleanupSync();
+    } finally {
+        running = false;
+    }
+}
+
+function runMergeCleanupSync() {
     const today   = new Date();
     const mm      = String(today.getMonth() + 1).padStart(2, "0");
     const dd      = String(today.getDate()).padStart(2, "0");
@@ -22,9 +42,11 @@ function runMergeCleanup() {
 
     const files = fs.readdirSync(WATCH_FOLDER);
 
-    // STEP 1 — delete today's screencapture files
+    // STEP 1 — delete today's raw screenshot files (screencapture- from
+    // the old GoFullPage-era workflow, fullcapture- from our own in-house
+    // Full Page Capture feature)
     files.forEach(file => {
-        if (file.startsWith("screencapture-")) {
+        if (file.startsWith("screencapture-") || file.startsWith("fullcapture-")) {
             const filePath = path.join(WATCH_FOLDER, file);
             const stat     = fs.statSync(filePath);
             const fileDate = new Date(stat.birthtime);

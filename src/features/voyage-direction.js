@@ -13,6 +13,8 @@ const VDirection = {
         Toolbar.register({
             id:      "tt-voyage-direction-toggle",
             label:   "🧭 Direction: ON",
+            title:   "Toggle automatic N/S/E/W suffixes on voyage codes",
+            group:   "vessel",
             onClick: () => {
                 this.enabled = !this.enabled;
                 Toolbar.updateLabel("tt-voyage-direction-toggle", `🧭 Direction: ${this.enabled ? "ON" : "OFF"}`);

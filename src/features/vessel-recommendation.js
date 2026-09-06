@@ -108,11 +108,11 @@ const VesselRecommendation = {
             const rowM = field.name.match(/^SV(\d+)_depart_date$/);
             if (!rowM) return;
 
-            const vesselNameField = document.querySelector(`input[name="SV${rowM[1]}_vessel_name"]`);
+            const vesselNameField = VesselRow.field(rowM[1], "vessel_name");
             const vesselName = vesselNameField?.value.trim();
             if (!vesselName) return;
 
-            const voyageField = document.querySelector(`input[name="SV${rowM[1]}_start_voyage"]`);
+            const voyageField = VesselRow.field(rowM[1], "start_voyage");
             const voyage = voyageField?.value.trim() || null;
 
             const date = DateUtils.parse(field.value);

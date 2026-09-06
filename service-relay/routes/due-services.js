@@ -17,59 +17,24 @@ const store = require("../due-services-store");
 const activityLog = require("../activity-log-store");
 const currentBatchStore = require("../current-batch-store");
 const { computeWeeklyPlan } = require("../due-services-trim");
-
-function readBody(req) {
-    return new Promise((resolve, reject) => {
-        let body = "";
-        req.on("data", chunk => { body += chunk; });
-        req.on("end", () => {
-            try {
-                resolve(JSON.parse(body));
-            } catch (err) {
-                reject(err);
-            }
-        });
-    });
-}
+const relaySocket = require("../relay-socket");
+const { readJsonBody } = require("../read-json-body");
 
 // Extension posts its latest scan of Tradetech's due-soon services here.
 //
-// IMPORTANT: a fresh scan is merged with what we already have, not a
-// blind replace. Without this, marking a service "Done" (which sets a
-// LOCAL nextUpdateDate override, not a change on Tradetech itself)
-// would get silently wiped out the next time you scan, since Tradetech
-// would still report its old, unchanged date. The merge keeps a
-// service's "done" override in place until Tradetech's own real date
-// catches up to (or passes) it — at which point the real update
-// actually happened, so we drop the override and trust Tradetech again.
+// Blind replace — whatever Tradetech reports right now IS the truth.
+// No local "done" override survives a rescan: Mark Done only hides a
+// service until the NEXT scan, not until Tradetech's own date catches
+// up to some locally-invented target. This is deliberately simple —
+// see git history for the previous date-comparison merge approach,
+// which was more "clever" but harder to reason about and trust.
 async function handlePostDueServices(req, res) {
     try {
-        const parsed  = await readBody(req);
+        const parsed  = await readJsonBody(req);
         const incoming = Array.isArray(parsed.services) ? parsed.services : [];
         console.log(`📋 Due-services scan received: ${incoming.length} total service(s) from extension — storing ALL of them`);
 
-        const previousByRecord = new Map(store.getAll().map(s => [s.record, s]));
-
-        const merged = incoming.map(fresh => {
-            const prev = previousByRecord.get(fresh.record);
-
-            if (prev?.done) {
-                const prevDate  = parseTTDate(prev.nextUpdateDate);
-                const freshDate = parseTTDate(fresh.nextUpdateDate);
-
-                // Real Tradetech date hasn't caught up to our local
-                // "done" target yet — keep showing our override.
-                if (prevDate && freshDate && freshDate < prevDate) {
-                    return { ...fresh, nextUpdateDate: prev.nextUpdateDate, done: true };
-                }
-                // Otherwise Tradetech's real date now matches/exceeds
-                // it — the update genuinely happened, trust it.
-            }
-
-            return fresh;
-        });
-
-        store.setAll(merged, new Date().toISOString());
+        store.setAll(incoming, new Date().toISOString());
         store.save();
 
         // Validate the batch state IMMEDIATELY, right when fresh data
@@ -79,10 +44,16 @@ async function handlePostDueServices(req, res) {
         // means that check (and any correction) happens on every scan,
         // so the batch is never sitting around wrong/stale between
         // scans, even if nobody's looked at the dashboard in a while.
-        currentBatchStore.getCurrentBatch(merged);
+        currentBatchStore.getCurrentBatch(incoming);
+
+        // Tell any open dashboard tab a fresh scan landed — the scan
+        // itself comes in from the extension on a different tab (the
+        // Tradetech page), so without this push an already-open
+        // dashboard has no way to know new data is sitting there.
+        relaySocket.broadcast({ type: "due-services-updated" });
 
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true, count: merged.length }));
+        res.end(JSON.stringify({ success: true, count: incoming.length }));
     } catch (err) {
         console.error("❌ Bad /due-services body:", err);
         res.writeHead(400, { "Content-Type": "application/json" });
@@ -156,7 +127,7 @@ function handlePreviousBatch(req, res) {
 async function handleRecalculateWeek(req, res) {
     let dayIndex = null;
     try {
-        const body = await readBody(req);
+        const body = await readJsonBody(req);
         if (typeof body?.dayIndex === "number") dayIndex = body.dayIndex;
     } catch (err) {
         // No body (or invalid JSON) sent — fall back to "today, for
@@ -174,7 +145,7 @@ async function handleRecalculateWeek(req, res) {
 // navigation on the dashboard.
 async function handleGoToDay(req, res) {
     try {
-        const { dayIndex } = await readBody(req);
+        const { dayIndex } = await readJsonBody(req);
         if (typeof dayIndex !== "number") {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "dayIndex must be a number" }));
@@ -201,7 +172,7 @@ async function handleGoToDay(req, res) {
 // rides along with it the same way).
 async function handleMarkDone(req, res) {
     try {
-        const { record } = await readBody(req);
+        const { record } = await readJsonBody(req);
         const entry = store.findByRecord(record);
 
         if (!entry) {
@@ -230,6 +201,12 @@ async function handleMarkDone(req, res) {
         activityLog.logDone(record, entry.service);
         console.log(`✅ Marked done: record ${record} → next update ${entry.nextUpdateDate}`);
 
+        // Push to any open dashboard tab immediately — without this, marking
+        // done from schedule-preview-tools.js (a Tradetech page, not the
+        // dashboard itself) would leave an already-open dashboard tab stale
+        // until its next manual reload.
+        relaySocket.broadcast({ type: "due-services-updated" });
+
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true, nextUpdateDate: entry.nextUpdateDate }));
     } catch (err) {
@@ -246,7 +223,7 @@ async function handleMarkDone(req, res) {
 // since (e.g. a fresh Tradetech scan that genuinely updated the date).
 async function handleUndoDone(req, res) {
     try {
-        const { record } = await readBody(req);
+        const { record } = await readJsonBody(req);
         const entry = store.findByRecord(record);
 
         if (!entry) {
@@ -268,6 +245,8 @@ async function handleUndoDone(req, res) {
         store.save();
         console.log(`↩️ Undid mark-done: record ${record} → restored ${entry.nextUpdateDate}`);
 
+        relaySocket.broadcast({ type: "due-services-updated" });
+
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true, nextUpdateDate: entry.nextUpdateDate, done: entry.done }));
     } catch (err) {
@@ -277,10 +256,12 @@ async function handleUndoDone(req, res) {
     }
 }
 
-// Trend data for the dashboard's history chart — reads history/
-// (now one file per calendar day, e.g. due-services-2026-07-10.json —
-// same-day rescans overwrite that day's file rather than piling up)
-// and reduces each day to simple counts for the chart.
+// Trend data for the dashboard's history chart — reads history/, which
+// due-services-store.js's saveToDisk() writes as ONE FILE PER SAVE
+// (due-services-YYYY-MM-DD_HHMMSS.json, never overwritten — multiple
+// files land on a day that gets rescanned more than once). Group those
+// by calendar day and use each day's LATEST file (that day's final
+// scan) to reduce to simple counts for the chart.
 function handleGetHistory(req, res) {
     store.ensureDataFolders();
 
@@ -289,21 +270,33 @@ function handleGetHistory(req, res) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
+        const historyFiles = fs.readdirSync(HISTORY_FOLDER)
+            .filter(f => /^due-services-\d{4}-\d{2}-\d{2}_\d{6}\.json$/.test(f));
+        const latestFileByDay = new Map();
+        for (const file of historyFiles) {
+            const dayKey = file.slice("due-services-".length, "due-services-".length + 10);
+            // Fixed-width zero-padded timestamp in the filename -- plain
+            // string comparison sorts chronologically, no date parsing needed.
+            const current = latestFileByDay.get(dayKey);
+            if (!current || file > current) latestFileByDay.set(dayKey, file);
+        }
+
         const points = [];
         for (let i = DAYS - 1; i >= 0; i--) {
             const day = new Date(today);
             day.setDate(day.getDate() - i);
             const dayKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
 
-            const filePath = path.join(HISTORY_FOLDER, `due-services-${dayKey}.json`);
+            const dayFile = latestFileByDay.get(dayKey);
 
-            if (!fs.existsSync(filePath)) {
+            if (!dayFile) {
                 // no scan that day — still emit a point so the chart has a
                 // real gap instead of silently compressing the timeline
                 points.push({ date: dayKey, asOf: null, total: null, overdue: 0, dueSoon: 0, done: 0, noScan: true });
                 continue;
             }
 
+            const filePath = path.join(HISTORY_FOLDER, dayFile);
             const raw    = fs.readFileSync(filePath, "utf8");
             const parsed = JSON.parse(raw);
             const services = Array.isArray(parsed.services) ? parsed.services : [];

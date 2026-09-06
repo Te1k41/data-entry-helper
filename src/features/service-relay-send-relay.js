@@ -6,6 +6,7 @@
 const ServiceRelaySend = {
 
     ws: null,
+    _socketClient: null,
 
     init() {
         this.connect();
@@ -15,20 +16,11 @@ const ServiceRelaySend = {
     },
 
     connect() {
-        this.ws = new WebSocket("ws://localhost:3737");
-
-        this.ws.addEventListener("open", () => {
-            console.log("🔌 ServiceRelaySend connected to relay");
+        this._socketClient = connectRelaySocket({
+            onSocket: (socket) => { this.ws = socket; },
+            onOpen: () => {
             this.sendServiceCode();
-        });
-
-        this.ws.addEventListener("close", () => {
-            console.log("🔌 ServiceRelaySend disconnected — reconnecting in 3s");
-            setTimeout(() => this.connect(), 3000);
-        });
-
-        this.ws.addEventListener("error", () => {
-            console.error("❌ ServiceRelaySend WebSocket error");
+            }
         });
     },
 

@@ -1,3 +1,12 @@
 node_modules/
 service-relay/node_modules/
 service-relay/settings.json
+graphify-out/
+service-relay/fill-test-output.json
+service-relay/fill-test-output.xlsx
+.claude/
+codex-*.txt
+_codex-*.txt
+community-version/
+service-relay/sandbox-data/
+service-relay/sandbox-downloads/

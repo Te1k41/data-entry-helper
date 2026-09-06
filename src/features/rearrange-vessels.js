@@ -17,6 +17,8 @@ const RearrangeVessels = {
         Toolbar.register({
             id:      "tt-rearrange-vessels",
             label:   "🔀 Rearrange Vessels",
+            title:   "Sort vessel rows by departure date while keeping row data together",
+            group:   "vessel",
             onClick: () => this.rearrange()
         });
     },

@@ -93,7 +93,7 @@ const SP001DateValidation = {
         const rowMatch = fieldName.match(/^SV(\d+)_depart_date$/);
         if (!rowMatch) return null;
 
-        return document.querySelector(`input[name="SV${rowMatch[1]}_vessel_name"]`);
+        return VesselRow.field(rowMatch[1], "vessel_name");
     },
 
     // Same row lookup, but for the voyage number field instead.
@@ -101,7 +101,7 @@ const SP001DateValidation = {
         const rowMatch = fieldName.match(/^SV(\d+)_depart_date$/);
         if (!rowMatch) return null;
 
-        return document.querySelector(`input[name="SV${rowMatch[1]}_start_voyage"]`);
+        return VesselRow.field(rowMatch[1], "start_voyage");
     },
 
     findMatchingSVDate(spDate) {
@@ -113,6 +113,16 @@ const SP001DateValidation = {
     console.log(`🔍 Checking ${svFields.length} SV dates against ${normalizedSP}`);
 
     for (const field of svFields) {
+        const rowMatch = field.name.match(/^SV(\d+)_depart_date$/);
+        if (!rowMatch) continue;
+
+        // Only a row that actually has a vessel counts as a match -- a
+        // stale date left behind in an otherwise-blank row (e.g. after
+        // typing then clearing a vessel name) would otherwise silently
+        // pass validation for a vessel that isn't really there.
+        const nameField = VesselRow.field(rowMatch[1], "vessel_name");
+        if (!nameField || !nameField.value.trim()) continue;
+
         const normalizedSV = DateUtils.normalize(field.value);
         if (normalizedSV && normalizedSV === normalizedSP) {
             console.log(`✅ Match found: ${field.name}`);

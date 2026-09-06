@@ -45,10 +45,35 @@ function handleSettingsJs(req, res) {
     serveFile(res, "settings.js", "application/javascript");
 }
 
+function handlePortsPage(req, res) {
+    serveFile(res, "ports.html", "text/html");
+}
+
+function handlePortsJs(req, res) {
+    serveFile(res, "ports.js", "application/javascript");
+}
+
+function handleMergePage(req, res) {
+    serveFile(res, "merge.html", "text/html");
+}
+
+function handleMergeJs(req, res) {
+    serveFile(res, "merge.js", "application/javascript");
+}
+
+function handleFillTestPage(req, res) {
+    serveFile(res, "fill-test-viewer.html", "text/html");
+}
+
 module.exports = {
     handleDashboardIndex,
     handleDashboardCss,
     handleDashboardJs,
     handleSettingsPage,
     handleSettingsJs,
+    handlePortsPage,
+    handlePortsJs,
+    handleMergePage,
+    handleMergeJs,
+    handleFillTestPage,
 };

@@ -362,21 +362,29 @@ function showCombinedBanner(warnings) {
     applyNotificationVisibility();
 }
 
-// ── Hide/Show all notifications toggle ───────────────────────
+// ── Hide/Show optional notifications toggle ─────────────────
 // A single small always-present button, top-right, ABOVE the whole
 // banner stack (which starts at top: 52px to leave room for it).
-// Hides/shows every banner type at once — the banners themselves
-// keep updating normally underneath, so un-hiding always shows
-// current, up-to-date content rather than something stale.
+// Hides/shows only confirmations, status, and suggestions. Validation
+// warnings are safety-critical and the notes sidebar is an editor, not
+// a notification, so neither may be suppressed by a persisted toggle.
 
 const ALL_BANNER_IDS = ["tt-banner", "tt-success-banner", "tt-info-banner", "tt-suggestion-banner", "tt-notes-sidebar"];
+const HIDEABLE_BANNER_IDS = ALL_BANNER_IDS.filter(id => id !== "tt-banner" && id !== "tt-notes-sidebar");
 
 let notificationsHidden = localStorage.getItem("tt-notifications-hidden") === "1";
 
 function applyNotificationVisibility() {
-    ALL_BANNER_IDS.forEach(id => {
+    HIDEABLE_BANNER_IDS.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = notificationsHidden ? "none" : "";
+    });
+
+    // Undo stale inline display:none left by older extension versions
+    // that included these persistent UI elements in ALL_BANNER_IDS.
+    ["tt-banner", "tt-notes-sidebar"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = "";
     });
     repositionStackedBanners();
 }
@@ -385,7 +393,7 @@ function toggleNotificationVisibility() {
     notificationsHidden = !notificationsHidden;
     localStorage.setItem("tt-notifications-hidden", notificationsHidden ? "1" : "0");
     applyNotificationVisibility();
-    Toolbar.updateLabel("tt-notif-toggle", notificationsHidden ? "🔔 Show notifications" : "🔕 Hide notifications");
+    Toolbar.updateLabel("tt-notif-toggle", notificationsHidden ? "🔔 Show updates" : "🔕 Hide updates");
 }
 
 // Was its own fixed top-right button — moved into the shared Tools panel:
@@ -395,7 +403,9 @@ function toggleNotificationVisibility() {
 function createNotificationToggle() {
     Toolbar.register({
         id: "tt-notif-toggle",
-        label: notificationsHidden ? "🔔 Show notifications" : "🔕 Hide notifications",
+        label: notificationsHidden ? "🔔 Show updates" : "🔕 Hide updates",
+        title: "Show or hide success messages, status updates, and suggestions; warnings stay visible",
+        group: "misc",
         onClick: toggleNotificationVisibility
     });
 }

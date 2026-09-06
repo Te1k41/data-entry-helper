@@ -6,20 +6,11 @@
 const MergeDownloadSignal = {
 
     ws: null,
-
-    init() {
-        this.connect();
-    },
+    _socketClient: null,
 
     connect() {
-        this.ws = new WebSocket("ws://localhost:3737");
-
-        this.ws.addEventListener("open", () => {
-            console.log("🔌 MergeDownloadSignal connected");
-        });
-
-        this.ws.addEventListener("close", () => {
-            setTimeout(() => this.connect(), 3000);
+        this._socketClient = connectRelaySocket({
+            onSocket: (socket) => { this.ws = socket; }
         });
     },
 

@@ -1,3 +1,15 @@
+// Due-service records ultimately come from scraped Tradetech data (or a
+// direct POST to /due-services) -- not something this dashboard's own
+// user typed. Every such value gets HTML-escaped before going into any
+// innerHTML string below; string-interpolating it straight into markup
+// would let a malformed/crafted service name or carrier execute as
+// script in this page.
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
 let allServices = [];
 let sortKey      = 'nextUpdateDate';
 let sortAsc      = true;
@@ -254,7 +266,7 @@ function daysUntil(dateStr) {
 
 function linksHtml(urls, label) {
     if (!urls || urls.length === 0) return '<span class="noLink">--</span>';
-    return urls.map((u, i) => `<a class="linkBtn" href="${u}" target="_blank">${label}${urls.length > 1 ? ' ' + (i+1) : ''}</a>`).join('');
+    return urls.map((u, i) => `<a class="linkBtn" href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}${urls.length > 1 ? ' ' + (i+1) : ''}</a>`).join('');
 }
 
 function clearFilters() {
@@ -342,13 +354,27 @@ async function undoDone(record) {
     load();
 }
 
-function copyService(serviceName, event) {
+function copyService(el) {
+    const serviceName = el.dataset.service;
     navigator.clipboard.writeText(serviceName).then(() => {
-        const el = event.target;
         const original = el.textContent;
         el.textContent = 'Copied!';
         setTimeout(() => { el.textContent = original; }, 800);
     }).catch(err => console.error('Clipboard copy failed:', err));
+}
+
+// Single delegated listener for every row action (Mark Done / Undo /
+// copy service) -- #content's innerHTML is rebuilt on every render(), so
+// listeners attached directly to row elements would be lost each time;
+// this one's registered once, on the container, at the bottom of this
+// file.
+function handleContentClick(event) {
+    const target = event.target.closest('[data-action]');
+    if (!target) return;
+
+    if (target.dataset.action === 'mark-done')   markDone(target.dataset.record);
+    if (target.dataset.action === 'undo-done')   undoDone(target.dataset.record);
+    if (target.dataset.action === 'copy-service') copyService(target);
 }
 
 let activityPoints  = [];
@@ -737,12 +763,20 @@ function render() {
         html += `<th onclick="setSort('${col.key}')">${col.label}${arrow ? '<span class="arrow">'+arrow+'</span>' : ''}</th>`;
     }
     html += '</tr><tr class="filterRow">';
-    html += `<th><input value="${filters.service}" onkeydown="if(event.key==='Enter'){filters.service=this.value; render();}" placeholder="filter... (enter)"></th>`;
-    html += `<th><input value="${filters.carrier}" onkeydown="if(event.key==='Enter'){filters.carrier=this.value; render();}" placeholder="filter... (enter)"></th>`;
+    html += `<th><input value="${escapeHtml(filters.service)}" onkeydown="if(event.key==='Enter'){filters.service=this.value; render();}" placeholder="filter... (enter)"></th>`;
+    html += `<th><input value="${escapeHtml(filters.carrier)}" onkeydown="if(event.key==='Enter'){filters.carrier=this.value; render();}" placeholder="filter... (enter)"></th>`;
     html += '<th></th><th></th>';
-    html += `<th><input value="${filters.nextUpdateDate}" onkeydown="if(event.key==='Enter'){filters.nextUpdateDate=this.value; render();}" placeholder="filter... (enter)"></th>`;
+    html += `<th><input value="${escapeHtml(filters.nextUpdateDate)}" onkeydown="if(event.key==='Enter'){filters.nextUpdateDate=this.value; render();}" placeholder="filter... (enter)"></th>`;
     html += '<th></th></tr></thead><tbody>';
 
+    // Record/service values are untrusted (see escapeHtml above) --
+    // escaped for HTML text/attribute context, and NEVER string-
+    // interpolated into an inline onclick handler (that's a second,
+    // separate injection context escapeHtml doesn't cover: a value
+    // containing a quote could break out of the JS string literal
+    // itself). Row actions instead carry the record/service in
+    // data-* attributes, read by the single delegated listener
+    // registered on #content at the bottom of this file.
     for (const s of filtered) {
         const days   = daysUntil(s.nextUpdateDate);
         const status = statusOf(s, days);
@@ -750,16 +784,19 @@ function render() {
             ? (days < 0 ? `overdue ${Math.abs(days)}d` : (days === 0 ? 'today' : `${days}d`))
             : '';
 
+        const record  = escapeHtml(s.record);
+        const service = escapeHtml(s.service);
+
         const actionBtn = status === 'done'
-            ? `<button class="markDoneBtn undoBtn" onclick="undoDone('${s.record}')">Undo</button>`
-            : `<button class="markDoneBtn" onclick="markDone('${s.record}')">Mark Done</button>`;
+            ? `<button class="markDoneBtn undoBtn" data-action="undo-done" data-record="${record}">Undo</button>`
+            : `<button class="markDoneBtn" data-action="mark-done" data-record="${record}">Mark Done</button>`;
 
         html += `<tr class="${status}">
-            <td><span class="tag ${status}">${STATUS_LABEL[status]}</span><span class="copyable" title="Click to copy" onclick="copyService('${s.service}', event)">${s.service}</span></td>
-            <td>${s.carrier}</td>
+            <td><span class="tag ${status}">${STATUS_LABEL[status]}</span><span class="copyable" title="Click to copy" data-action="copy-service" data-service="${service}">${service}</span></td>
+            <td>${escapeHtml(s.carrier)}</td>
             <td>${linksHtml(s.links.schedule, 'sched')}</td>
             <td>${linksHtml(s.links.routeMap, 'map')}</td>
-            <td class="dateCell">${s.nextUpdateDate}${dayNote ? '<span class="dayNote">('+dayNote+')</span>' : ''}</td>
+            <td class="dateCell">${escapeHtml(s.nextUpdateDate)}${dayNote ? '<span class="dayNote">('+escapeHtml(dayNote)+')</span>' : ''}</td>
             <td>${actionBtn}</td>
         </tr>`;
     }
@@ -1032,6 +1069,26 @@ function snoozeWellnessBanner() {
     }, WELLNESS_SNOOZE_MS);
 }
 
+// Live-refresh when the extension posts a fresh scan from the
+// Tradetech tab — that POST lands on the server, not on this page,
+// so without this the dashboard would just sit there showing stale
+// data until manually reloaded.
+function connectLiveUpdates() {
+    const ws = new WebSocket(`ws://${location.host}`);
+    // Re-sync on (re)connect, not just on a live "due-services-updated"
+    // message — otherwise a broadcast sent while this tab happened to be
+    // mid-reconnect (server restart, brief network blip) is just lost,
+    // and nothing else would ever prompt a catch-up load().
+    ws.onopen = () => load();
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === "due-services-updated") load();
+        } catch (e) { /* ignore non-JSON / unrelated messages */ }
+    };
+    ws.onclose = () => setTimeout(connectLiveUpdates, 2000);
+}
+
 renderStarfield();
 renderDeepField();
 loadBgOnlyPreference();
@@ -1039,4 +1096,6 @@ initStarfieldParallax();
 initClickBurst();
 renderBanner();
 loadWellnessPreference();
+document.getElementById('content').addEventListener('click', handleContentClick);
 load();
+connectLiveUpdates();
