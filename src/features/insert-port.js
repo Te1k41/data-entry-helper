@@ -29,7 +29,7 @@
 //  locationCode/locationName's own validation handlers, since a
 //  synthetic event re-triggering Tradetech's async lookups could
 //  resolve to a different value than what was already there (this
-//  mirrors the async-resolution caution due-service-scanner.js
+//  mirrors the async-resolution caution due-service-scanner-relay.js
 //  documents for its own "Assigned To" id lookup). arrival_date/
 //  depart_date DO go through setFieldValue — that's what makes
 //  Tradetech itself correctly recompute the diff/dow fields for the

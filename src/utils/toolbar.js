@@ -19,7 +19,7 @@
 //  a click (e.g. "Direction: ON" -> "Direction: OFF"):
 //    Toolbar.updateLabel("tt-my-action", "🔧 Now OFF");
 //
-//  NOTE: rename-toggle.js does NOT use this — it belongs to a
+//  NOTE: rename-toggle-relay.js does NOT use this — it belongs to a
 //  separate content script bundle (all sites except Tradetech)
 //  and keeps its own independent button.
 // ============================================================
@@ -29,10 +29,10 @@ const Toolbar = {
     _panel:         null,
     _listContainer: null,
     _collapsed:     false,
-    _ws:            null,
-    _socketClient:  null,
-    _relayStatus:   "connecting",
-    _relayUnsubscribe: null,
+    _relayStatus:   "unavailable",
+
+    _ensureHooks: [],
+    _broadcastHooks: [],
 
     _groupOrder: ["vessel", "port", "date", "proof", "misc"],
     _groupLabels: {
@@ -57,40 +57,6 @@ const Toolbar = {
         this._render();
     },
 
-    // Connects to the relay's WebSocket so the collapsed/expanded state
-    // stays in sync LIVE across every open tab — same self-reconnecting
-    // pattern used by service-relay-send.js / rename-toggle.js. Local
-    // clicks broadcast their new state out; messages from OTHER tabs
-    // update this tab's panel without re-broadcasting (no feedback loop).
-    _connectWebSocket() {
-        if (this._socketClient) return; // helper already owns connecting/reconnecting
-
-        this._relayUnsubscribe = onRelayConnectionStatusChange((state) => {
-            this._relayStatus = state;
-            if (this._listContainer) this._render();
-        });
-
-        this._socketClient = connectRelaySocket({
-            onSocket: (socket) => { this._ws = socket; },
-
-            onMessage: (event) => {
-            try {
-                const data = JSON.parse(event.data);
-
-                if (data.type === "init" && typeof data.toolbarCollapsed === "boolean") {
-                    this._applyCollapsedState(data.toolbarCollapsed, false);
-                }
-
-                if (data.type === "toolbar-collapsed") {
-                    this._applyCollapsedState(data.collapsed, false);
-                }
-            } catch (err) {
-                console.error("❌ Toolbar bad WebSocket message:", err);
-            }
-            }
-        });
-    },
-
     // Updates the collapsed state and re-renders the panel to match.
     // `broadcast` controls whether this change should be sent OUT to
     // other tabs (true for a local click) or not (false when this
@@ -106,15 +72,13 @@ const Toolbar = {
             if (arrow) arrow.textContent  = collapsed ? "▸" : "▾";
         }
 
-        if (broadcast && this._ws?.readyState === WebSocket.OPEN) {
-            this._ws.send(JSON.stringify({ type: "toolbar-collapsed", collapsed }));
-        }
+        if (broadcast) this._broadcastHooks.forEach(hook => hook(collapsed));
     },
 
     _ensurePanel() {
+        this._ensureHooks.forEach(hook => hook());
         if (this._panel) return;
 
-        this._connectWebSocket();
         this._collapsed = localStorage.getItem("tt-toolbar-collapsed") === "1";
 
         const panel = document.createElement("div");

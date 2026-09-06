@@ -31,6 +31,7 @@
             "src/utils/button.js",
             "src/utils/relay-socket-client.js",
             "src/utils/toolbar.js",
+            "src/utils/toolbar-relay.js",
             "src/utils/banner.js",
             "src/utils/dom.js",
             "src/utils/voyage.js",
@@ -59,22 +60,23 @@
             "src/features/vessel-to-be-announced.js",
             "src/features/voyage-direction.js",
             "src/features/resize-toggle.js",
-            "src/features/service-relay-send.js",
-            "src/features/schedule-capture.js",
+            "src/features/service-relay-send-relay.js",
+            "src/features/schedule-capture-relay.js",
             "src/features/schedule-cascade.js",
             "src/features/vessel-recommendation.js",
             "src/features/rearrange-vessels.js",
-            "src/features/merge-download-signal.js",
-            "src/features/upload-proof.js",
+            "src/features/merge-download-signal-relay.js",
+            "src/features/upload-proof-relay.js",
             "src/features/keyboard-navigation.js",
             "src/features/select-field-on-focus.js",
             "src/features/auto-nav-schedules.js",
-            "src/features/due-service-scanner.js",
-            "src/features/schedule-preview-tools.js",
+            "src/features/due-service-scanner-relay.js",
+            "src/features/schedule-preview-tools-relay.js",
             "src/features/date-step-buttons.js",
             "src/features/voyage-step-buttons.js",
             "src/features/date-calculator.js",
             "src/features/live-check.js",
+            "src/features/live-check-relay.js",
             "src/main.js"
         ],
         "all_frames": true,
@@ -83,7 +85,7 @@
     {
         "matches": ["https://www.yangming.com/*"],
         "js": [
-            "src/features/schedule-table-scrape.js"
+            "src/features/schedule-table-scrape-relay.js"
         ],
         "run_at": "document_idle"
     },
@@ -92,8 +94,8 @@
   "exclude_matches": ["https://www.tradetech.net/*"],
   "js": [
     "src/utils/button.js",
-    "src/features/rename-toggle.js",
-    "src/rename-toggle-init.js"
+    "src/features/rename-toggle-relay.js",
+    "src/rename-toggle-init-relay.js"
   ],
   "run_at": "document_idle"
 },

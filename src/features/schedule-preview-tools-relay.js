@@ -15,7 +15,7 @@
 //       the file off to an already-running instance).
 //  Both require the page's record id to resolve to a service code via
 //  the relay's /due-services list (the same "record" scraped by
-//  due-service-scanner.js from the due-services search results page).
+//  due-service-scanner-relay.js from the due-services search results page).
 // ─────────────────────────────────────────────────────
 
 // Styled to match the fixed-position notification banners in

@@ -3,11 +3,11 @@
 //  Right after logging in, automatically clicks
 //  "Data Input" → waits for "Sailing Schedules" to
 //  appear → clicks that too, landing on the search
-//  page. due-service-scanner.js takes over from there
+//  page. due-service-scanner-relay.js takes over from there
 //  (fills your name, runs the search, scans results).
 //
 //  Gated by the SAME once-per-calendar-day flag as
-//  due-service-scanner.js (shared localStorage key,
+//  due-service-scanner-relay.js (shared localStorage key,
 //  duplicated here rather than referenced cross-file to
 //  keep these two features independent) — the WHOLE
 //  routine (nav + search + scan + post) only runs once
@@ -21,7 +21,7 @@ const AutoNavSchedules = {
 
     FLAG_CLICKED_DATA_INPUT:        "tt_clickedDataInput",
     FLAG_CLICKED_SAILING_SCHEDULES: "tt_clickedSailingSchedules",
-    FLAG_LAST_AUTO_SCAN_DATE:       "tt_dueScan_lastAutoScanDate", // must match due-service-scanner.js exactly
+    FLAG_LAST_AUTO_SCAN_DATE:       "tt_dueScan_lastAutoScanDate", // must match due-service-scanner-relay.js exactly
 
     todayDateString() {
         const d = new Date();
