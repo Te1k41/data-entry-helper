@@ -1,6 +1,6 @@
 # Development guide
 
-How to set this repo up and work on it. For what individual features actually do, see `CODE_NOTES.md`. For session-to-session context on what's currently in progress, see `SESSION_HANDOFF.md`.
+How to set this repo up and work on it. For a from-scratch "new computer, get the full version running" walkthrough, see [`INSTALL.md`](INSTALL.md) instead — this doc assumes that's already done and covers repo internals. For what individual features actually do, see `CODE_NOTES.md`. For session-to-session context on what's currently in progress, see `SESSION_HANDOFF.md`.
 
 ## Repo structure
 
