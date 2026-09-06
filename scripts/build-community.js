@@ -91,7 +91,7 @@ function derivedManifest(source) {
         ...block,
         js: (block.js || []).filter(p => !isExcludedSrcPath(p.replace(/^src\//, ""))),
     })).filter(block => block.js.length > 0);
-    manifest.name = "Data Entry Helper — Community Version";
+    manifest.name = "TTHelper-SC — Community Edition";
     return manifest;
 }
 

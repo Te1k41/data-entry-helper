@@ -1,6 +1,6 @@
-# Data Entry Helper — Community Version
+# TTHelper-SC — Community Edition
 
-This Chrome extension helps with Tradetech schedule data entry. It provides in-page validation, date syncing and step controls, vessel and port helpers, highlighting, notes, keyboard navigation, and full-page capture tools. See [FEATURES.md](FEATURES.md) for the complete feature-by-feature guide.
+Built by a sailing scheduler, for sailing schedulers. This Chrome extension helps with Tradetech schedule data entry. It provides in-page validation, date syncing and step controls, vessel and port helpers, highlighting, notes, keyboard navigation, and full-page capture tools. See [FEATURES.md](FEATURES.md) for the complete feature-by-feature guide.
 
 ## Install in Chrome
 

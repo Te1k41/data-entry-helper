@@ -1,6 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Data entry helper for me",
+  "name": "TTHelper-SC",
+  "description": "Built by a sailing scheduler, for sailing schedulers.",
   "version": "1.0.0",
 
   "background": {
