@@ -13,7 +13,8 @@ const DetectVesselNoDate = {
 
         const relevant =
             /^SV\d+_vessel_name$/.test(name) ||
-            /^SV\d+_depart_date$/.test(name);
+            /^SV\d+_depart_date$/.test(name) ||
+            /^SV\d+_start_voyage$/.test(name);
 
         if (relevant) this.check();
     },
@@ -41,10 +42,17 @@ const DetectVesselNoDate = {
 
             const match = field.name.match(/^SV(\d+)_vessel_name$/);
             const num = match[1];
-            const dateField = VesselRow.field(num, "depart_date");
+            const dateField   = VesselRow.field(num, "depart_date");
+            const voyageField = VesselRow.field(num, "start_voyage");
 
-            if (!dateField || !dateField.value.trim()) {
-                missing.push(field.value.trim());
+            const noDate   = !dateField || !dateField.value.trim();
+            const noVoyage = !voyageField || !voyageField.value.trim();
+
+            if (noDate || noVoyage) {
+                const reason = noDate && noVoyage ? "no date, no voyage"
+                             : noDate             ? "no date"
+                             :                       "no voyage";
+                missing.push(`${field.value.trim()} (${reason})`);
                 field.style.outline = "2px solid #cc0000";
                 field.style.backgroundColor = "#fff0f0";
                 field.dataset.ttVesselNoDateFlagged = "1";
@@ -54,8 +62,8 @@ const DetectVesselNoDate = {
         // after the loop — register or clear this feature's own warning
         if (missing.length > 0) {
             setWarning("missing-vessel-dates", {
-                title:   "🚢 Missing vessel dates",
-                message: `No date found for: ${missing.join(", ")}`
+                title:   "🚢 Missing vessel date/voyage",
+                message: `Flagged: ${missing.join(", ")}`
             });
         } else {
             setWarning("missing-vessel-dates", null);
