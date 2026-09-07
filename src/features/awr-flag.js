@@ -1,21 +1,22 @@
 // ─────────────────────────────────────────────────────
 //  FEATURE: AWR (All Water Route) Auto-Flag
-//  Flagged AWR = Yes if the schedule EITHER calls a US port
-//  (West or East coast — a direct US port call is already an
-//  all-water route on its own) OR transits the Panama Canal
-//  (an exact "PANAMA CANAL, PANAMA" port stop). Either alone
-//  is sufficient. Auto-clicks the "Yes" radio the moment
-//  either condition is found (with a confirmation banner) —
-//  but never auto-reverts an already-Yes selection if
-//  conditions later stop holding, and never fights a manual
-//  click on either radio. Only a passive highlight on "No"
-//  nudges reconsideration in that case.
+//  Flagged AWR = Yes only if the schedule calls a US port
+//  (West or East coast) AND transits the Panama Canal (an
+//  exact "PANAMA CANAL, PANAMA" port stop) — both conditions
+//  required together. Auto-clicks "Yes" the moment both are
+//  found, and auto-clicks back to "No" the moment either one
+//  stops holding — this one keeps enforcing itself even past
+//  a manual click, unlike the Yes-side below. If the user
+//  manually re-selects "Yes" while unqualified, that override
+//  is respected (not immediately re-fought) but flagged with a
+//  warning banner so it's not a silent mistake.
 // ─────────────────────────────────────────────────────
 const AwrFlag = {
     PANAMA_CANAL_NAME: "PANAMA CANAL, PANAMA",
 
-    userTouchedRadio: false, // set once the user clicks the allWater radio themselves — stops further auto-clicking either direction
-    _autoClicking: false,    // guard so our own .click() on the Yes radio doesn't get recorded as "the user touched it"
+    userTouchedRadio: false,        // set once the user clicks the allWater radio themselves — stops further auto-clicking of "Yes" while qualified
+    userOverrodeUnqualified: false, // set once the user manually re-selects "Yes" while NOT qualified — stops the auto-revert-to-No fight
+    _autoClicking: false,           // guard so our own .click() doesn't get recorded as "the user touched it"
 
     init() {
         this.run();
@@ -62,10 +63,11 @@ const AwrFlag = {
         if (!yes || !no) return; // not a page with the AWR radios
 
         const fields = this.getPortNameFields();
-        const qualifies = this.hasUSPort(fields) || this.hasPanamaCanal(fields);
+        const qualifies = this.hasUSPort(fields) && this.hasPanamaCanal(fields);
 
         if (qualifies) {
             this.clearNoHighlight(no);
+            this.userOverrodeUnqualified = false; // fresh start next time it stops qualifying
 
             if (!yes.checked && !this.userTouchedRadio) {
                 this._autoClicking = true;
@@ -76,19 +78,36 @@ const AwrFlag = {
                 }
                 showTemporaryBanner({
                     title:   "🚩 AWR flagged",
-                    message: "US port call or Panama Canal transit detected — set to Yes"
+                    message: "US port call and Panama Canal transit detected — set to Yes"
                 });
             }
             return;
         }
 
-        // Doesn't qualify right now — never auto-revert an already-Yes
-        // selection, just nudge toward No with a passive highlight.
-        if (yes.checked) {
-            this.highlightNo(no);
-        } else {
+        // Doesn't qualify right now.
+        if (!yes.checked) {
             this.clearNoHighlight(no);
+            return;
         }
+
+        if (this.userOverrodeUnqualified) {
+            // User deliberately kept/re-picked "Yes" after we already
+            // auto-reverted it once — respect that instead of fighting
+            // them again, just keep nudging with the highlight.
+            this.highlightNo(no);
+            return;
+        }
+
+        this._autoClicking = true;
+        try {
+            no.click(); // real click — fires change, matches Tradetech's own OS_allWater sync
+        } finally {
+            this._autoClicking = false;
+        }
+        showTemporaryBanner({
+            title:   "🚩 AWR unflagged",
+            message: "No longer both a US port call and Panama Canal transit — set to No"
+        });
     },
 
     handle(event) {
@@ -96,7 +115,21 @@ const AwrFlag = {
         if (!name) return;
 
         if (name === "allWater") {
-            if (!this._autoClicking) this.userTouchedRadio = true;
+            if (!this._autoClicking) {
+                this.userTouchedRadio = true;
+
+                if (event.target.value === "Yes" && event.target.checked) {
+                    const fields = this.getPortNameFields();
+                    const qualifies = this.hasUSPort(fields) && this.hasPanamaCanal(fields);
+                    if (!qualifies) {
+                        this.userOverrodeUnqualified = true;
+                        showTemporaryBanner({
+                            title:   "⚠️ AWR requirements not met",
+                            message: "Set to Yes without both a US port call and Panama Canal transit"
+                        });
+                    }
+                }
+            }
             this.run(); // refresh the No-highlight cue either way
             return;
         }
