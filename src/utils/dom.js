@@ -47,17 +47,20 @@ function setFieldValue(input, value) {
 const PORT_NAME_FIELD_PATTERN = /^SP\d+_port_name$/;
 
 function selectFieldSmart(field) {
-    setTimeout(() => {
-        if (PORT_NAME_FIELD_PATTERN.test(field.name)) {
-            const value = field.value;
-            const commaIdx = value.indexOf(",");
-            const parenIdx = value.indexOf("(");
-            const cutCandidates = [commaIdx, parenIdx].filter(i => i !== -1);
-            const cut = cutCandidates.length ? Math.min(...cutCandidates) : value.length;
-            field.setSelectionRange(0, cut);
-            return;
-        }
+    if (!PORT_NAME_FIELD_PATTERN.test(field.name)) {
         field.select();
+        return;
+    }
+    // Only port-name fields race against a native onfocus handler (see
+    // comment above) — deferring every other field's select() too was
+    // what caused a visible one-frame flicker on every field click.
+    setTimeout(() => {
+        const value = field.value;
+        const commaIdx = value.indexOf(",");
+        const parenIdx = value.indexOf("(");
+        const cutCandidates = [commaIdx, parenIdx].filter(i => i !== -1);
+        const cut = cutCandidates.length ? Math.min(...cutCandidates) : value.length;
+        field.setSelectionRange(0, cut);
     }, 0);
 }
 

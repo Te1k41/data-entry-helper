@@ -75,6 +75,7 @@ const FEATURES = [
     SelectFieldOnFocus,
     AutoNavSchedules,
     DueServiceScanner,
+    AwrAudit,
     SchedulePreviewTools,
     DateStepButtons,
     VoyageStepButtons,

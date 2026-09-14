@@ -139,6 +139,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
     }
 
+    if (message?.type === "RUN_AWR_AUDIT") {
+        runAwrAudit();
+        sendResponse({ ok: true, started: true });
+        return;
+    }
+
     if (message?.type === "SET_RENAME_STATE") {
         renamingEnabled = message.enabled;
         chrome.storage.local.set({ renamingEnabled });
@@ -236,6 +242,360 @@ async function maybeCaptureSchedulePageHtml(tab) {
     }
 }
 
+
+// ── AWR Audit ─────────────────────────────────────────────────
+// Walks every record the relay already knows about (from due-service-
+// scanner-relay.js's own posted scans — no fresh Tradetech search
+// triggered here), opening each one's edit page in an inactive
+// background tab. Deliberately reuses the SAME content script
+// (awr-flag.js) that runs during normal interactive editing, rather
+// than duplicating its qualifies-logic here — that script writes its
+// verdict into a data-attribute (see AwrFlag.reportAuditResult) that
+// this reads back out once the page has settled. Only records whose
+// AWR value actually needed correcting get Saved; everything else is
+// just closed. Sequential and throttled on purpose — this is real
+// production data, not a resource to hammer.
+const AWR_AUDIT_SETTLE_MS = 1500;
+const AWR_AUDIT_THROTTLE_MS = 800;
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function waitForTabComplete(tabId) {
+    return new Promise((resolve) => {
+        function listener(id, info) {
+            if (id === tabId && info.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve();
+            }
+        }
+        chrome.tabs.onUpdated.addListener(listener);
+    });
+}
+
+async function auditOneRecord(record, expectedNextUpdateDate) {
+    const url = `https://www.tradetech.net/cgi/inframe/cgi/u/schedule_detailsB.pl?record=${record}&mode=E`;
+    const tab = await chrome.tabs.create({ url, active: false });
+
+    try {
+        await waitForTabComplete(tab.id);
+        await sleep(AWR_AUDIT_SETTLE_MS); // let content scripts finish (AwrFlag's own self-correction included)
+
+        // allFrames: true — schedule_detailsB.pl?...&mode=E is itself a
+        // frameset (matches its own /inframe/ URL, and the Save button's
+        // parent.fr1.doSave() calling a SIBLING frame confirms it): the
+        // actual edit form with the allWater radios lives in a CHILD
+        // frame, not the top document. Without allFrames, this only ever
+        // reads the (empty) top frame and silently finds nothing.
+        const auditFrames = await chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            func: () => {
+                const raw = document.documentElement.dataset.ttAwrAudit;
+                return raw ? JSON.parse(raw) : null;
+            }
+        });
+        const audit = auditFrames.map(f => f.result).find(r => r) || null;
+
+        if (!audit) {
+            return { record, skipped: true, reason: "no allWater radios found on this record's page" };
+        }
+
+        if (!audit.corrected) {
+            return { record, corrected: false, qualifies: audit.qualifies, checked: audit.checked };
+        }
+
+        // Needed correcting — AwrFlag already clicked the right radio.
+        // Tradetech's own page touches next_update_date just from opening
+        // the record for edit, independent of anything we do — so before
+        // saving, force it back to the value the relay already had on
+        // record for this service (captured by due-service-scanner-relay.js
+        // BEFORE this record was ever opened this session), overriding
+        // whatever Tradetech set it to on open. expectedNextUpdateDate
+        // comes in as the relay's DD-MMM-YYYY scrape format and MUST be
+        // converted to the field's own MM/DD/YY before writing — writing
+        // the raw relay format directly is exactly what blanked a live
+        // record's date earlier (Tradetech's dateformat() couldn't parse
+        // it and cleared the field, which then got saved). The verify
+        // step below refuses to save at all unless the field genuinely
+        // holds a real-looking date after formatting.
+        let dateRestore = { skipped: true };
+        const formattedDate = expectedNextUpdateDate ? ddMmmYyyyToMmDdYy(expectedNextUpdateDate) : null;
+
+        if (expectedNextUpdateDate && !formattedDate) {
+            return { record, corrected: true, qualifies: audit.qualifies, savedOk: false,
+                saveError: `could not parse relay date "${expectedNextUpdateDate}" — refused to touch next_update_date or save` };
+        }
+
+        if (formattedDate) {
+            const dateFrames = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                args: [formattedDate],
+                func: (expected) => {
+                    const field = document.querySelector('input[name="next_update_date"]');
+                    if (!field) return null;
+                    if (field.value.trim() === expected.trim()) return { ok: true, changed: false };
+                    const before = field.value;
+                    field.value = expected;
+                    field.dispatchEvent(new Event("change", { bubbles: true }));
+                    return { ok: true, changed: true, before, after: field.value };
+                }
+            });
+            dateRestore = dateFrames.map(f => f.result).find(r => r) ||
+                { ok: false, error: "next_update_date field not found in any frame" };
+
+            await sleep(500); // let dateformat()'s own reformatting settle before verifying
+
+            const verifyFrames = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                func: () => {
+                    const field = document.querySelector('input[name="next_update_date"]');
+                    return field ? field.value : null;
+                }
+            });
+            const currentValue = verifyFrames.map(f => f.result).find(r => r != null);
+
+            if (dateRestore.ok && dateRestore.changed && !/^\d{2}\/\d{2}\/\d{2}$/.test(currentValue || "")) {
+                return { record, corrected: true, qualifies: audit.qualifies, dateRestore, savedOk: false,
+                    saveError: `next_update_date ended up as "${currentValue}" after formatting — refused to save` };
+            }
+        }
+
+        let saveOk = false, saveError = null;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            const saveFrames = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                func: () => {
+                    const btn = document.querySelector('input[type="button"][value="Save"]');
+                    if (!btn) return null;
+                    try { btn.click(); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; }
+                }
+            });
+            const clickResult = saveFrames.map(f => f.result).find(r => r);
+            if (!clickResult) { saveError = "Save button not found in any frame"; break; }
+            if (!clickResult.ok) { saveError = clickResult.error; continue; }
+
+            await sleep(AWR_AUDIT_SETTLE_MS);
+
+            const errorFrames = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                func: () => /error/i.test(document.body?.innerText || "")
+            });
+            if (!errorFrames.some(f => f.result)) { saveOk = true; break; }
+            saveError = "possible error text detected on page after save";
+        }
+        const saveResult = { ok: saveOk, error: saveOk ? undefined : saveError };
+
+        if (saveResult.ok) {
+            await sleep(AWR_AUDIT_SETTLE_MS); // let the save round-trip finish before the tab closes
+        }
+
+        return {
+            record,
+            corrected: true,
+            qualifies: audit.qualifies,
+            dateRestore,
+            savedOk: saveResult.ok,
+            saveError: saveResult.error
+        };
+    } finally {
+        await chrome.tabs.remove(tab.id).catch(() => {});
+    }
+}
+
+async function runAwrAudit() {
+    console.log("🔍 AWR audit: fetching relay-tracked records…");
+    let services;
+    try {
+        const res = await fetch("http://localhost:3737/due-services");
+        ({ services } = await res.json());
+    } catch (err) {
+        console.error("❌ AWR audit: could not reach relay for the record list:", err);
+        return;
+    }
+
+    // Map, not just a Set of ids -- each record's LAST-KNOWN
+    // next_update_date (from the relay's own prior scan, before this
+    // record is ever opened this session) is what auditOneRecord()
+    // restores the field to before saving, since Tradetech's own page
+    // touches that field just from opening the record for edit.
+    const recordDates = new Map();
+    for (const s of services) {
+        if (s.record) recordDates.set(s.record, s.nextUpdateDate);
+    }
+    const records = [...recordDates.keys()];
+    console.log(`🔍 AWR audit: ${records.length} record(s) to check, one at a time`);
+
+    const results = [];
+    for (const [i, record] of records.entries()) {
+        console.log(`🔍 [${i + 1}/${records.length}] checking record ${record}…`);
+        try {
+            const result = await auditOneRecord(record, recordDates.get(record));
+            results.push(result);
+            console.log(`🔍 [${i + 1}/${records.length}] record ${record}:`, result);
+        } catch (err) {
+            console.error(`❌ AWR audit: record ${record} failed:`, err);
+            results.push({ record, error: err.message });
+        }
+        await sleep(AWR_AUDIT_THROTTLE_MS);
+    }
+
+    const corrected = results.filter(r => r.corrected);
+    const failed    = results.filter(r => r.corrected && !r.savedOk);
+    console.log(
+        `✅ AWR audit complete — ${results.length} checked, ${corrected.length} corrected` +
+        (failed.length ? `, ⚠️ ${failed.length} save failure(s) — see above` : "")
+    );
+    console.log("🔍 Full AWR audit report:", results);
+}
+
+// ── One-off: restore next_update_date on records the AWR audit's
+// format bug blanked ─────────────────────────────────────────
+// auditOneRecord() force-wrote the relay's cached DD-MMM-YYYY date
+// string directly into a field that expects MM/DD/YY, with no format
+// conversion -- Tradetech's own dateformat() handler couldn't parse
+// it and blanked the field instead, which then got Saved. This
+// converts properly, VERIFIES the field actually holds a real date
+// after formatting (never saves on a blank/malformed result), and
+// retries the Save click once if an error is detected afterward.
+// Snapshot values below, not a fresh relay fetch -- these are the
+// confirmed pre-corruption originals as of the incident; a live
+// re-fetch now could pick up already-corrupted data instead.
+const AWR_DATE_RESTORE_RECORDS = {
+    "19980": "09-SEP-2026", "16371": "17-SEP-2026", "17794": "18-SEP-2026",
+    "17700": "18-SEP-2026", "19900": "08-SEP-2026", "20460": "19-SEP-2026",
+    "19552": "10-SEP-2026", "19934": "18-SEP-2026", "19192": "18-SEP-2026",
+    "17907": "11-SEP-2026", "19104": "18-SEP-2026", "19424": "10-SEP-2026",
+    "17963": "16-SEP-2026", "17946": "12-SEP-2026", "19364": "11-SEP-2026",
+    "15457": "08-SEP-2026", "19435": "17-SEP-2026", "19434": "08-SEP-2026",
+    "20576": "10-SEP-2026", "20026": "11-SEP-2026"
+};
+
+function ddMmmYyyyToMmDdYy(raw) {
+    const MONTHS = { JAN:1, FEB:2, MAR:3, APR:4, MAY:5, JUN:6, JUL:7, AUG:8, SEP:9, OCT:10, NOV:11, DEC:12 };
+    const m = raw.trim().toUpperCase().match(/^(\d{1,2})-([A-Z]{3})-(\d{4})$/);
+    if (!m) return null;
+    const [, day, mon, year] = m;
+    const monthNum = MONTHS[mon];
+    if (!monthNum) return null;
+    return `${String(monthNum).padStart(2, "0")}/${day.padStart(2, "0")}/${year.slice(-2)}`;
+}
+
+async function restoreOneNextUpdateDate(record, rawExpected) {
+    const formatted = ddMmmYyyyToMmDdYy(rawExpected);
+    if (!formatted) return { record, ok: false, error: `could not parse date "${rawExpected}"` };
+
+    const url = `https://www.tradetech.net/cgi/inframe/cgi/u/schedule_detailsB.pl?record=${record}&mode=E`;
+    const tab = await chrome.tabs.create({ url, active: false });
+
+    try {
+        await waitForTabComplete(tab.id);
+        await sleep(AWR_AUDIT_SETTLE_MS);
+
+        const setFrames = await chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            args: [formatted],
+            func: (value) => {
+                const field = document.querySelector('input[name="next_update_date"]');
+                if (!field) return null;
+                field.value = value;
+                field.dispatchEvent(new Event("change", { bubbles: true }));
+                return { fieldFound: true };
+            }
+        });
+        if (!setFrames.some(f => f.result)) {
+            return { record, ok: false, error: "next_update_date field not found in any frame" };
+        }
+
+        await sleep(500); // let dateformat()'s own reformatting settle
+
+        const verifyFrames = await chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            func: () => {
+                const field = document.querySelector('input[name="next_update_date"]');
+                return field ? field.value : null;
+            }
+        });
+        const currentValue = verifyFrames.map(f => f.result).find(r => r != null);
+
+        // Refuse to save unless the field genuinely holds a real-looking
+        // date after formatting -- this exact check is what last time's
+        // bug skipped, and it's what actually blanked a live record.
+        if (!currentValue || !/^\d{2}\/\d{2}\/\d{2}$/.test(currentValue)) {
+            return {
+                record, ok: false,
+                error: `field ended up as "${currentValue}" after formatting -- refused to save`,
+                attempted: formatted
+            };
+        }
+
+        let saveOk = false, saveError = null;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            const saveFrames = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                func: () => {
+                    const btn = document.querySelector('input[type="button"][value="Save"]');
+                    if (!btn) return null;
+                    try { btn.click(); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; }
+                }
+            });
+            const clickResult = saveFrames.map(f => f.result).find(r => r);
+            if (!clickResult) { saveError = "Save button not found in any frame"; break; }
+            if (!clickResult.ok) { saveError = clickResult.error; continue; }
+
+            await sleep(AWR_AUDIT_SETTLE_MS);
+
+            // Best-effort generic error check -- refine once the actual
+            // error UI shape is confirmed; for now just looks for the
+            // word "error" anywhere visible on the page after saving.
+            const errorFrames = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                func: () => /error/i.test(document.body?.innerText || "")
+            });
+            const errorSeen = errorFrames.some(f => f.result);
+
+            if (!errorSeen) { saveOk = true; break; }
+            saveError = "possible error text detected on page after save";
+        }
+
+        return {
+            record, ok: saveOk,
+            restoredTo: formatted, verifiedFieldValue: currentValue,
+            saveError: saveOk ? undefined : saveError
+        };
+    } finally {
+        await chrome.tabs.remove(tab.id).catch(() => {});
+    }
+}
+
+// Call from this service worker's own console after reloading the
+// extension: restoreNextUpdateDates()
+async function restoreNextUpdateDates() {
+    const entries = Object.entries(AWR_DATE_RESTORE_RECORDS);
+    console.log(`🩹 Restoring next_update_date for ${entries.length} record(s), one at a time`);
+
+    const results = [];
+    for (const [i, [record, rawDate]] of entries.entries()) {
+        console.log(`🩹 [${i + 1}/${entries.length}] restoring record ${record} → ${rawDate}…`);
+        try {
+            const result = await restoreOneNextUpdateDate(record, rawDate);
+            results.push(result);
+            console.log(`🩹 [${i + 1}/${entries.length}] record ${record}:`, result);
+        } catch (err) {
+            console.error(`❌ restore failed for record ${record}:`, err);
+            results.push({ record, ok: false, error: err.message });
+        }
+        await sleep(AWR_AUDIT_THROTTLE_MS);
+    }
+
+    const failed = results.filter(r => !r.ok);
+    console.log(
+        `✅ Restore complete — ${results.length - failed.length}/${results.length} succeeded` +
+        (failed.length ? `, ⚠️ ${failed.length} FAILED — needs manual fix, see below` : "")
+    );
+    console.log("🩹 Full restore report:", results);
+    if (failed.length) console.warn("⚠️ Failed records — fix these manually:", failed);
+}
 
 function setRelayAvailable(available) {
     if (relayAvailable === available) return;

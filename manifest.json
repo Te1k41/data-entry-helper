@@ -16,7 +16,8 @@
   ],
 
   "host_permissions": [
-      "http://localhost:3737/*"
+      "http://localhost:3737/*",
+      "https://www.tradetech.net/*"
   ],
 
   "action": {},
@@ -72,6 +73,7 @@
             "src/features/select-field-on-focus.js",
             "src/features/auto-nav-schedules.js",
             "src/features/due-service-scanner-relay.js",
+            "src/features/awr-audit-relay.js",
             "src/features/schedule-preview-tools-relay.js",
             "src/features/date-step-buttons.js",
             "src/features/voyage-step-buttons.js",

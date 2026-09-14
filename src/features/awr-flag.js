@@ -58,6 +58,16 @@ const AwrFlag = {
         no.style.backgroundColor = "";
     },
 
+    // Records the outcome of the most recent run() on the document itself
+    // (not just in memory) so an OUTSIDE reader — the AWR audit's
+    // background-tab automation, via chrome.scripting.executeScript —
+    // can pick up "did this record's AWR need fixing" without needing
+    // its own copy of the qualifies logic or a message-timing race
+    // against page load. Harmless during normal interactive use.
+    reportAuditResult(qualifies, checked, corrected) {
+        document.documentElement.dataset.ttAwrAudit = JSON.stringify({ qualifies, checked, corrected });
+    },
+
     run() {
         const { yes, no } = this.getRadios();
         if (!yes || !no) return; // not a page with the AWR radios
@@ -80,13 +90,17 @@ const AwrFlag = {
                     title:   "🚩 AWR flagged",
                     message: "US port call and Panama Canal transit detected — set to Yes"
                 });
+                this.reportAuditResult(qualifies, true, true);
+                return;
             }
+            this.reportAuditResult(qualifies, yes.checked, false);
             return;
         }
 
         // Doesn't qualify right now.
         if (!yes.checked) {
             this.clearNoHighlight(no);
+            this.reportAuditResult(qualifies, false, false);
             return;
         }
 
@@ -95,6 +109,7 @@ const AwrFlag = {
             // auto-reverted it once — respect that instead of fighting
             // them again, just keep nudging with the highlight.
             this.highlightNo(no);
+            this.reportAuditResult(qualifies, true, false);
             return;
         }
 
@@ -108,6 +123,7 @@ const AwrFlag = {
             title:   "🚩 AWR unflagged",
             message: "No longer both a US port call and Panama Canal transit — set to No"
         });
+        this.reportAuditResult(qualifies, false, true);
     },
 
     handle(event) {
