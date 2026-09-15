@@ -70,10 +70,34 @@ function loadFromDisk() {
     }
 }
 
+// Tradetech's scan has no idea a record was marked done locally — it
+// just reports whatever's really due. Without carrying the local
+// override forward here, every rescan (due-service-scanner-relay.js
+// runs one automatically per calendar day, or any manual "Scan & Save")
+// would silently erase Mark Done: `done`, the 15-day-out fake
+// nextUpdateDate, and the pre-done snapshot Undo depends on. Only
+// records still `done` in the OUTGOING state carry anything forward —
+// everything else (new records, records that were never marked done,
+// records no longer present in the scan) passes through untouched.
+function setAll(services, asOf) {
+    const previousByRecord = new Map(dueServices.map(s => [s.record, s]));
+
+    dueServices = services.map(incoming => {
+        const previous = previousByRecord.get(incoming.record);
+        if (!previous || !previous.done) return incoming;
+
+        const merged = { ...incoming, done: previous.done, nextUpdateDate: previous.nextUpdateDate };
+        if (previous._preDoneSnapshot) merged._preDoneSnapshot = previous._preDoneSnapshot;
+        return merged;
+    });
+
+    dueServicesAsOf = asOf;
+}
+
 module.exports = {
     getAll:        () => dueServices,
     getAsOf:       () => dueServicesAsOf,
-    setAll:        (services, asOf) => { dueServices = services; dueServicesAsOf = asOf; },
+    setAll,
     findByRecord:  (record) => dueServices.find(s => s.record === record),
     ensureDataFolders,
     save,

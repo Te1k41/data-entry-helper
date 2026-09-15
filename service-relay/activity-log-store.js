@@ -37,4 +37,24 @@ function logDone(record, service) {
     writeFileAtomicSync(ACTIVITY_LOG_FILE, JSON.stringify(log, null, 2));
 }
 
-module.exports = { loadLog, logDone };
+// Removes the most recently logged Mark Done for a record — the
+// counterpart to a Mark Done -> Undo click pair, so an undone click
+// doesn't still count toward the throughput chart. Only removes ONE
+// entry (the latest), not every entry ever logged for this record,
+// since the same record can legitimately be marked done again on a
+// genuinely later day.
+function undoLastDone(record) {
+    ensureDataFolder();
+    const log = loadLog();
+
+    for (let i = log.length - 1; i >= 0; i--) {
+        if (log[i].record === record) {
+            log.splice(i, 1);
+            writeFileAtomicSync(ACTIVITY_LOG_FILE, JSON.stringify(log, null, 2));
+            return true;
+        }
+    }
+    return false; // nothing logged for this record — nothing to undo
+}
+
+module.exports = { loadLog, logDone, undoLastDone };

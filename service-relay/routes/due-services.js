@@ -22,12 +22,17 @@ const { readJsonBody } = require("../read-json-body");
 
 // Extension posts its latest scan of Tradetech's due-soon services here.
 //
-// Blind replace — whatever Tradetech reports right now IS the truth.
-// No local "done" override survives a rescan: Mark Done only hides a
-// service until the NEXT scan, not until Tradetech's own date catches
-// up to some locally-invented target. This is deliberately simple —
-// see git history for the previous date-comparison merge approach,
-// which was more "clever" but harder to reason about and trust.
+// Whatever Tradetech reports right now IS the truth for every field
+// EXCEPT the local Mark Done override — due-services-store.js's
+// setAll() carries `done`, the fake 15-day-out nextUpdateDate, and the
+// pre-done snapshot forward by record id, since Tradetech's own scan
+// has no idea a record was marked done locally and would otherwise
+// silently erase that override on every rescan (this ran a genuine
+// "clever" date-comparison merge in the past — see git history — and
+// was simplified back to blind replace, which briefly also dropped
+// done-override persistence as an unintended side effect; the merge
+// in setAll() now is scoped to ONLY those three local fields, not a
+// return to comparing/reconciling dates).
 async function handlePostDueServices(req, res) {
     try {
         const parsed  = await readJsonBody(req);
@@ -218,9 +223,12 @@ async function handleMarkDone(req, res) {
 
 // Dashboard's "Undo" button — restores whatever the entry looked like
 // right before the most recent Mark Done click, using the snapshot
-// saved above. Only works once per mark-done (the snapshot is deleted
-// after a successful undo), and only if nothing's overwritten it
-// since (e.g. a fresh Tradetech scan that genuinely updated the date).
+// saved above. due-services-store.js's setAll() now carries `done` /
+// the snapshot forward across rescans (as long as the record's still
+// present in Tradetech's scan), so this stays undoable across more
+// than just the same scan cycle — only works once per mark-done (the
+// snapshot is deleted after a successful undo), and only for records
+// still present in Tradetech's own reported list.
 async function handleUndoDone(req, res) {
     try {
         const { record } = await readJsonBody(req);
@@ -243,6 +251,12 @@ async function handleUndoDone(req, res) {
         delete entry._preDoneSnapshot;
 
         store.save();
+
+        // Symmetric to handleMarkDone's activityLog.logDone() — without
+        // this, a Mark Done -> Undo -> Mark Done sequence logged the
+        // same real completion twice, inflating the throughput chart.
+        activityLog.undoLastDone(record);
+
         console.log(`↩️ Undid mark-done: record ${record} → restored ${entry.nextUpdateDate}`);
 
         relaySocket.broadcast({ type: "due-services-updated" });
