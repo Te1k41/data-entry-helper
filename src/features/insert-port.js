@@ -102,6 +102,8 @@ const PortActionHistory = {
     },
 
     init() {
+        if (!isOnScheduleForm()) return;
+
         Toolbar.register({
             id:      "tt-port-restore",
             label:   "↩ Restore Port",

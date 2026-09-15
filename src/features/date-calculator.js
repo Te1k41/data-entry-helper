@@ -9,6 +9,8 @@ const DateCalculator = {
     WEEKDAYS: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
 
     init() {
+        if (!isOnScheduleForm()) return;
+
         Toolbar.register({
             id:      "tt-date-calc",
             label:   "🗓 Date Calc",

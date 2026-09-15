@@ -128,6 +128,8 @@ const VesselVoyageCorrection = {
     },
 
     init() {
+        if (!isOnScheduleForm()) return;
+
         Toolbar.register({
         id:      "tt-fix-vessels-btn",
         label:   "🛠 Fix Vessel Dates",

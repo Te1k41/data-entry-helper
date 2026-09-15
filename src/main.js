@@ -75,7 +75,7 @@ const FEATURES = [
     SelectFieldOnFocus,
     AutoNavSchedules,
     DueServiceScanner,
-    AwrAudit,
+    // AwrAudit, // disabled — hidden from Toolbar until the relay-dependent fix pass (frame-duplication guard not applied yet)
     SchedulePreviewTools,
     DateStepButtons,
     VoyageStepButtons,

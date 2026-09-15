@@ -24,6 +24,19 @@
 //  and keeps its own independent button.
 // ============================================================
 
+// Tradetech's schedule-edit page is a real frameset (see
+// upload-proof-relay.js's findSupportDocsButton() comment), and the whole
+// content-script bundle runs with all_frames:true — so every frame on the
+// page (including ones with no form on them at all) gets its own copy of
+// every feature. A feature that registers a Toolbar button or builds its
+// own UI unconditionally in init() ends up duplicated: one real copy in
+// the frame with the form, one dead copy elsewhere whose button either
+// does nothing or tracks its own disconnected state. Same selector
+// upload-proof-relay.js already uses to find the real form frame.
+function isOnScheduleForm() {
+    return !!document.querySelector('input[name="service"]');
+}
+
 const Toolbar = {
     _actions: [],
     _panel:         null,

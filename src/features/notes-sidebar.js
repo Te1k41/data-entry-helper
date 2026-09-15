@@ -20,7 +20,9 @@ const NotesSidebar = {
 
         // Keep the panel in sync if the real field changes from
         // somewhere else — e.g. NotesDateReplacement's date swap on
-        // load, or Tradetech's own scripts.
+        // load (routed through setFieldValue(), which is what actually
+        // fires this "input" event — a plain .value assignment wouldn't),
+        // or Tradetech's own scripts.
         notesField.addEventListener("input", () => this.syncFromField());
     },
 

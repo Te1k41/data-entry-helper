@@ -65,6 +65,7 @@ const VoyageStepButtons = {
         btn.title = direction > 0
             ? "+1 (Shift = + voyage_increment_by, if > 0)"
             : "-1 (Shift = - voyage_increment_by, if > 0)";
+        btn.tabIndex = -1; // click-only — keyboard Tab should skip straight to the next real field
 
         btn.style.cssText = `
             display: inline-block !important;

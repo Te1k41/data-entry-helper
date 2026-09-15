@@ -14,6 +14,8 @@
 const RearrangeVessels = {
 
     init() {
+        if (!isOnScheduleForm()) return;
+
         Toolbar.register({
             id:      "tt-rearrange-vessels",
             label:   "🔀 Rearrange Vessels",

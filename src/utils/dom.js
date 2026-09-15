@@ -64,6 +64,31 @@ function selectFieldSmart(field) {
     }, 0);
 }
 
+// Polls a field for a non-blank value before calling `callback`, since
+// Tradetech fills some fields asynchronously (e.g. vessel_name after a
+// Lloyds code lookup) by setting .value directly with no "change" event
+// — a feature acting immediately on such a field can catch it still
+// blank. Same 100ms/50-attempt (5s ceiling) shape as awr-flag.js's and
+// port-highlighting.js's own waitForNameThenRescan() — if field is
+// already non-blank, calls back immediately with no delay. Gives up
+// silently (still calls back) after the ceiling, same as those two, so
+// a genuinely-blank field (not just slow to fill) doesn't hang forever.
+function waitForFieldValue(field, callback) {
+    if (!field || field.value.trim()) {
+        callback();
+        return;
+    }
+    let attempts = 0;
+    const maxAttempts = 50;
+    const timer = setInterval(() => {
+        attempts++;
+        if (field.value.trim() || attempts >= maxAttempts) {
+            clearInterval(timer);
+            callback();
+        }
+    }, 100);
+}
+
 // Inserts `btn` after any inline action buttons already sitting right
 // after `field` (rather than always right after `field` itself), so a
 // row's button group ends up in a stable, predictable order (e.g.
@@ -71,6 +96,8 @@ function selectFieldSmart(field) {
 // run first. Shared by every feature that adds its own inline button
 // next to a field — duplicate-vessel.js (⧉/🗑) and insert-port.js (➕).
 function insertActionButtonAfter(field, btn) {
+    btn.tabIndex = -1; // click-only — keyboard Tab should skip straight to the next real field
+
     let anchor = field;
     while (anchor.nextElementSibling && anchor.nextElementSibling.tagName === "BUTTON") {
         anchor = anchor.nextElementSibling;

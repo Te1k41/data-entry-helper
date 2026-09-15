@@ -10,6 +10,8 @@ const ScheduleCascade = {
     _cascading: false,     // true while OUR OWN writes are in flight, so handle() doesn't mistake them for fresh user input
 
     init() {
+        if (!isOnScheduleForm()) return;
+
         this.storeDiffs();
         Toolbar.register({
             id:      "tt-snapshot-diffs",

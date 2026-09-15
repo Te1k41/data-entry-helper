@@ -38,10 +38,9 @@
 //  affected by this.
 //
 //  🗑 Delete — the inverse: clears that row's vessel name, Lloyds
-//  code, voyage number, and departure date back to blank — no confirm
-//  prompt (see ↩ Restore below). Doesn't touch One-off or Skipped
-//  Ports — out of scope, this session's vessel features only ever
-//  operate on name/code/voyage/date.
+//  code, voyage number, departure date, and One-off checkbox back to
+//  blank/unchecked — no confirm prompt (see ↩ Restore below). Doesn't
+//  touch Skipped Ports — still out of scope, unrelated to a vessel row.
 // ─────────────────────────────────────────────────────
 
 function vesselCodeField(row) {
@@ -100,6 +99,8 @@ const VesselActionHistory = {
     },
 
     init() {
+        if (!isOnScheduleForm()) return;
+
         Toolbar.register({
             id:      "tt-vessel-restore",
             label:   "↩ Restore Vessel",
@@ -161,10 +162,25 @@ const DuplicateVessel = {
 
         btn.addEventListener("click", (e) => {
             e.preventDefault();
-            this.duplicate(field, {
+
+            const doDuplicate = () => this.duplicate(field, {
                 get: () => lastVoyage,
                 set: (value) => { lastVoyage = value; }
             });
+
+            // If a Lloyds code was just typed, Tradetech fills vessel_name
+            // asynchronously (plain .value assignment, no "change" event) —
+            // clicking Duplicate before that lands would copy a still-blank
+            // name. Only wait when there's actually a code to look up a name
+            // for; a genuinely empty row (no code either) should still hit
+            // duplicate()'s own "Nothing to duplicate" banner immediately.
+            const rowMatch = field.name.match(/^SV(\d+)_vessel_name$/);
+            const codeField = rowMatch ? vesselCodeField(rowMatch[1]) : null;
+            if (codeField && codeField.value.trim() && !field.value.trim()) {
+                waitForFieldValue(field, doDuplicate);
+            } else {
+                doDuplicate();
+            }
         });
 
         insertActionButtonAfter(field, btn);
@@ -368,13 +384,15 @@ const DeleteVessel = {
         const vesselName = nameField.value.trim();
         const voyageField = document.querySelector(`input[name="SV${row}_start_voyage"]:not([name^="PV_"])`);
         const dateField   = document.querySelector(`input[name="SV${row}_depart_date"]:not([name^="PV_"])`);
+        const oneOffField = document.querySelector(`input[name="SV${row}_one-off"]`);
 
         // Capture everything BEFORE clearing it, so Restore can put it
         // all back exactly as it was.
-        const oldName   = nameField.value;
-        const oldCode   = readVesselCode(row);
-        const oldVoyage = voyageField ? voyageField.value : null;
-        const oldDate   = dateField ? dateField.value : null;
+        const oldName    = nameField.value;
+        const oldCode    = readVesselCode(row);
+        const oldVoyage  = voyageField ? voyageField.value : null;
+        const oldDate    = dateField ? dateField.value : null;
+        const oldOneOff  = oneOffField ? oneOffField.checked : null;
 
         VesselActionHistory.push({
             label: `Delete SV${row} ("${vesselName}")`,
@@ -394,6 +412,11 @@ const DeleteVessel = {
                 // Same as the forward delete — depart_date's own inline
                 // onchange handles its PV_ shadow and day-of-week field.
                 if (dateField) setFieldValue(dateField, oldDate);
+
+                if (oneOffField && oldOneOff !== null) {
+                    oneOffField.checked = oldOneOff;
+                    oneOffField.dispatchEvent(new Event("change", { bubbles: true }));
+                }
             }
         });
 
@@ -413,6 +436,14 @@ const DeleteVessel = {
         // its PV_ shadow and the day-of-week field itself — same as
         // date-step-buttons.js relies on, no manual mirroring needed here.
         if (dateField) setFieldValue(dateField, "");
+
+        // A cleared row shouldn't still claim to be a "one-off" exception —
+        // that only means something in relation to an actual vessel
+        // occupying the row (see live-check.js's checkDuplicateImos()).
+        if (oneOffField) {
+            oneOffField.checked = false;
+            oneOffField.dispatchEvent(new Event("change", { bubbles: true }));
+        }
 
         console.log(`🗑 Cleared vessel row SV${row} (was "${vesselName}")`);
 

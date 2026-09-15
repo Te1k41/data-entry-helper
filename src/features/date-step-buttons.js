@@ -70,6 +70,7 @@ const DateStepButtons = {
         btn.title = direction > 0
             ? "+1 day (Shift = +7 days)"
             : "-1 day (Shift = -7 days)";
+        btn.tabIndex = -1; // click-only — keyboard Tab should skip straight to the next real field
 
         btn.style.cssText = `
             display: inline-block !important;

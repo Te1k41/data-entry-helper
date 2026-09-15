@@ -10,6 +10,8 @@ const VDirection = {
     enabled: true,  // toggle state lives directly on the feature object
 
     init() {
+        if (!isOnScheduleForm()) return;
+
         Toolbar.register({
             id:      "tt-voyage-direction-toggle",
             label:   "🧭 Direction: ON",

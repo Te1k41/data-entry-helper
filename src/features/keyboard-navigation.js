@@ -34,8 +34,25 @@
 const KeyboardFieldNav = {
 
     init() {
+        this.skipCalendarLinksInTabOrder();
         document.addEventListener("keydown", (event) => this.onKeyDown(event), true);
         console.log("⌨️ Keyboard field navigation enabled (arrow keys)");
+    },
+
+    // Every date field has Tradetech's own "open calendar popup" <a> icon
+    // sitting right next to it — a real, natively-focusable link, so plain
+    // Tab (everywhere this feature doesn't already take over, e.g. moving
+    // through port_name/port_code/vessel_name/lloyds_code) stops on it
+    // instead of skipping straight to the next real field. tabIndex = -1
+    // keeps it fully clickable, just out of the Tab sequence — same
+    // treatment given to this extension's own inline buttons (see
+    // insertActionButtonAfter() in dom.js, and date/voyage step buttons).
+    // One-time pass: every row's calendar link already exists in the DOM
+    // at page load, same as every SP/SV field itself.
+    skipCalendarLinksInTabOrder() {
+        document.querySelectorAll('a[onclick*="showCalendar"]').forEach(link => {
+            link.tabIndex = -1;
+        });
     },
 
     onKeyDown(event) {
@@ -173,9 +190,26 @@ const KeyboardFieldNav = {
                field.selectionEnd === field.value.length;
     },
 
-    // ↑ / ↓ — same field name, adjacent row number. Zero-padding
-    // (e.g. "001") is preserved using the original field's width.
+    // ↑ / ↓ — same field, adjacent row. Zero-padding (e.g. "001") is
+    // preserved using the original field's width.
+    //
+    // SP (port) rows: plain row+delta arithmetic — nothing in this
+    // codebase ever physically reorders port rows, so ascending SP-number
+    // always matches top-to-bottom visual order.
+    //
+    // SV (vessel) rows: rearrange-vessels.js CAN physically move a row's
+    // <tr> up or down the page while deliberately keeping that row's
+    // field NAMES attached to it (so hidden fields travel with it — see
+    // that file's own header comment). After a rearrange, ascending
+    // SV-number no longer matches visual order, so row+delta arithmetic
+    // would jump to the wrong row. Walk actual on-page row position
+    // instead — same principle moveHorizontal() already uses for columns.
     moveVertical(prefix, row, width, field, delta, event) {
+        if (prefix === "SV") {
+            this.moveVerticalVisual(row, width, field, delta, event);
+            return;
+        }
+
         const targetRow = row + delta;
         if (targetRow < 1) return;
 
@@ -186,6 +220,38 @@ const KeyboardFieldNav = {
         if (!next) return; // no such row — do nothing, don't jump wild
 
         this.focusField(next, event);
+    },
+
+    moveVerticalVisual(row, width, field, delta, event) {
+        const order = this.getVesselRowsInVisualOrder();
+        const rowStr = String(row).padStart(width, "0");
+        const idx = order.indexOf(rowStr);
+        if (idx === -1) return;
+
+        const targetIdx = idx + delta;
+        if (targetIdx < 0 || targetIdx >= order.length) return; // edge of the table
+
+        const next = document.querySelector(`input[name="SV${order[targetIdx]}_${field}"]`);
+        if (!next) return; // this row doesn't have that field
+
+        this.focusField(next, event);
+    },
+
+    // Same principle as getRowFieldsInVisualOrder() below, but across
+    // ROWS instead of within one row. Every row's vessel_name field
+    // stands in as that row's position marker, since a whole <tr> (and
+    // everything in it) moves together.
+    getVesselRowsInVisualOrder() {
+        const nameFields = Array.from(document.querySelectorAll(
+            'input[name^="SV"][name$="_vessel_name"]:not([name^="PV_"])'
+        ));
+
+        nameFields.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+        return nameFields
+            .map(f => f.name.match(/^SV(\d+)_vessel_name$/))
+            .filter(Boolean)
+            .map(m => m[1]);
     },
 
     // ← / → — same row, previous/next field by actual left-to-right
