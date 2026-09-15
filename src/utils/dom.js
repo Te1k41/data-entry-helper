@@ -64,6 +64,17 @@ function selectFieldSmart(field) {
     }, 0);
 }
 
+// Tradetech keeps a hidden "PV_" duplicate of many fields (its own
+// previous-value tracking) with no listeners of its own — a plain
+// value assignment is all it ever needs, no event dispatch. Repeated
+// this same two-line shape (find it, set it if it exists) across
+// port-row.js, vessel-row.js, duplicate-vessel.js, and
+// voyage-step-buttons.js often enough that it belongs here once.
+function mirrorPvShadow(field, value) {
+    const pv = document.querySelector(`input[name="PV_${field.name}"]`);
+    if (pv) pv.value = value;
+}
+
 // Polls a field for a non-blank value before calling `callback`, since
 // Tradetech fills some fields asynchronously (e.g. vessel_name after a
 // Lloyds code lookup) by setting .value directly with no "change" event

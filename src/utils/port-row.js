@@ -30,8 +30,7 @@ const PortRow = {
                 setFieldValue(field, values[suffix]);
             } else {
                 field.value = values[suffix];
-                const pvField = document.querySelector(`input[name="PV_${field.name}"]`);
-                if (pvField) pvField.value = values[suffix];
+                mirrorPvShadow(field, values[suffix]);
             }
         });
     },

@@ -13,7 +13,7 @@ const LiveCheck = {
 
     // Separate from the SHARED `syncing` flag (declared in main.js) --
     // that one is set by many DIFFERENT write-capable features (date-
-    // syncing.js, date-step-buttons.js's +/- buttons, vessel-correction.js,
+    // syncing.js, date-step-buttons.js's +/- buttons, schedule-cascade.js,
     // ...) whenever ANY of them is mid-write, to stop each other from
     // cascading into loops. Confirmed real: date-step-buttons.js wraps
     // every non-SP001 date write inside the shared sync guard, so if this feature
@@ -58,9 +58,9 @@ const LiveCheck = {
 
     // Same physical ship (same lloyds_code/IMO) shouldn't hold two REGULAR
     // rotation slots at once -- a repeat occurrence should be ticked
-    // SV*_one-off (the field vessel-correction.js already reads/excludes
-    // on, same convention reused here) to mark it as the exception, not
-    // the normal recurring entry. Pure page-internal consistency check --
+    // SV*_one-off (the same field duplicate-vessel.js's Delete button
+    // clears) to mark it as the exception, not the normal recurring
+    // entry. Pure page-internal consistency check --
     // doesn't touch relay data at all.
     checkDuplicateImos(add) {
         const groups = new Map(); // imo -> [{ n, oneOffField, checked }]
@@ -204,7 +204,7 @@ const LiveCheck = {
         // mid-batch -- deliberately NOT the shared `syncing` flag (see
         // _ownWriteInProgress above): that one is also set by unrelated
         // write-capable features (date-step-buttons.js's +/- buttons,
-        // vessel-correction.js, date-syncing.js's cascades), and this
+        // schedule-cascade.js, date-syncing.js's cascades), and this
         // feature needs to react to THEIR writes, not just its own.
         if (this._ownWriteInProgress) return;
 

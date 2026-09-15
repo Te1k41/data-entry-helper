@@ -27,9 +27,8 @@ This guide describes what the extension currently does. Most Tradetech helpers r
 ## Vessel and voyage helpers
 
 - **Duplicate Vessel:** Adds a copy control beside each vessel. It copies the vessel into the next empty vessel row, including its Lloyds/IMO identity, and steps the voyage number forward by the page's configured increment. Duplicating the same vessel repeatedly chains the voyage number forward each click (e.g. 201 → 202 → 203) rather than repeating the same number; a negative or zero increment keeps every duplicate's voyage number the same as the source instead of stepping it.
-- **Delete Vessel:** Adds a per-row delete control and moves later vessel data up after removal.
+- **Delete Vessel:** Adds a per-row delete control that clears that row's name, Lloyds code, voyage number, departure date, and One-off checkbox.
 - **Restore Vessel Action:** The Tools panel can undo recent duplicate/delete vessel actions from the current page session.
-- **Fix Vessel Dates:** When clicked, finds non-one-off vessel dates earlier than SP001, moves them forward in weekly steps after the latest vessel date, and increments their voyage codes.
 - **Rearrange Vessels:** Manually sorts the visible vessel table by departure date, earliest first. Undated rows remain at the end in their existing relative order.
 - **Vessel recommendation:** Automatically suggests up to two vessels whose departure dates are closest to a calculated base date. The base uses today's date or the highlighted port and saved schedule offsets, and suggestions refresh when relevant fields change.
 - **Vessel name reminder:** While a vessel voyage or departure-date field has focus, shows that row's vessel name in a floating label.

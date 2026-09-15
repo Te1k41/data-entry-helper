@@ -25,8 +25,7 @@ const VesselRow = {
             if (suffix === "depart_date") setFieldValue(field, values[suffix]);
             else field.value = values[suffix];
 
-            const pvField = document.querySelector(`input[name="PV_${field.name}"]`);
-            if (pvField) pvField.value = field.value;
+            mirrorPvShadow(field, field.value);
         });
     },
 

@@ -54,7 +54,6 @@ const FEATURES = [
     PortHighlighting,
     AwrFlag,
     LastForeignPortCheck,
-    VesselVoyageCorrection,
     DuplicateVessel,
     DeleteVessel,
     VesselActionHistory,

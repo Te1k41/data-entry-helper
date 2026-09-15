@@ -55,8 +55,8 @@
 //  One more check, independent of relay data entirely: when
 //  the same real ship (same SV*_lloyds_code/IMO) appears in
 //  more than one SV row, exactly one of those rows should be
-//  left unticked SV*_one-off (the field vessel-correction.js
-//  already reads/excludes on) -- the rest mark it as an
+//  left unticked SV*_one-off (the field live-check.js's own
+//  checkDuplicateImos() already reads/excludes on) -- the rest mark it as an
 //  exception call, not a second regular rotation slot. Any
 //  other count gets flagged and the offending checkboxes
 //  highlighted.

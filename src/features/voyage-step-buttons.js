@@ -14,8 +14,7 @@
 //  digit runs at all, so stepping it does nothing.
 //
 //  Click = ±1. Shift+Click = ± the "voyage_increment_by" field's
-//  value (the same field the "🛠 Fix Vessel Dates" button already
-//  reads via VesselVoyageCorrection.getVoyageIncrement()) — but
+//  value (VoyageUtils.getIncrement(), src/utils/voyage.js) — but
 //  only when that value is greater than 0; otherwise Shift+Click
 //  just falls back to ±1, same as a plain click.
 //
@@ -29,9 +28,9 @@
 //
 //  Tradetech keeps a hidden PV_ duplicate of this field with no
 //  listeners of its own — mirrored directly by value, same
-//  approach vessel-correction.js already uses for this exact
-//  field. We read the field's value back AFTER writing (rather
-//  than reusing our own computed string) in case voyage-direction.js
+//  approach duplicate-vessel.js's chained-voyage duplicate uses for
+//  this exact field. We read the field's value back AFTER writing
+//  (rather than reusing our own computed string) in case voyage-direction.js
 //  appended a letter to it in the meantime.
 // ============================================================
 const VoyageStepButtons = {
@@ -97,13 +96,12 @@ const VoyageStepButtons = {
     },
 
     // Shift+Click jumps by the "voyage_increment_by" field's value —
-    // reusing VesselVoyageCorrection's own reader so both features
-    // agree on what that field means — but only if it's > 0. A blank,
-    // zero, or negative increment falls back to the same ±1 a plain
-    // click would do, rather than doing nothing or going backwards
-    // unexpectedly.
+    // reusing VoyageUtils' own reader so both features agree on what
+    // that field means — but only if it's > 0. A blank, zero, or
+    // negative increment falls back to the same ±1 a plain click would
+    // do, rather than doing nothing or going backwards unexpectedly.
     getShiftMagnitude() {
-        const increment = VesselVoyageCorrection.getVoyageIncrement();
+        const increment = VoyageUtils.getIncrement();
         return increment > 0 ? increment : 1;
     },
 
@@ -119,8 +117,7 @@ const VoyageStepButtons = {
         // Mirror into the hidden PV_ duplicate — read the field's
         // value back (not our own `next`) in case voyage-direction.js
         // just appended a direction letter to it.
-        const pvField = document.querySelector(`input[name="PV_${field.name}"]`);
-        if (pvField) pvField.value = field.value;
+        mirrorPvShadow(field, field.value);
     },
 
     // Required by the FEATURES interface — this feature only cares

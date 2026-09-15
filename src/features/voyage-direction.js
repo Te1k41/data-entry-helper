@@ -3,18 +3,20 @@
 //  Auto-appends a compass-direction letter (N/S/E/W) to
 //  voyage codes when the `service` field ends in a matching
 //  direction suffix (e.g. "ABC-N"). Toggleable via an
-//  on-page button; resets to ON every page load.
+//  on-page button; starts OFF every page load — detecting that a
+//  service is directional doesn't mean the auto-append should already
+//  be running, only that it CAN be turned on for this record.
 // ─────────────────────────────────────────────────────
 const VDirection = {
 
-    enabled: true,  // toggle state lives directly on the feature object
+    enabled: false,  // toggle state lives directly on the feature object
 
     init() {
         if (!isOnScheduleForm()) return;
 
         Toolbar.register({
             id:      "tt-voyage-direction-toggle",
-            label:   "🧭 Direction: ON",
+            label:   `🧭 Direction: ${this.enabled ? "ON" : "OFF"}`,
             title:   "Toggle automatic N/S/E/W suffixes on voyage codes",
             group:   "vessel",
             onClick: () => {

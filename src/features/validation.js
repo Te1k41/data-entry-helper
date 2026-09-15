@@ -3,8 +3,8 @@
 //  Warns the user (via the shared banner) when SP001's
 //  departure date doesn't match any SV vessel's departure
 //  date. validate() is intentionally NOT called on init —
-//  it's triggered by date-syncing.js and vessel-correction.js
-//  after they finish writing their own field updates.
+//  it's triggered by date-syncing.js after it finishes writing its
+//  own field updates.
 // ─────────────────────────────────────────────────────
 const SP001DateValidation = {
 

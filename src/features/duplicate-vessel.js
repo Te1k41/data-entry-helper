@@ -24,11 +24,10 @@
 //      same reasoning insert-port.js documents for port_code: this is
 //      relocating already-valid data, not creating new data)
 //    - start_voyage bumped by voyage_increment_by (same increment
-//      logic as "🛠 Fix Vessel Dates" and the [-][+] voyage step
-//      buttons — see VesselVoyageCorrection.getVoyageIncrement() /
-//      VoyageUtils.step() in src/utils/voyage.js)
-//    - NO depart_date at all — left completely blank, unlike Fix
-//      Vessel Dates which always assigns one
+//      logic as the [-][+] voyage step buttons — see
+//      VoyageUtils.getIncrement() / VoyageUtils.step() in
+//      src/utils/voyage.js)
+//    - NO depart_date at all — left completely blank
 //  Deliberately does NOT wrap the name/voyage writes in the `syncing`
 //  guard — a duplicated voyage number should behave exactly like one
 //  typed by hand, including voyage-direction.js appending a compass
@@ -64,8 +63,7 @@ function writeVesselCode(row, values) {
     const codeField = VesselRow.field(row, "lloyds_code");
     if (codeField && values.code !== null) {
         codeField.value = values.code;
-        const pvCode = document.querySelector(`input[name="PV_${codeField.name}"]`);
-        if (pvCode) pvCode.value = values.code;
+        mirrorPvShadow(codeField, values.code);
     }
 }
 
@@ -243,15 +241,13 @@ const DuplicateVessel = {
             label: `Duplicate → SV${target.row} ("${vesselName}")`,
             restore: () => {
                 setFieldValue(target.nameField, oldTargetName);
-                const pvName = document.querySelector(`input[name="PV_${target.nameField.name}"]`);
-                if (pvName) pvName.value = target.nameField.value;
+                mirrorPvShadow(target.nameField, target.nameField.value);
 
                 writeVesselCode(target.row, oldTargetCode);
 
                 if (targetVoyageField) {
                     setFieldValue(targetVoyageField, oldTargetVoyage);
-                    const pvVoyage = document.querySelector(`input[name="PV_${targetVoyageField.name}"]`);
-                    if (pvVoyage) pvVoyage.value = targetVoyageField.value;
+                    mirrorPvShadow(targetVoyageField, targetVoyageField.value);
                 }
 
                 // Roll the voyage chain back too, so the next click on
@@ -266,8 +262,7 @@ const DuplicateVessel = {
         // Tradetech keeps a hidden PV_ duplicate of vessel_name too
         // (confirmed live: PV_SV001_vessel_name) — mirror it directly,
         // same as the voyage field below.
-        const pvNameField = document.querySelector(`input[name="PV_${target.nameField.name}"]`);
-        if (pvNameField) pvNameField.value = target.nameField.value;
+        mirrorPvShadow(target.nameField, target.nameField.value);
 
         // Lloyds code is the row's real identity now — copy it too,
         // plain (no re-validation), same reasoning as port_code in
@@ -277,7 +272,7 @@ const DuplicateVessel = {
         console.log(`⧉ Duplicated ${sourceNameField.name} → ${target.nameField.name}: "${vesselName}" (code ${sourceCodeField.value})`);
 
         if (sourceVoyageField && targetVoyageField) {
-            const increment = VesselVoyageCorrection.getVoyageIncrement();
+            const increment = VoyageUtils.getIncrement();
 
             // increment > 0: chain forward from the LAST voyage this same
             // button produced (not the source's unchanged DOM value), so
@@ -300,8 +295,7 @@ const DuplicateVessel = {
 
                 // Mirror into the hidden PV_ duplicate, same as every other
                 // feature that writes a voyage code.
-                const pvField = document.querySelector(`input[name="PV_${targetVoyageField.name}"]`);
-                if (pvField) pvField.value = targetVoyageField.value;
+                mirrorPvShadow(targetVoyageField, targetVoyageField.value);
 
                 console.log(`🔢 ${targetVoyageField.name} → ${targetVoyageField.value}`);
 
@@ -398,15 +392,13 @@ const DeleteVessel = {
             label: `Delete SV${row} ("${vesselName}")`,
             restore: () => {
                 setFieldValue(nameField, oldName);
-                const pvName = document.querySelector(`input[name="PV_${nameField.name}"]`);
-                if (pvName) pvName.value = nameField.value;
+                mirrorPvShadow(nameField, nameField.value);
 
                 writeVesselCode(row, oldCode);
 
                 if (voyageField) {
                     setFieldValue(voyageField, oldVoyage);
-                    const pvVoyage = document.querySelector(`input[name="PV_${voyageField.name}"]`);
-                    if (pvVoyage) pvVoyage.value = voyageField.value;
+                    mirrorPvShadow(voyageField, voyageField.value);
                 }
 
                 // Same as the forward delete — depart_date's own inline
@@ -421,15 +413,13 @@ const DeleteVessel = {
         });
 
         setFieldValue(nameField, "");
-        const pvNameField = document.querySelector(`input[name="PV_${nameField.name}"]`);
-        if (pvNameField) pvNameField.value = "";
+        mirrorPvShadow(nameField, "");
 
         writeVesselCode(row, { codeD: "", code: "" });
 
         if (voyageField) {
             setFieldValue(voyageField, "");
-            const pvVoyageField = document.querySelector(`input[name="PV_${voyageField.name}"]`);
-            if (pvVoyageField) pvVoyageField.value = "";
+            mirrorPvShadow(voyageField, "");
         }
 
         // depart_date's own inline onchange (dateformat/dowFunc) handles

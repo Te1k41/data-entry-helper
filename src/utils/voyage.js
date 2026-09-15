@@ -1,10 +1,9 @@
 // ============================================================
 //  src/utils/voyage.js
-//  Shared voyage-code stepping logic, used by both the manual
-//  [-][+] voyage step buttons (features/voyage-step-buttons.js)
-//  and the "🛠 Fix Vessel Dates" auto-correction (features/
-//  vessel-correction.js) — one place for "what does +N mean for
-//  a voyage code" so both stay consistent.
+//  Shared voyage-code helpers, used by the manual [-][+] voyage step
+//  buttons (features/voyage-step-buttons.js) and duplicate-vessel.js's
+//  chained-voyage duplicate — one place for "what does +N mean for a
+//  voyage code" so both stay consistent.
 // ============================================================
 const VoyageUtils = {
     // Steps EVERY digit run in a voyage code by the same amount, each
@@ -21,5 +20,17 @@ const VoyageUtils = {
             if (num < 0) num = 0;
             return String(num).padStart(width, "0");
         });
+    },
+
+    // How much a Shift+Click / chained duplicate should step a voyage
+    // code by, per the page's own voyage_increment_by field. Defaults to
+    // 1 if the field is missing or not a valid number. Used by both
+    // voyage-step-buttons.js and duplicate-vessel.js so a page-configured
+    // increment behaves identically in either place.
+    getIncrement() {
+        const field = document.querySelector('input[name="voyage_increment_by"]');
+        if (!field) return 1;
+        const val = parseInt(field.value.trim(), 10);
+        return isNaN(val) ? 1 : val;
     }
 };

@@ -39,8 +39,7 @@
 //  The whole shift runs inside the `syncing` guard so date-syncing.js
 //  (which would otherwise auto-copy each shifted arrival_date into
 //  that same row's depart_date, clobbering the real depart_date we're
-//  about to write right after it) stays out of the way — the exact
-//  same reason vessel-correction.js's bulk vessel-date rewrite does.
+//  about to write right after it) stays out of the way.
 //
 //  Row IDENTITY (which row is "the last one" for Insert's shift) is
 //  keyed by port_code, NOT port_name. Same identity model
