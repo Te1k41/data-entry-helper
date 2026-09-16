@@ -33,11 +33,11 @@ const DuplicateVesselCheck = {
 
         // A negative voyage_increment_by means Duplicate Vessel is
         // deliberately reusing the same voyage number on purpose — see
-        // ValidationRules (src/utils/validation-rules.js). Skip the
+        // CustomRules (src/utils/custom-rules.js). Skip the
         // whole check rather than trying to exempt just the rows
         // Duplicate created, since there's no reliable way from here to
         // tell those apart from a genuine accidental duplicate anyway.
-        if (ValidationRules.isEnabled("skipDuplicateCheckOnNegativeIncrement") && VoyageUtils.getIncrement() < 0) {
+        if (CustomRules.isEnabled("skipDuplicateCheckOnNegativeIncrement") && VoyageUtils.getIncrement() < 0) {
             setWarning("duplicate-vessel", null);
             return;
         }

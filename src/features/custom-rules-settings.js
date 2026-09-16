@@ -1,31 +1,38 @@
 // ─────────────────────────────────────────────────────
-//  FEATURE: Validation Rules Settings
+//  FEATURE: Custom Rules Settings
 //  Tools-panel button opening a small panel that lists every rule
-//  in ValidationRules.RULES (src/utils/validation-rules.js) as an
-//  ON/OFF toggle with its label and description, so a real,
-//  named exception to a check (e.g. "duplicates are fine when the
-//  voyage increment is negative") doesn't need code edited to turn
-//  on/off. New rules just need one entry added to RULES — this
-//  panel renders whatever's there, no changes needed here.
+//  in CustomRules.RULES (src/utils/custom-rules.js) as an ON/OFF
+//  toggle, so a real, named exception to a check (e.g. "duplicates
+//  are fine when the voyage increment is negative") doesn't need
+//  code edited to turn on/off. New rules just need one entry added
+//  to RULES — this panel renders whatever's there, no changes
+//  needed here.
+//
+//  Each row shows just the label + toggle by default — an
+//  expand arrow reveals the fuller description in place, so the
+//  panel stays short with several rules in it instead of turning
+//  into a wall of text.
 // ─────────────────────────────────────────────────────
-const ValidationRulesSettings = {
+const CustomRulesSettings = {
+    _expanded: new Set(), // rule ids currently showing their description
+
     init() {
         if (!isOnScheduleForm()) return;
 
         Toolbar.register({
-            id:      "tt-validation-rules-settings",
-            label:   "⚙️ Validation Rules",
-            title:   "Turn specific validation-rule exceptions on or off",
+            id:      "tt-custom-rules-settings",
+            label:   "⚙️ Custom Rules",
+            title:   "Turn specific custom-rule exceptions on or off",
             group:   "misc",
             onClick: () => this.togglePanel()
         });
     },
 
     buildPanel() {
-        if (document.getElementById("tt-validation-rules-panel")) return;
+        if (document.getElementById("tt-custom-rules-panel")) return;
 
         const panel = document.createElement("div");
-        panel.id = "tt-validation-rules-panel";
+        panel.id = "tt-custom-rules-panel";
         panel.style.cssText = `
             position: fixed !important;
             top: 52px !important;
@@ -36,13 +43,13 @@ const ValidationRulesSettings = {
             box-shadow: 3px 3px 0px #000000 !important;
             font-family: monospace !important;
             font-size: 11px !important;
-            width: 280px !important;
+            width: 260px !important;
             display: none !important;
             box-sizing: border-box !important;
         `;
 
         const header = document.createElement("div");
-        header.textContent = "⚙️ Validation Rules";
+        header.textContent = "⚙️ Custom Rules";
         header.style.cssText = `
             padding: 6px 10px !important;
             background: #000000 !important;
@@ -51,7 +58,7 @@ const ValidationRulesSettings = {
         `;
 
         const list = document.createElement("div");
-        list.id = "tt-validation-rules-list";
+        list.id = "tt-custom-rules-list";
 
         panel.appendChild(header);
         panel.appendChild(list);
@@ -67,31 +74,43 @@ const ValidationRulesSettings = {
         if (!this._list) return;
         this._list.innerHTML = "";
 
-        ValidationRules.RULES.forEach(rule => {
+        CustomRules.RULES.forEach(rule => {
             const row = document.createElement("div");
-            row.style.cssText = `
-                padding: 8px 10px !important;
-                border-top: 1px dashed #000000 !important;
+            row.style.cssText = "border-top: 1px dashed #000000 !important;";
+
+            // Short line: expand arrow + label + ON/OFF, nothing else —
+            // this is the only thing visible until the arrow is clicked.
+            const line = document.createElement("div");
+            line.style.cssText = `
+                padding: 6px 10px !important;
                 display: flex !important;
-                align-items: flex-start !important;
-                gap: 8px !important;
+                align-items: center !important;
+                gap: 6px !important;
             `;
 
-            const text = document.createElement("div");
-            text.style.cssText = "flex: 1 !important; min-width: 0 !important;";
+            const expandBtn = document.createElement("button");
+            expandBtn.type = "button";
+            expandBtn.textContent = this._expanded.has(rule.id) ? "▾" : "▸";
+            expandBtn.title = "Show/hide details";
+            expandBtn.style.cssText = `
+                flex-shrink: 0 !important;
+                background: transparent !important;
+                border: none !important;
+                cursor: pointer !important;
+                font-size: 10px !important;
+                padding: 0 !important;
+            `;
+            expandBtn.addEventListener("click", () => {
+                if (this._expanded.has(rule.id)) this._expanded.delete(rule.id);
+                else this._expanded.add(rule.id);
+                this.renderRules();
+            });
 
             const label = document.createElement("div");
             label.textContent = rule.label;
-            label.style.cssText = "font-weight: bold !important; margin-bottom: 2px !important;";
+            label.style.cssText = "flex: 1 !important; min-width: 0 !important; font-weight: bold !important;";
 
-            const desc = document.createElement("div");
-            desc.textContent = rule.description;
-            desc.style.cssText = "color: #666666 !important; font-size: 9px !important; line-height: 1.4 !important;";
-
-            text.appendChild(label);
-            text.appendChild(desc);
-
-            const enabled = ValidationRules.isEnabled(rule.id);
+            const enabled = CustomRules.isEnabled(rule.id);
             const toggle = document.createElement("button");
             toggle.type = "button";
             toggle.textContent = enabled ? "✅ ON" : "⬜ OFF";
@@ -108,17 +127,32 @@ const ValidationRulesSettings = {
                 cursor: pointer !important;
             `;
             toggle.addEventListener("click", () => {
-                ValidationRules.setEnabled(rule.id, !enabled);
+                CustomRules.setEnabled(rule.id, !enabled);
                 this.renderRules();
                 // Re-run whatever's currently on the page that might care —
-                // simplest reliable way is to just re-run every feature's
-                // handle-independent recheck via the two known consumers.
+                // simplest reliable way is to just re-run the two known
+                // consumers directly.
                 if (typeof DuplicateVesselCheck !== "undefined") DuplicateVesselCheck.check();
                 if (typeof LiveCheck !== "undefined") LiveCheck.compareAll();
             });
 
-            row.appendChild(text);
-            row.appendChild(toggle);
+            line.appendChild(expandBtn);
+            line.appendChild(label);
+            line.appendChild(toggle);
+            row.appendChild(line);
+
+            if (this._expanded.has(rule.id)) {
+                const desc = document.createElement("div");
+                desc.textContent = rule.description;
+                desc.style.cssText = `
+                    padding: 0 10px 8px 24px !important;
+                    color: #666666 !important;
+                    font-size: 9px !important;
+                    line-height: 1.4 !important;
+                `;
+                row.appendChild(desc);
+            }
+
             this._list.appendChild(row);
         });
     },
