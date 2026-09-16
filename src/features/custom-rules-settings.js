@@ -135,6 +135,7 @@ const CustomRulesSettings = {
                 if (typeof DuplicateVesselCheck !== "undefined") DuplicateVesselCheck.check();
                 if (typeof LiveCheck !== "undefined") LiveCheck.compareAll();
                 if (typeof applyNotificationVisibility === "function") applyNotificationVisibility();
+                if (typeof renderWarnings === "function") renderWarnings();
             });
 
             line.appendChild(expandBtn);

@@ -24,7 +24,13 @@ const CustomRules = {
         {
             id:          "alwaysShowWarnings",
             label:       "Always show Warnings",
-            description: "Keep yellow validation-warning banners (Live Check, AWR, missing dates, etc.) visible even while \"Hide updates\" is on.",
+            description: "Keep yellow validation-warning banners (Live Check, AWR, missing dates, mismatches, etc.) visible even while \"Hide updates\" is on. Doesn't cover \"Proof not uploaded\" — that one has its own rule below.",
+            default:     false
+        },
+        {
+            id:          "alwaysShowUploadProof",
+            label:       "Always show Upload Proof",
+            description: "Keep the \"Proof not uploaded yet\" reminder visible even while \"Hide updates\" is on — independent of the general Warnings rule above, since this is a reminder to do something, not a data-validation problem.",
             default:     false
         },
         {

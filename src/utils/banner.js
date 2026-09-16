@@ -318,8 +318,28 @@ function setWarning(key, warning) {
     renderWarnings();
 }
 
+// A warning KEY can override the general alwaysShowWarnings default
+// with its OWN Custom Rule — for a key that isn't really the same
+// kind of thing as a data-validation warning (e.g. "proof not
+// uploaded yet" is a reminder, not a mismatch) and deserves its own
+// independent show/hide control instead of following the blanket one.
+const WARNING_KEY_ALWAYS_SHOW_RULE = {
+    "upload-proof-missing": "alwaysShowUploadProof"
+};
+
+function shouldShowWarning(key) {
+    if (!notificationsHidden) return true;
+
+    const perKeyRule = WARNING_KEY_ALWAYS_SHOW_RULE[key];
+    if (perKeyRule) return CustomRules.isEnabled(perKeyRule);
+
+    return CustomRules.isEnabled("alwaysShowWarnings");
+}
+
 function renderWarnings() {
-    const warnings = Object.values(activeWarnings);
+    const warnings = Object.entries(activeWarnings)
+        .filter(([key]) => shouldShowWarning(key))
+        .map(([, warning]) => warning);
 
     if (warnings.length === 0) {
         removeBanner();
@@ -372,8 +392,14 @@ function showCombinedBanner(warnings) {
 // hides the underlying issue. The notes sidebar is an editor, not a
 // notification, so it alone stays exempt from this toggle.
 
+// tt-banner is deliberately NOT in this element-level toggle — its
+// visibility is decided per warning KEY inside renderWarnings()/
+// shouldShowWarning() instead (so upload-proof-missing can have its
+// own rule independent of every other warning sharing this element),
+// and toggling display:none on the whole element here would fight
+// that per-key decision. tt-notes-sidebar is an editor, never hidden.
 const ALL_BANNER_IDS = ["tt-banner", "tt-success-banner", "tt-info-banner", "tt-suggestion-banner", "tt-notes-sidebar"];
-const HIDEABLE_BANNER_IDS = ALL_BANNER_IDS.filter(id => id !== "tt-notes-sidebar");
+const HIDEABLE_BANNER_IDS = ALL_BANNER_IDS.filter(id => id !== "tt-notes-sidebar" && id !== "tt-banner");
 
 // Per-type opt-out of the toggle above — a Custom Rule (src/utils/
 // custom-rules.js), so it's just another entry in the same settings
@@ -381,7 +407,6 @@ const HIDEABLE_BANNER_IDS = ALL_BANNER_IDS.filter(id => id !== "tt-notes-sidebar
 // toggle hides everything, same as before) — turning one on keeps
 // that specific banner type visible regardless of the toggle's state.
 const BANNER_ALWAYS_SHOW_RULE = {
-    "tt-banner":            "alwaysShowWarnings",
     "tt-success-banner":    "alwaysShowSuccess",
     "tt-info-banner":       "alwaysShowInfo",
     "tt-suggestion-banner": "alwaysShowSuggestions"
@@ -410,6 +435,7 @@ function toggleNotificationVisibility() {
     notificationsHidden = !notificationsHidden;
     localStorage.setItem("tt-notifications-hidden", notificationsHidden ? "1" : "0");
     applyNotificationVisibility();
+    renderWarnings(); // tt-banner's own visibility is content-driven, not display-toggled — re-filter now
     Toolbar.updateLabel("tt-notif-toggle", notificationsHidden ? "🔔 Show updates" : "🔕 Hide updates");
 }
 
