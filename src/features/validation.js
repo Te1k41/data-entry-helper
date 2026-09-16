@@ -34,26 +34,67 @@ const SP001DateValidation = {
 
     // Checks THIS frame's own flag first (covers the rare case where
     // the Save button and the form happen to share a frame), then
-    // falls back to the named sibling frame Tradetech's own onclick
-    // reaches into (parent.fr1) — wrapped in try/catch since reaching
-    // into another frame can throw if it doesn't exist.
+    // every sibling frame under the same parent. Deliberately does NOT
+    // hardcode the sibling's name (e.g. "fr1") — that's only confirmed
+    // for one page/onclick, and a hardcoded name that doesn't hold on
+    // some other record/page type would silently fail OPEN (never
+    // blocks Save there) rather than throw, which is exactly the kind
+    // of "sometimes doesn't work" bug worth not repeating a third time
+    // this session. Each frame access is wrapped individually — one
+    // inaccessible/cross-origin frame must not abort checking the rest.
     isSaveBlocked() {
         if (document.documentElement.dataset[this.MISMATCH_FLAG]) return true;
+
+        let siblingFrames;
         try {
-            return !!parent.fr1?.document?.documentElement?.dataset?.[this.MISMATCH_FLAG];
+            siblingFrames = parent?.frames;
         } catch {
             return false;
         }
+        if (!siblingFrames) return false;
+
+        for (let i = 0; i < siblingFrames.length; i++) {
+            try {
+                if (siblingFrames[i]?.document?.documentElement?.dataset?.[this.MISMATCH_FLAG]) return true;
+            } catch {
+                // cross-origin or otherwise inaccessible — skip, keep checking the rest
+            }
+        }
+        return false;
     },
 
-    // No cross-frame event exists to tell this frame "fr1's mismatch
-    // state just changed" — polls instead. Cheap (one dataset read),
-    // so a short interval doesn't cost anything real. Only runs at
-    // all in a frame that actually has a Save button to manage.
+    // No cross-frame event exists to tell this frame "the sibling's
+    // mismatch state just changed" — polls instead. Cheap (one dataset
+    // read), so a short interval doesn't cost anything real.
+    //
+    // The button search itself also polls briefly (100ms/50 attempts,
+    // same shape as awr-flag.js's waitForNameThenRescan) rather than
+    // checking once — a one-shot check at document_idle that finds
+    // nothing just gives up forever, leaving Save silently never
+    // gated for the rest of that page load if the button happened to
+    // render a moment later than the rest of the frame.
     watchSaveButton() {
         const button = document.querySelector(this.SAVE_BUTTON_SELECTOR);
-        if (!button) return;
+        if (button) {
+            this.startWatching(button);
+            return;
+        }
 
+        let attempts = 0;
+        const maxAttempts = 50; // 5s ceiling
+        const timer = setInterval(() => {
+            attempts++;
+            const found = document.querySelector(this.SAVE_BUTTON_SELECTOR);
+            if (found) {
+                clearInterval(timer);
+                this.startWatching(found);
+                return;
+            }
+            if (attempts >= maxAttempts) clearInterval(timer); // no Save button in this frame — nothing to manage
+        }, 100);
+    },
+
+    startWatching(button) {
         setInterval(() => {
             const blocked = this.isSaveBlocked();
             if (button.disabled === blocked) return; // no change — skip the style writes
