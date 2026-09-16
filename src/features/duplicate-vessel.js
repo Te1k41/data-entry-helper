@@ -155,15 +155,21 @@ const DuplicateVessel = {
         // been duplicated at least once this page-session. Lets repeated
         // clicks on the SAME original row chain the voyage forward
         // (201 -> 202 -> 203) instead of recomputing from the unchanged
-        // source every time — see duplicate()'s `chain` parameter.
-        let lastVoyage = null;
+        // source every time — see duplicate()'s `chain` parameter. Stores
+        // the target FIELD alongside the value (not just the value) so
+        // duplicate() can check the actual screen state before trusting
+        // it — confirmed real bug: deleting the row this chained into
+        // used to leave the chain still remembering that voyage number,
+        // so the NEXT duplicate kept incrementing from a row that no
+        // longer exists on screen instead of restarting from the source.
+        let lastChain = { value: null, field: null };
 
         btn.addEventListener("click", (e) => {
             e.preventDefault();
 
             const doDuplicate = () => this.duplicate(field, {
-                get: () => lastVoyage,
-                set: (value) => { lastVoyage = value; }
+                get: () => lastChain,
+                set: (next) => { lastChain = next; }
             });
 
             // If a Lloyds code was just typed, Tradetech fills vessel_name
@@ -235,7 +241,14 @@ const DuplicateVessel = {
         const oldTargetName   = target.nameField.value;
         const oldTargetVoyage = targetVoyageField ? targetVoyageField.value : null;
         const oldTargetCode   = readVesselCode(target.row);
-        const previousLastVoyage = chain.get();
+        const previousChain = chain.get();
+
+        // Only trust the remembered chain value if the row it landed in
+        // still actually shows it RIGHT NOW — if that row was since
+        // deleted (or edited), the memory is stale and shouldn't drive
+        // another increment; treat this click as a fresh start instead.
+        const chainStillOnScreen = previousChain.field && previousChain.field.value === previousChain.value;
+        const previousLastVoyage = chainStillOnScreen ? previousChain.value : null;
 
         VesselActionHistory.push({
             label: `Duplicate → SV${target.row} ("${vesselName}")`,
@@ -253,7 +266,7 @@ const DuplicateVessel = {
                 // Roll the voyage chain back too, so the next click on
                 // this same button continues from before this (now-
                 // undone) duplicate, not from its result.
-                chain.set(previousLastVoyage);
+                chain.set(previousChain);
             }
         });
 
@@ -299,7 +312,7 @@ const DuplicateVessel = {
 
                 console.log(`🔢 ${targetVoyageField.name} → ${targetVoyageField.value}`);
 
-                chain.set(newCode);
+                chain.set({ value: newCode, field: targetVoyageField });
             }
         }
 

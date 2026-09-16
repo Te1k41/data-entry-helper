@@ -251,10 +251,14 @@ async function maybeCaptureSchedulePageHtml(tab) {
 // (awr-flag.js) that runs during normal interactive editing, rather
 // than duplicating its qualifies-logic here — that script writes its
 // verdict into a data-attribute (see AwrFlag.reportAuditResult) that
-// this reads back out once the page has settled. Only records whose
-// AWR value actually needed correcting get Saved; everything else is
-// just closed. Sequential and throttled on purpose — this is real
-// production data, not a resource to hammer.
+// this reads back out once the page has settled. awr-flag.js itself
+// only SUGGESTS now (a real compliance call needs a human looking at
+// it during normal interactive editing) — it never auto-applies, so
+// unlike before, this audit is what actually clicks the correct radio
+// for a disagreeing record; there's no human here to click Apply.
+// Only records whose AWR value actually needed correcting get Saved;
+// everything else is just closed. Sequential and throttled on
+// purpose — this is real production data, not a resource to hammer.
 const AWR_AUDIT_SETTLE_MS = 1500;
 const AWR_AUDIT_THROTTLE_MS = 800;
 
@@ -301,11 +305,32 @@ async function auditOneRecord(record, expectedNextUpdateDate) {
             return { record, skipped: true, reason: "no allWater radios found on this record's page" };
         }
 
-        if (!audit.corrected) {
+        const needsCorrection = audit.qualifies !== audit.checked;
+        if (!needsCorrection) {
             return { record, corrected: false, qualifies: audit.qualifies, checked: audit.checked };
         }
 
-        // Needed correcting — AwrFlag already clicked the right radio.
+        // Needs correcting — awr-flag.js only reported the disagreement
+        // (it suggests, it doesn't apply itself), so the audit applies it:
+        // a real click on the radio that matches `qualifies`, same event
+        // Tradetech itself expects (mirrors AwrFlag's own suggestion-apply
+        // click, just triggered here instead of by a human).
+        const clickFrames = await chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            args: [audit.qualifies],
+            func: (shouldBeYes) => {
+                const radio = document.querySelector(`input[name="allWater"][value="${shouldBeYes ? "Yes" : "No"}"]`);
+                if (!radio) return null;
+                radio.click();
+                return { ok: true };
+            }
+        });
+        const clickResult = clickFrames.map(f => f.result).find(r => r);
+        if (!clickResult) {
+            return { record, corrected: false, qualifies: audit.qualifies, checked: audit.checked,
+                error: "allWater radio not found to apply the correction" };
+        }
+
         // Tradetech's own page touches next_update_date just from opening
         // the record for edit, independent of anything we do — so before
         // saving, force it back to the value the relay already had on
