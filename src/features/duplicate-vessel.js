@@ -19,22 +19,24 @@
 //  ⧉ Duplicate — copies the vessel into the next empty SV row (blank
 //  rows already exist further down the page — "empty" now means no
 //  Lloyds code, not no name), with:
-//    - the SAME vessel name AND Lloyds code (lloyds_codeD, the hidden
-//      lloyds_code, and its PV_ shadow — plain copy, no re-validation,
-//      same reasoning insert-port.js documents for port_code: this is
-//      relocating already-valid data, not creating new data)
+//    - ONLY the Lloyds code (lloyds_codeD) written, and through
+//      setFieldValue() (a real change event) rather than a plain
+//      assignment — deliberately DOES re-trigger Tradetech's own
+//      lookup here, unlike insert-port.js's port_code relocation,
+//      because we WANT Tradetech to fill in the vessel name itself
+//      from the code, exactly as if it had been typed by hand into a
+//      blank row. The hidden lloyds_code + its PV_ shadow are still a
+//      plain copy (no listener depends on a real event there).
 //    - start_voyage bumped by voyage_increment_by (same increment
 //      logic as the [-][+] voyage step buttons — see
 //      VoyageUtils.getIncrement() / VoyageUtils.step() in
 //      src/utils/voyage.js)
 //    - NO depart_date at all — left completely blank
-//  Deliberately does NOT wrap the name/voyage writes in the `syncing`
+//  Deliberately does NOT wrap the voyage write in the `syncing`
 //  guard — a duplicated voyage number should behave exactly like one
 //  typed by hand, including voyage-direction.js appending a compass
 //  letter if applicable (same reasoning voyage-step-buttons.js already
-//  documents for its own plain-click case). The Lloyds code copy is a
-//  plain, event-free assignment either way (see above), so it's not
-//  affected by this.
+//  documents for its own plain-click case).
 //
 //  🗑 Delete — the inverse: clears that row's vessel name, Lloyds
 //  code, voyage number, departure date, and One-off checkbox back to
@@ -233,6 +235,10 @@ const DuplicateVessel = {
             showTemporaryBanner({ title: "⧉ Duplicate failed", message: "No empty vessel row available." });
             return;
         }
+        if (!target.codeField) {
+            showTemporaryBanner({ title: "⧉ Duplicate failed", message: `SV${target.row} has no Lloyds code field.` });
+            return;
+        }
 
         const targetVoyageField = document.querySelector(`input[name="SV${target.row}_start_voyage"]:not([name^="PV_"])`);
 
@@ -270,19 +276,28 @@ const DuplicateVessel = {
             }
         });
 
-        setFieldValue(target.nameField, vesselName);
+        // Only write the Lloyds code — through setFieldValue() (a real
+        // change event), not a plain assignment, specifically so
+        // Tradetech's own lookup fires and fills in the vessel name
+        // itself, exactly as if the code had been typed into a blank
+        // row by hand. We used to paste the name ourselves because the
+        // code was written plain (no event) to avoid re-triggering that
+        // same lookup — not needed here, Tradetech doing it is the
+        // actual source of truth for what that code's vessel is called.
+        setFieldValue(target.codeField, sourceCodeField.value);
 
-        // Tradetech keeps a hidden PV_ duplicate of vessel_name too
-        // (confirmed live: PV_SV001_vessel_name) — mirror it directly,
-        // same as the voyage field below.
-        mirrorPvShadow(target.nameField, target.nameField.value);
+        // The hidden lloyds_code has no listener depending on a real
+        // event to fire — plain-copy it and its PV_ shadow same as
+        // insert-port.js does for port_code ("relocating already-valid
+        // data").
+        const sourceCode = readVesselCode(sourceRow);
+        const hiddenCodeField = VesselRow.field(target.row, "lloyds_code");
+        if (hiddenCodeField && sourceCode.code !== null) {
+            hiddenCodeField.value = sourceCode.code;
+            mirrorPvShadow(hiddenCodeField, sourceCode.code);
+        }
 
-        // Lloyds code is the row's real identity now — copy it too,
-        // plain (no re-validation), same reasoning as port_code in
-        // insert-port.js.
-        writeVesselCode(target.row, readVesselCode(sourceRow));
-
-        console.log(`⧉ Duplicated ${sourceNameField.name} → ${target.nameField.name}: "${vesselName}" (code ${sourceCodeField.value})`);
+        console.log(`⧉ Duplicated ${sourceNameField.name} → SV${target.row}: code ${sourceCodeField.value} (name auto-filled by Tradetech)`);
 
         if (sourceVoyageField && targetVoyageField) {
             const increment = VoyageUtils.getIncrement();
