@@ -9,64 +9,61 @@
 //  match blocks.
 //
 //  The Save BUTTON lives in a different frame than this form
-//  (confirmed live: onclick="parent.fr1.doSave()") — a "click"
-//  listener in THIS frame never sees a click that happened in a
-//  sibling frame's document, so that approach silently never
-//  fired. Wrapping window.doSave itself instead works regardless
-//  of which frame's button triggered it, since that's the one
-//  function every path to actually saving calls through.
+//  (confirmed live: onclick="parent.fr1.doSave()"). Two things
+//  that DON'T work because of that: a "click" listener in this
+//  frame never sees a click that happened in a sibling frame's
+//  document, and confirmed live that window.doSave isn't even a
+//  plain global anywhere (typeof came back "undefined" in every
+//  frame checked) — there's nothing to wrap. Instead, this frame
+//  (wherever SP001 lives) writes its mismatch state onto its own
+//  <html> as a data attribute; separately, whichever frame
+//  actually holds the Save button polls that attribute through
+//  parent.fr1 (same-origin, so directly readable) and disables
+//  its own button — no messaging needed, and it works regardless
+//  of which frame either piece lives in.
 // ─────────────────────────────────────────────────────
 const SP001DateValidation = {
 
-    // Re-derives the same mismatch check validate() uses rather than
-    // trusting whatever the last-rendered warning said, so this can
-    // never fall out of sync with what's actually on screen right now.
-    // Returns a message string if Save should be blocked, else null.
-    saveBlockReason() {
-        const sp001 = document.querySelector('input[name="SP001_depart_date"]');
-        if (!sp001) return null; // not a page with SP001 on it
+    SAVE_BUTTON_SELECTOR: 'input[type="button"][value="Save"]',
+    MISMATCH_FLAG: "ttSp001Mismatch",
 
-        const spDate = sp001.value.trim();
-        if (!spDate) return null; // nothing to check yet — same as validate()'s own early return
-
-        if (this.findMatchingSVDate(spDate)) return null;
-
-        return `Can't save: SP001's departure date (${spDate}) doesn't match any vessel's departure date.\n\nFix the mismatch (see the warning banner) before saving.`;
+    setMismatchFlag(isMismatch) {
+        if (isMismatch) document.documentElement.dataset[this.MISMATCH_FLAG] = "1";
+        else delete document.documentElement.dataset[this.MISMATCH_FLAG];
     },
 
-    // doSave is declared inline by Tradetech's own page script, so it
-    // should already exist by document_idle — poll briefly just in
-    // case, same 100ms/50-attempt shape as awr-flag.js's
-    // waitForNameThenRescan(). _ttWrapped guards against wrapping our
-    // own wrapper twice if this ever ran more than once.
-    wrapDoSave() {
-        if (typeof window.doSave === "function" && !window.doSave._ttWrapped) {
-            const original = window.doSave;
-            const self = this;
-            const wrapped = function (...args) {
-                const reason = self.saveBlockReason();
-                if (reason) {
-                    alert(reason);
-                    return;
-                }
-                return original.apply(this, args);
-            };
-            wrapped._ttWrapped = true;
-            window.doSave = wrapped;
-            return;
+    // Checks THIS frame's own flag first (covers the rare case where
+    // the Save button and the form happen to share a frame), then
+    // falls back to the named sibling frame Tradetech's own onclick
+    // reaches into (parent.fr1) — wrapped in try/catch since reaching
+    // into another frame can throw if it doesn't exist.
+    isSaveBlocked() {
+        if (document.documentElement.dataset[this.MISMATCH_FLAG]) return true;
+        try {
+            return !!parent.fr1?.document?.documentElement?.dataset?.[this.MISMATCH_FLAG];
+        } catch {
+            return false;
         }
+    },
 
-        let attempts = 0;
-        const maxAttempts = 50; // 5s ceiling
-        const timer = setInterval(() => {
-            attempts++;
-            if (typeof window.doSave === "function") {
-                clearInterval(timer);
-                this.wrapDoSave();
-                return;
-            }
-            if (attempts >= maxAttempts) clearInterval(timer);
-        }, 100);
+    // No cross-frame event exists to tell this frame "fr1's mismatch
+    // state just changed" — polls instead. Cheap (one dataset read),
+    // so a short interval doesn't cost anything real. Only runs at
+    // all in a frame that actually has a Save button to manage.
+    watchSaveButton() {
+        const button = document.querySelector(this.SAVE_BUTTON_SELECTOR);
+        if (!button) return;
+
+        setInterval(() => {
+            const blocked = this.isSaveBlocked();
+            if (button.disabled === blocked) return; // no change — skip the style writes
+            button.disabled = blocked;
+            button.title = blocked
+                ? "Blocked: SP001's departure date doesn't match any vessel's departure date"
+                : "";
+            button.style.opacity = blocked ? "0.5" : "";
+            button.style.cursor  = blocked ? "not-allowed" : "";
+        }, 400);
     },
 
     validate() {
@@ -78,6 +75,7 @@ const SP001DateValidation = {
             setWarning("sp001-mismatch", null);
             setInfoBanner(null);
             this.clearBasingHighlight();
+            this.setMismatchFlag(false); // nothing to check yet — same as the warning
             return;
         }
 
@@ -86,6 +84,7 @@ const SP001DateValidation = {
         if (match) {
             console.log(`✅ SP001 matches ${match}`);
             setWarning("sp001-mismatch", null);
+            this.setMismatchFlag(false);
 
             const nameField = this.getVesselNameFieldForField(match);
             const vesselName = nameField?.value.trim();
@@ -112,6 +111,7 @@ const SP001DateValidation = {
             });
             setInfoBanner(null);
             this.clearBasingHighlight();
+            this.setMismatchFlag(true);
         }
     },
 
@@ -203,7 +203,7 @@ const SP001DateValidation = {
         // to touch a date field yourself.
         this.validate();
 
-        this.wrapDoSave();
+        this.watchSaveButton();
     },
 
     handle(event) {
