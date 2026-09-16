@@ -375,12 +375,28 @@ function showCombinedBanner(warnings) {
 const ALL_BANNER_IDS = ["tt-banner", "tt-success-banner", "tt-info-banner", "tt-suggestion-banner", "tt-notes-sidebar"];
 const HIDEABLE_BANNER_IDS = ALL_BANNER_IDS.filter(id => id !== "tt-notes-sidebar");
 
+// Per-type opt-out of the toggle above — a Custom Rule (src/utils/
+// custom-rules.js), so it's just another entry in the same settings
+// panel instead of its own UI. Off by default for every type (the
+// toggle hides everything, same as before) — turning one on keeps
+// that specific banner type visible regardless of the toggle's state.
+const BANNER_ALWAYS_SHOW_RULE = {
+    "tt-banner":            "alwaysShowWarnings",
+    "tt-success-banner":    "alwaysShowSuccess",
+    "tt-info-banner":       "alwaysShowInfo",
+    "tt-suggestion-banner": "alwaysShowSuggestions"
+};
+
 let notificationsHidden = localStorage.getItem("tt-notifications-hidden") === "1";
 
 function applyNotificationVisibility() {
     HIDEABLE_BANNER_IDS.forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.style.display = notificationsHidden ? "none" : "";
+        if (!el) return;
+
+        const alwaysShowRule = BANNER_ALWAYS_SHOW_RULE[id];
+        const alwaysShow = alwaysShowRule && CustomRules.isEnabled(alwaysShowRule);
+        el.style.display = (notificationsHidden && !alwaysShow) ? "none" : "";
     });
 
     // Undo stale inline display:none left by older extension versions
@@ -405,7 +421,7 @@ function createNotificationToggle() {
     Toolbar.register({
         id: "tt-notif-toggle",
         label: notificationsHidden ? "🔔 Show updates" : "🔕 Hide updates",
-        title: "Show or hide notification banners (warnings included) — the flagged field's highlight always stays visible",
+        title: "Show or hide notification banners (warnings included, field highlights always stay) — pick which types stay visible under ⚙️ Custom Rules",
         group: "misc",
         onClick: toggleNotificationVisibility
     });

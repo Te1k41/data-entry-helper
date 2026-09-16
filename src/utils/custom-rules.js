@@ -11,12 +11,39 @@
 //  else needs to change for it to show up in the settings panel.
 // ============================================================
 const CustomRules = {
+    // Keep `label` short — one glance, no wrapping. Put the actual
+    // explanation in `description`, which can be as long as it needs
+    // to be; the settings panel keeps it collapsed until asked for.
     RULES: [
         {
             id:          "skipDuplicateCheckOnNegativeIncrement",
-            label:       "Skip duplicate-vessel warnings when Voyage Increment < 0",
+            label:       "Allow same-voyage duplicates",
             description: "When the page's \"voyage_increment_by\" is negative, Duplicate Vessel intentionally reuses the same voyage number on purpose — don't flag those rows as a duplicate/one-off problem.",
             default:     true
+        },
+        {
+            id:          "alwaysShowWarnings",
+            label:       "Always show Warnings",
+            description: "Keep yellow validation-warning banners (Live Check, AWR, missing dates, etc.) visible even while \"Hide updates\" is on.",
+            default:     false
+        },
+        {
+            id:          "alwaysShowSuccess",
+            label:       "Always show Success",
+            description: "Keep the green one-off confirmation banner (e.g. \"Vessel Duplicated\", \"Snapshot Saved\") visible even while \"Hide updates\" is on.",
+            default:     false
+        },
+        {
+            id:          "alwaysShowInfo",
+            label:       "Always show Info",
+            description: "Keep the blue \"Basing on\" status banner visible even while \"Hide updates\" is on.",
+            default:     false
+        },
+        {
+            id:          "alwaysShowSuggestions",
+            label:       "Always show Suggestions",
+            description: "Keep the purple vessel-suggestion banner visible even while \"Hide updates\" is on.",
+            default:     false
         }
     ],
 

@@ -108,7 +108,7 @@ const CustomRulesSettings = {
 
             const label = document.createElement("div");
             label.textContent = rule.label;
-            label.style.cssText = "flex: 1 !important; min-width: 0 !important; font-weight: bold !important;";
+            label.style.cssText = "flex: 1 !important; min-width: 0 !important; font-weight: bold !important; text-align: left !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important;";
 
             const enabled = CustomRules.isEnabled(rule.id);
             const toggle = document.createElement("button");
@@ -130,10 +130,11 @@ const CustomRulesSettings = {
                 CustomRules.setEnabled(rule.id, !enabled);
                 this.renderRules();
                 // Re-run whatever's currently on the page that might care —
-                // simplest reliable way is to just re-run the two known
-                // consumers directly.
+                // simplest reliable way is to just re-run every known
+                // consumer directly.
                 if (typeof DuplicateVesselCheck !== "undefined") DuplicateVesselCheck.check();
                 if (typeof LiveCheck !== "undefined") LiveCheck.compareAll();
+                if (typeof applyNotificationVisibility === "function") applyNotificationVisibility();
             });
 
             line.appendChild(expandBtn);
