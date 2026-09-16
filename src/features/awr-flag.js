@@ -118,74 +118,150 @@ const AwrFlag = {
         `;
 
         const help = document.createElement("div");
-        help.textContent = "One service code per line — always AWR = Yes.";
+        help.textContent = "Add a service code below — covers all directions (N/S/E/W) automatically.";
         help.style.cssText = `
-            padding: 6px 10px 0 !important;
+            padding: 6px 10px !important;
             color: #666666 !important;
             font-size: 9px !important;
+            border-top: 1px dashed #000000 !important;
         `;
 
-        const textarea = document.createElement("textarea");
-        textarea.id = "tt-awr-services-textarea";
-        textarea.style.cssText = `
-            display: block !important;
-            width: 100% !important;
-            height: 90px !important;
+        // One little box per service — click the ✕ on a box to remove
+        // it, type a name + Add (or Enter) to add one. Every add/remove
+        // applies immediately (saved + re-checked against the current
+        // record right away), no separate Save step to forget.
+        const tags = document.createElement("div");
+        tags.id = "tt-awr-services-tags";
+        tags.style.cssText = `
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 4px !important;
+            padding: 8px 10px !important;
+            min-height: 20px !important;
+        `;
+
+        const inputRow = document.createElement("div");
+        inputRow.style.cssText = `
+            display: flex !important;
+            border-top: 1px solid #000000 !important;
+        `;
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.id = "tt-awr-services-input";
+        input.placeholder = "e.g. ECUMED";
+        input.style.cssText = `
+            flex: 1 !important;
+            min-width: 0 !important;
             box-sizing: border-box !important;
             margin: 0 !important;
             border: none !important;
-            border-top: 1px dashed #000000 !important;
-            padding: 8px 10px !important;
+            padding: 6px 8px !important;
             font-family: monospace !important;
             font-size: 11px !important;
-            resize: none !important;
         `;
 
-        const saveBtn = document.createElement("button");
-        saveBtn.type = "button";
-        saveBtn.textContent = "💾 Save";
-        saveBtn.style.cssText = `
-            display: block !important;
-            width: 100% !important;
-            padding: 6px !important;
+        const addBtn = document.createElement("button");
+        addBtn.type = "button";
+        addBtn.textContent = "+ Add";
+        addBtn.style.cssText = `
+            padding: 6px 8px !important;
             font-family: monospace !important;
             font-size: 11px !important;
             font-weight: bold !important;
             background: #ffffff !important;
             border: none !important;
-            border-top: 1px solid #000000 !important;
+            border-left: 1px solid #000000 !important;
             cursor: pointer !important;
         `;
-        saveBtn.addEventListener("click", () => {
+
+        const addFromInput = () => {
             // Strip a trailing directional suffix here too (isAlwaysAwrService()
-            // already strips it off the CURRENT record's own service code before
-            // comparing) — so typing any one direction, e.g. "ECUMED-N", still
-            // ends up stored as the bare "ECUMED" and covers all four
-            // directions, not just the one literally typed.
-            const list = [...new Set(
-                textarea.value.split("\n")
-                    .map(s => s.trim().toUpperCase().replace(/-[NSEW]$/, ""))
-                    .filter(Boolean)
-            )];
-            this.saveAlwaysAwrServices(list);
-            showTemporaryBanner({ title: "⚙️ AWR services saved", message: list.join(", ") || "(none)" });
-            this.run(); // re-check the current record against the new list immediately
+            // already strips it off the CURRENT record's own service code
+            // before comparing) — so adding any one direction, e.g.
+            // "ECUMED-N", still ends up stored as the bare "ECUMED" and
+            // covers all four directions, not just the one typed.
+            const name = input.value.trim().toUpperCase().replace(/-[NSEW]$/, "");
+            input.value = "";
+            input.focus();
+            if (!name || this.ALWAYS_AWR_SERVICES.includes(name)) return;
+
+            this.saveAlwaysAwrServices([...this.ALWAYS_AWR_SERVICES, name]);
+            this.renderServiceTags();
+            this.run();
+        };
+
+        addBtn.addEventListener("click", addFromInput);
+        input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                addFromInput();
+            }
         });
+
+        inputRow.appendChild(input);
+        inputRow.appendChild(addBtn);
 
         panel.appendChild(header);
         panel.appendChild(help);
-        panel.appendChild(textarea);
-        panel.appendChild(saveBtn);
+        panel.appendChild(tags);
+        panel.appendChild(inputRow);
         document.body.appendChild(panel);
 
-        this._servicesPanel    = panel;
-        this._servicesTextarea = textarea;
+        this._servicesPanel = panel;
+        this._servicesTags  = tags;
+
+        this.renderServiceTags();
+    },
+
+    TAG_REMOVE_BUTTON_STYLE: "background:transparent;border:none;color:#ffffff;cursor:pointer;font-size:10px;padding:0;line-height:1;font-family:monospace;",
+
+    renderServiceTags() {
+        if (!this._servicesTags) return;
+        this._servicesTags.innerHTML = "";
+
+        if (!this.ALWAYS_AWR_SERVICES.length) {
+            const empty = document.createElement("div");
+            empty.textContent = "(none yet)";
+            empty.style.cssText = "color:#999999 !important; font-size:9px !important;";
+            this._servicesTags.appendChild(empty);
+            return;
+        }
+
+        this.ALWAYS_AWR_SERVICES.forEach(name => {
+            const tag = document.createElement("span");
+            tag.style.cssText = `
+                display: inline-flex !important;
+                align-items: center !important;
+                gap: 4px !important;
+                padding: 2px 4px 2px 8px !important;
+                background: #000000 !important;
+                color: #ffffff !important;
+                font-family: monospace !important;
+                font-size: 10px !important;
+            `;
+            tag.textContent = name;
+
+            const removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.textContent = "✕";
+            removeBtn.title = `Remove ${name}`;
+            removeBtn.style.cssText = this.TAG_REMOVE_BUTTON_STYLE;
+            removeBtn.addEventListener("click", () => {
+                this.saveAlwaysAwrServices(this.ALWAYS_AWR_SERVICES.filter(s => s !== name));
+                this.renderServiceTags();
+                this.run();
+            });
+
+            tag.appendChild(removeBtn);
+            this._servicesTags.appendChild(tag);
+        });
     },
 
     toggleServicesPanel() {
         this.buildServicesPanel();
         const isHidden = this._servicesPanel.style.display === "none";
-        if (isHidden) this._servicesTextarea.value = this.ALWAYS_AWR_SERVICES.join("\n");
+        if (isHidden) this.renderServiceTags();
         this._servicesPanel.style.display = isHidden ? "block" : "none";
     },
 

@@ -2,11 +2,37 @@
 //  FEATURE: SP001 Date Validation
 //  Warns the user (via the shared banner) when SP001's
 //  departure date doesn't match any SV vessel's departure
-//  date. validate() is intentionally NOT called on init —
-//  it's triggered by date-syncing.js after it finishes writing its
-//  own field updates.
+//  date, AND blocks the Save button in that same situation —
+//  a record shouldn't save with its first port not actually
+//  basing on any vessel. Blank SP001 is left alone (nothing to
+//  check yet, same as the warning itself), only a non-blank
+//  date with no match blocks. Intercepted in the capture phase
+//  (like keyboard-navigation.js does for keys) so this runs
+//  BEFORE Tradetech's own Save click handler.
 // ─────────────────────────────────────────────────────
 const SP001DateValidation = {
+
+    SAVE_BUTTON_SELECTOR: 'input[type="button"][value="Save"]',
+
+    // Re-derives the same mismatch check validate() uses rather than
+    // trusting whatever the last-rendered warning said, so this can
+    // never fall out of sync with what's actually on screen right now.
+    handleSaveClick(event) {
+        const button = event.target.closest(this.SAVE_BUTTON_SELECTOR);
+        if (!button) return;
+
+        const sp001 = document.querySelector('input[name="SP001_depart_date"]');
+        if (!sp001) return; // not a page with SP001 on it
+
+        const spDate = sp001.value.trim();
+        if (!spDate) return; // nothing to check yet — same as validate()'s own early return
+
+        if (!this.findMatchingSVDate(spDate)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            alert(`Can't save: SP001's departure date (${spDate}) doesn't match any vessel's departure date.\n\nFix the mismatch (see the warning banner) before saving.`);
+        }
+    },
 
     validate() {
         const sp001 = document.querySelector('input[name="SP001_depart_date"]');
@@ -141,6 +167,8 @@ const SP001DateValidation = {
         // mismatch warning or the "Basing on" banner until you happen
         // to touch a date field yourself.
         this.validate();
+
+        document.addEventListener("click", (event) => this.handleSaveClick(event), true);
     },
 
     handle(event) {
