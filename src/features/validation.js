@@ -250,9 +250,17 @@ const SP001DateValidation = {
     handle(event) {
         const { name } = event.target;
         const isSVDate  = name?.startsWith("SV") && name?.endsWith("_depart_date");
+        // findMatchingSVDate() also requires the row's vessel_name to be
+        // non-blank to count as a match (see its own comment) — confirmed
+        // real bug: typing a matching depart_date into a row BEFORE its
+        // name is filled in flags a mismatch correctly at that moment,
+        // but nothing re-checks once the name shows up afterward (the
+        // name field alone was never watched), so Save stayed blocked
+        // even after the record genuinely satisfied the requirement.
+        const isSVName  = name?.startsWith("SV") && name?.endsWith("_vessel_name");
         const isSP001   = name === "SP001_depart_date" || name === "SP001_arrival_date";
 
-        if (isSVDate || isSP001) {
+        if (isSVDate || isSVName || isSP001) {
             this.validate();
         }
     }
