@@ -61,8 +61,19 @@ const LiveCheck = {
     // SV*_one-off (the same field duplicate-vessel.js's Delete button
     // clears) to mark it as the exception, not the normal recurring
     // entry. Pure page-internal consistency check --
-    // doesn't touch relay data at all.
+    // doesn't touch relay data at all. Skipped entirely when the
+    // skipDuplicateCheckOnNegativeIncrement rule is on AND the page's
+    // voyage increment is negative (ValidationRules).
     checkDuplicateImos(add) {
+        // A negative voyage_increment_by means Duplicate Vessel is
+        // deliberately reusing the same voyage number on purpose — see
+        // ValidationRules (src/utils/validation-rules.js). Same
+        // exemption duplicate-vessel-check.js applies for the same
+        // reason.
+        if (ValidationRules.isEnabled("skipDuplicateCheckOnNegativeIncrement") && VoyageUtils.getIncrement() < 0) {
+            return;
+        }
+
         const groups = new Map(); // imo -> [{ n, oneOffField, checked }]
         // Keyed on lloyds_codeD, NOT the hidden lloyds_code -- same
         // canonical identity field duplicate-vessel.js uses

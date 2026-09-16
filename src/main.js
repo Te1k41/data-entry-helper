@@ -58,6 +58,7 @@ const FEATURES = [
     DeleteVessel,
     VesselActionHistory,
     DuplicateVesselCheck,
+    ValidationRulesSettings,
     DetectVesselNoDate,
     DetectPortNoDate,
     VesselTBA,
