@@ -2,36 +2,71 @@
 //  FEATURE: SP001 Date Validation
 //  Warns the user (via the shared banner) when SP001's
 //  departure date doesn't match any SV vessel's departure
-//  date, AND blocks the Save button in that same situation —
-//  a record shouldn't save with its first port not actually
-//  basing on any vessel. Blank SP001 is left alone (nothing to
-//  check yet, same as the warning itself), only a non-blank
-//  date with no match blocks. Intercepted in the capture phase
-//  (like keyboard-navigation.js does for keys) so this runs
-//  BEFORE Tradetech's own Save click handler.
+//  date, AND blocks Save in that same situation — a record
+//  shouldn't save with its first port not actually basing on
+//  any vessel. Blank SP001 is left alone (nothing to check yet,
+//  same as the warning itself), only a non-blank date with no
+//  match blocks.
+//
+//  The Save BUTTON lives in a different frame than this form
+//  (confirmed live: onclick="parent.fr1.doSave()") — a "click"
+//  listener in THIS frame never sees a click that happened in a
+//  sibling frame's document, so that approach silently never
+//  fired. Wrapping window.doSave itself instead works regardless
+//  of which frame's button triggered it, since that's the one
+//  function every path to actually saving calls through.
 // ─────────────────────────────────────────────────────
 const SP001DateValidation = {
-
-    SAVE_BUTTON_SELECTOR: 'input[type="button"][value="Save"]',
 
     // Re-derives the same mismatch check validate() uses rather than
     // trusting whatever the last-rendered warning said, so this can
     // never fall out of sync with what's actually on screen right now.
-    handleSaveClick(event) {
-        const button = event.target.closest(this.SAVE_BUTTON_SELECTOR);
-        if (!button) return;
-
+    // Returns a message string if Save should be blocked, else null.
+    saveBlockReason() {
         const sp001 = document.querySelector('input[name="SP001_depart_date"]');
-        if (!sp001) return; // not a page with SP001 on it
+        if (!sp001) return null; // not a page with SP001 on it
 
         const spDate = sp001.value.trim();
-        if (!spDate) return; // nothing to check yet — same as validate()'s own early return
+        if (!spDate) return null; // nothing to check yet — same as validate()'s own early return
 
-        if (!this.findMatchingSVDate(spDate)) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            alert(`Can't save: SP001's departure date (${spDate}) doesn't match any vessel's departure date.\n\nFix the mismatch (see the warning banner) before saving.`);
+        if (this.findMatchingSVDate(spDate)) return null;
+
+        return `Can't save: SP001's departure date (${spDate}) doesn't match any vessel's departure date.\n\nFix the mismatch (see the warning banner) before saving.`;
+    },
+
+    // doSave is declared inline by Tradetech's own page script, so it
+    // should already exist by document_idle — poll briefly just in
+    // case, same 100ms/50-attempt shape as awr-flag.js's
+    // waitForNameThenRescan(). _ttWrapped guards against wrapping our
+    // own wrapper twice if this ever ran more than once.
+    wrapDoSave() {
+        if (typeof window.doSave === "function" && !window.doSave._ttWrapped) {
+            const original = window.doSave;
+            const self = this;
+            const wrapped = function (...args) {
+                const reason = self.saveBlockReason();
+                if (reason) {
+                    alert(reason);
+                    return;
+                }
+                return original.apply(this, args);
+            };
+            wrapped._ttWrapped = true;
+            window.doSave = wrapped;
+            return;
         }
+
+        let attempts = 0;
+        const maxAttempts = 50; // 5s ceiling
+        const timer = setInterval(() => {
+            attempts++;
+            if (typeof window.doSave === "function") {
+                clearInterval(timer);
+                this.wrapDoSave();
+                return;
+            }
+            if (attempts >= maxAttempts) clearInterval(timer);
+        }, 100);
     },
 
     validate() {
@@ -168,7 +203,7 @@ const SP001DateValidation = {
         // to touch a date field yourself.
         this.validate();
 
-        document.addEventListener("click", (event) => this.handleSaveClick(event), true);
+        this.wrapDoSave();
     },
 
     handle(event) {

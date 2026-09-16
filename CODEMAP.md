@@ -107,6 +107,7 @@ flowchart LR
   features_validation_js["features/validation.js"] --> features_date_syncing_js["features/date-syncing.js"]
   features_validation_js["features/validation.js"] --> features_live_check_relay_js["features/live-check-relay.js"]
   features_validation_js["features/validation.js"] --> main_js["main.js"]
+  features_validation_js["features/validation.js"] --> background_relay_js["background-relay.js"]
   features_vessel_name_reminder_js["features/vessel-name-reminder.js"] --> main_js["main.js"]
   features_vessel_no_date_js["features/vessel-no-date.js"] --> main_js["main.js"]
   features_vessel_recommendation_js["features/vessel-recommendation.js"] --> features_schedule_cascade_js["features/schedule-cascade.js"]
@@ -246,7 +247,7 @@ flowchart LR
 | features/service-relay-send-relay.js | ServiceRelaySend | main.js |
 | features/tradetech-stars.js | TradetechStars | main.js |
 | features/upload-proof-relay.js | UploadProof | features/schedule-table-scrape-relay.js, main.js |
-| features/validation.js | SP001DateValidation | features/date-syncing.js, features/live-check-relay.js, main.js |
+| features/validation.js | SP001DateValidation, doSave | features/date-syncing.js, features/live-check-relay.js, main.js, background-relay.js |
 | features/vessel-name-reminder.js | VesselNameReminder | main.js |
 | features/vessel-no-date.js | DetectVesselNoDate | main.js |
 | features/vessel-recommendation.js | VesselRecommendation | features/schedule-cascade.js, main.js |
