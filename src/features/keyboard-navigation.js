@@ -278,9 +278,19 @@ const KeyboardFieldNav = {
     // sit on the page right now. Dynamic on purpose — if Tradetech
     // ever reorders the visual layout of a row, this keeps up
     // automatically instead of silently navigating in the wrong order.
+    //
+    // Excludes hidden/disabled/readonly fields — confirmed real bug:
+    // a port row also has Tradetech's own derived fields in between
+    // arrival/depart (readonly _arrival_date_diff/_depart_date_diff,
+    // disabled _dow — see insert-port.js's header comment). Landing
+    // → on a DISABLED field silently fails (the browser refuses to
+    // focus it), so focus looked "stuck" on the field you started
+    // from instead of visibly failing — this skips straight past any
+    // field you couldn't type into anyway, same principle as skipping
+    // this extension's own inline buttons.
     getRowFieldsInVisualOrder(prefix, rowStr) {
         const rowFields = Array.from(document.querySelectorAll(
-            `input[name^="${prefix}${rowStr}_"]:not([name^="PV_"])`
+            `input[name^="${prefix}${rowStr}_"]:not([name^="PV_"]):not([type="hidden"]):not([disabled]):not([readonly])`
         ));
 
         rowFields.sort((a, b) => {
