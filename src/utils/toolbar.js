@@ -70,6 +70,17 @@ const Toolbar = {
         this._render();
     },
 
+    // Counterpart to register() — lets a Custom-Rule-gated feature (e.g.
+    // Fix Vessel Dates) disappear the moment its rule is turned off,
+    // instead of only ever being able to add buttons. No-ops quietly if
+    // the id was never registered.
+    unregister(id) {
+        const idx = this._actions.findIndex(a => a.id === id);
+        if (idx === -1) return;
+        this._actions.splice(idx, 1);
+        this._render();
+    },
+
     // Updates the collapsed state and re-renders the panel to match.
     // `broadcast` controls whether this change should be sent OUT to
     // other tabs (true for a local click) or not (false when this

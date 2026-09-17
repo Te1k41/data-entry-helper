@@ -149,6 +149,7 @@ const CustomRulesSettings = {
                 if (typeof LiveCheck !== "undefined") LiveCheck.compareAll();
                 if (typeof applyNotificationVisibility === "function") applyNotificationVisibility();
                 if (typeof renderWarnings === "function") renderWarnings();
+                if (typeof FixVesselDates !== "undefined") FixVesselDates.applyVisibility();
             });
 
             line.appendChild(expandBtn);

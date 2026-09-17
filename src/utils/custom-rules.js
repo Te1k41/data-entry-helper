@@ -22,6 +22,12 @@ const CustomRules = {
             default:     true
         },
         {
+            id:          "enableFixVesselDates",
+            label:       "Enable Fix Vessel Dates",
+            description: "Adds a \"🛠 Fix Vessel Dates\" Tools-panel button that pushes any vessel dated earlier than SP001 forward in weekly steps from the latest vessel date, and bumps its voyage code to match. Off by default — an older feature brought back opt-in rather than always-on.",
+            default:     false
+        },
+        {
             id:          "tabStartVoyageToDepart",
             label:       "Tab: Voyage → Depart",
             description: "ON: Tab on a vessel's Start Voyage jumps straight to that same row's Depart Date (and back with Shift+Tab), same forced cycle SP rows already do for arrival/depart. OFF (the original behavior): Tab on either field just moves to the next/previous row in the same column instead.",

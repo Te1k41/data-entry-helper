@@ -57,6 +57,7 @@
             "src/features/last-foreign-port-check.js",
             "src/features/duplicate-vessel.js",
             "src/features/duplicate-vessel-check.js",
+            "src/features/fix-vessel-dates.js",
             "src/features/custom-rules-settings.js",
             "src/features/vessel-no-date.js",
             "src/features/port-no-date.js",

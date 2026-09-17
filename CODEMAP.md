@@ -7,7 +7,7 @@
 
 | # | matches | exclude | world | run_at | files (load order) |
 |---|---|---|---|---|---|
-| 0 | https://www.tradetech.net/*, https://mergeimagesonline.com/* | - | ISOLATED | document_idle | src/utils/date.js → src/utils/button.js → src/utils/relay-socket-client.js → src/utils/toolbar.js → src/utils/toolbar-relay.js → src/utils/banner.js → src/utils/dom.js → src/utils/voyage.js → src/utils/vessel-row.js → src/utils/port-row.js → src/utils/custom-rules.js → src/core/boundary.js → src/features/notes.js → src/features/notes-sidebar.js → src/features/tradetech-stars.js → src/features/validation.js → src/features/date-syncing.js → src/features/manual-etd-highlight.js → src/features/arrival-depart-order-check.js → src/features/port-date-order-check.js → src/features/insert-port.js → src/features/port-name-reminder.js → src/features/vessel-name-reminder.js → src/features/port-highlighting.js → src/features/awr-flag.js → src/features/last-foreign-port-check.js → src/features/duplicate-vessel.js → src/features/duplicate-vessel-check.js → src/features/custom-rules-settings.js → src/features/vessel-no-date.js → src/features/port-no-date.js → src/features/vessel-to-be-announced.js → src/features/voyage-direction.js → src/features/resize-toggle.js → src/features/service-relay-send-relay.js → src/features/schedule-capture-relay.js → src/features/schedule-cascade.js → src/features/vessel-recommendation.js → src/features/rearrange-vessels.js → src/features/merge-download-signal-relay.js → src/features/upload-proof-relay.js → src/features/keyboard-navigation.js → src/features/select-field-on-focus.js → src/features/auto-nav-schedules.js → src/features/due-service-scanner-relay.js → src/features/awr-audit-relay.js → src/features/schedule-preview-tools-relay.js → src/features/date-step-buttons.js → src/features/voyage-step-buttons.js → src/features/date-calculator.js → src/features/live-check.js → src/features/live-check-relay.js → src/main.js |
+| 0 | https://www.tradetech.net/*, https://mergeimagesonline.com/* | - | ISOLATED | document_idle | src/utils/date.js → src/utils/button.js → src/utils/relay-socket-client.js → src/utils/toolbar.js → src/utils/toolbar-relay.js → src/utils/banner.js → src/utils/dom.js → src/utils/voyage.js → src/utils/vessel-row.js → src/utils/port-row.js → src/utils/custom-rules.js → src/core/boundary.js → src/features/notes.js → src/features/notes-sidebar.js → src/features/tradetech-stars.js → src/features/validation.js → src/features/date-syncing.js → src/features/manual-etd-highlight.js → src/features/arrival-depart-order-check.js → src/features/port-date-order-check.js → src/features/insert-port.js → src/features/port-name-reminder.js → src/features/vessel-name-reminder.js → src/features/port-highlighting.js → src/features/awr-flag.js → src/features/last-foreign-port-check.js → src/features/duplicate-vessel.js → src/features/duplicate-vessel-check.js → src/features/fix-vessel-dates.js → src/features/custom-rules-settings.js → src/features/vessel-no-date.js → src/features/port-no-date.js → src/features/vessel-to-be-announced.js → src/features/voyage-direction.js → src/features/resize-toggle.js → src/features/service-relay-send-relay.js → src/features/schedule-capture-relay.js → src/features/schedule-cascade.js → src/features/vessel-recommendation.js → src/features/rearrange-vessels.js → src/features/merge-download-signal-relay.js → src/features/upload-proof-relay.js → src/features/keyboard-navigation.js → src/features/select-field-on-focus.js → src/features/auto-nav-schedules.js → src/features/due-service-scanner-relay.js → src/features/awr-audit-relay.js → src/features/schedule-preview-tools-relay.js → src/features/date-step-buttons.js → src/features/voyage-step-buttons.js → src/features/date-calculator.js → src/features/live-check.js → src/features/live-check-relay.js → src/main.js |
 | 1 | https://www.yangming.com/* | - | ISOLATED | document_idle | src/features/schedule-table-scrape-relay.js |
 | 2 | <all_urls> | https://www.tradetech.net/* | ISOLATED | document_idle | src/utils/button.js → src/features/rename-toggle-relay.js → src/rename-toggle-init-relay.js |
 | 3 | <all_urls> | https://www.tradetech.net/* | MAIN | document_start | src/features/force-tab-links.js |
@@ -65,6 +65,8 @@ flowchart LR
   features_duplicate_vessel_js["features/duplicate-vessel.js"] --> features_live_check_js["features/live-check.js"]
   features_duplicate_vessel_js["features/duplicate-vessel.js"] --> features_insert_port_js["features/insert-port.js"]
   features_duplicate_vessel_js["features/duplicate-vessel.js"] --> main_js["main.js"]
+  features_fix_vessel_dates_js["features/fix-vessel-dates.js"] --> features_custom_rules_settings_js["features/custom-rules-settings.js"]
+  features_fix_vessel_dates_js["features/fix-vessel-dates.js"] --> main_js["main.js"]
   features_force_tab_links_js["features/force-tab-links.js"] --> background_relay_js["background-relay.js"]
   features_force_tab_links_js["features/force-tab-links.js"] --> features_duplicate_vessel_check_js["features/duplicate-vessel-check.js"]
   features_force_tab_links_js["features/force-tab-links.js"] --> features_full_page_capture_inject_js["features/full-page-capture-inject.js"]
@@ -110,6 +112,7 @@ flowchart LR
   features_upload_proof_relay_js["features/upload-proof-relay.js"] --> features_schedule_table_scrape_relay_js["features/schedule-table-scrape-relay.js"]
   features_upload_proof_relay_js["features/upload-proof-relay.js"] --> main_js["main.js"]
   features_validation_js["features/validation.js"] --> features_date_syncing_js["features/date-syncing.js"]
+  features_validation_js["features/validation.js"] --> features_fix_vessel_dates_js["features/fix-vessel-dates.js"]
   features_validation_js["features/validation.js"] --> features_live_check_relay_js["features/live-check-relay.js"]
   features_validation_js["features/validation.js"] --> main_js["main.js"]
   features_vessel_name_reminder_js["features/vessel-name-reminder.js"] --> main_js["main.js"]
@@ -120,6 +123,7 @@ flowchart LR
   features_voyage_direction_js["features/voyage-direction.js"] --> main_js["main.js"]
   features_voyage_step_buttons_js["features/voyage-step-buttons.js"] --> main_js["main.js"]
   main_js["main.js"] --> features_date_step_buttons_js["features/date-step-buttons.js"]
+  main_js["main.js"] --> features_fix_vessel_dates_js["features/fix-vessel-dates.js"]
   main_js["main.js"] --> features_insert_port_js["features/insert-port.js"]
   main_js["main.js"] --> features_live_check_js["features/live-check.js"]
   main_js["main.js"] --> features_date_syncing_js["features/date-syncing.js"]
@@ -150,6 +154,7 @@ flowchart LR
   utils_button_js["utils/button.js"] --> utils_toolbar_js["utils/toolbar.js"]
   utils_custom_rules_js["utils/custom-rules.js"] --> features_custom_rules_settings_js["features/custom-rules-settings.js"]
   utils_custom_rules_js["utils/custom-rules.js"] --> features_duplicate_vessel_check_js["features/duplicate-vessel-check.js"]
+  utils_custom_rules_js["utils/custom-rules.js"] --> features_fix_vessel_dates_js["features/fix-vessel-dates.js"]
   utils_custom_rules_js["utils/custom-rules.js"] --> features_keyboard_navigation_js["features/keyboard-navigation.js"]
   utils_custom_rules_js["utils/custom-rules.js"] --> features_live_check_js["features/live-check.js"]
   utils_custom_rules_js["utils/custom-rules.js"] --> features_validation_js["features/validation.js"]
@@ -157,6 +162,7 @@ flowchart LR
   utils_date_js["utils/date.js"] --> features_arrival_depart_order_check_js["features/arrival-depart-order-check.js"]
   utils_date_js["utils/date.js"] --> features_date_calculator_js["features/date-calculator.js"]
   utils_date_js["utils/date.js"] --> features_date_step_buttons_js["features/date-step-buttons.js"]
+  utils_date_js["utils/date.js"] --> features_fix_vessel_dates_js["features/fix-vessel-dates.js"]
   utils_date_js["utils/date.js"] --> features_live_check_relay_js["features/live-check-relay.js"]
   utils_date_js["utils/date.js"] --> features_notes_js["features/notes.js"]
   utils_date_js["utils/date.js"] --> features_port_date_order_check_js["features/port-date-order-check.js"]
@@ -167,6 +173,7 @@ flowchart LR
   utils_dom_js["utils/dom.js"] --> features_date_step_buttons_js["features/date-step-buttons.js"]
   utils_dom_js["utils/dom.js"] --> features_date_syncing_js["features/date-syncing.js"]
   utils_dom_js["utils/dom.js"] --> features_duplicate_vessel_js["features/duplicate-vessel.js"]
+  utils_dom_js["utils/dom.js"] --> features_fix_vessel_dates_js["features/fix-vessel-dates.js"]
   utils_dom_js["utils/dom.js"] --> features_insert_port_js["features/insert-port.js"]
   utils_dom_js["utils/dom.js"] --> features_live_check_relay_js["features/live-check-relay.js"]
   utils_dom_js["utils/dom.js"] --> features_live_check_js["features/live-check.js"]
@@ -236,6 +243,7 @@ flowchart LR
 | features/due-service-scanner-relay.js | DueServiceScanner | main.js |
 | features/duplicate-vessel-check.js | DuplicateVesselCheck | features/custom-rules-settings.js, main.js |
 | features/duplicate-vessel.js | vesselCodeField, readVesselCode, writeVesselCode, VesselActionHistory, DuplicateVessel, DeleteVessel | features/duplicate-vessel-check.js, features/live-check.js, features/insert-port.js, main.js |
+| features/fix-vessel-dates.js | FixVesselDates | features/custom-rules-settings.js, main.js |
 | features/force-tab-links.js | open | background-relay.js, features/duplicate-vessel-check.js, features/full-page-capture-inject.js, features/keyboard-navigation.js, features/rename-toggle-relay.js, features/schedule-preview-tools-relay.js, features/schedule-table-scrape-relay.js, features/upload-proof-relay.js, utils/relay-socket-client.js |
 | features/full-page-capture-inject.js | - | - |
 | features/highlighter.js | CONTEXT_RADIUS, storageKey, loadHighlights, wrapRange, getTextNodesInRange, unwrap, captureContext, findRange, locate | features/live-check-relay.js |
@@ -263,20 +271,20 @@ flowchart LR
 | features/service-relay-send-relay.js | ServiceRelaySend | main.js |
 | features/tradetech-stars.js | TradetechStars | main.js |
 | features/upload-proof-relay.js | UploadProof | features/custom-rules-settings.js, features/schedule-table-scrape-relay.js, main.js |
-| features/validation.js | SP001DateValidation | features/date-syncing.js, features/live-check-relay.js, main.js |
+| features/validation.js | SP001DateValidation | features/date-syncing.js, features/fix-vessel-dates.js, features/live-check-relay.js, main.js |
 | features/vessel-name-reminder.js | VesselNameReminder | main.js |
 | features/vessel-no-date.js | DetectVesselNoDate | main.js |
 | features/vessel-recommendation.js | VesselRecommendation | features/schedule-cascade.js, main.js |
 | features/vessel-to-be-announced.js | VesselTBA | main.js |
 | features/voyage-direction.js | VDirection | main.js |
 | features/voyage-step-buttons.js | VoyageStepButtons | main.js |
-| main.js | syncingDepth, beginSync, endSync, isSyncing, FEATURES, runFeature | features/date-step-buttons.js, features/insert-port.js, features/live-check.js, features/date-syncing.js, features/schedule-cascade.js, features/duplicate-vessel.js, features/keyboard-navigation.js, features/voyage-step-buttons.js |
+| main.js | syncingDepth, beginSync, endSync, isSyncing, FEATURES, runFeature | features/date-step-buttons.js, features/fix-vessel-dates.js, features/insert-port.js, features/live-check.js, features/date-syncing.js, features/schedule-cascade.js, features/duplicate-vessel.js, features/keyboard-navigation.js, features/voyage-step-buttons.js |
 | rename-toggle-init-relay.js | - | - |
 | utils/banner.js | activeWarnings, showBanner, removeBanner, SUCCESS_GAP, getStackedBannerTop, getSuccessBannerTop, repositionStackedBanners, buildSuccessStyle, successBannerTimer, removeSuccessBanner, buildInfoStyle, INFO_BANNER_TEXT_SHADOW, removeInfoBanner, setInfoBanner, getSuggestionBannerTop, buildSuggestionStyle, removeSuggestionBanner, setSuggestionBanner, showTemporaryBanner, BANNER_STYLE, setWarning, WARNING_KEY_ALWAYS_SHOW_RULE, shouldShowWarning, renderWarnings, showCombinedBanner, ALL_BANNER_IDS, HIDEABLE_BANNER_IDS, BANNER_ALWAYS_SHOW_RULE, notificationsHidden, applyNotificationVisibility, toggleNotificationVisibility, createNotificationToggle | features/schedule-cascade.js, features/upload-proof-relay.js, features/validation.js, features/vessel-recommendation.js, features/awr-audit-relay.js, features/awr-flag.js, features/duplicate-vessel.js, features/insert-port.js, features/live-check.js, features/rearrange-vessels.js, utils/toolbar.js, features/notes-sidebar.js, features/arrival-depart-order-check.js, features/duplicate-vessel-check.js, features/last-foreign-port-check.js, features/port-date-order-check.js, features/port-no-date.js, features/vessel-no-date.js, features/custom-rules-settings.js |
 | utils/button.js | createButton, isDragging, didDrag, startX | features/rename-toggle-relay.js, utils/toolbar.js |
-| utils/custom-rules.js | CustomRules | features/custom-rules-settings.js, features/duplicate-vessel-check.js, features/keyboard-navigation.js, features/live-check.js, features/validation.js, utils/banner.js |
-| utils/date.js | DateUtils | features/arrival-depart-order-check.js, features/date-calculator.js, features/date-step-buttons.js, features/live-check-relay.js, features/notes.js, features/port-date-order-check.js, features/rearrange-vessels.js, features/schedule-cascade.js, features/validation.js, features/vessel-recommendation.js |
-| utils/dom.js | setFieldValue, PORT_NAME_FIELD_PATTERN, selectFieldSmart, mirrorPvShadow, waitForFieldValue, insertActionButtonAfter | features/date-step-buttons.js, features/date-syncing.js, features/duplicate-vessel.js, features/insert-port.js, features/live-check-relay.js, features/live-check.js, features/notes-sidebar.js, features/notes.js, features/schedule-cascade.js, features/vessel-to-be-announced.js, features/voyage-direction.js, features/voyage-step-buttons.js, utils/port-row.js, utils/vessel-row.js, features/keyboard-navigation.js, features/select-field-on-focus.js |
+| utils/custom-rules.js | CustomRules | features/custom-rules-settings.js, features/duplicate-vessel-check.js, features/fix-vessel-dates.js, features/keyboard-navigation.js, features/live-check.js, features/validation.js, utils/banner.js |
+| utils/date.js | DateUtils | features/arrival-depart-order-check.js, features/date-calculator.js, features/date-step-buttons.js, features/fix-vessel-dates.js, features/live-check-relay.js, features/notes.js, features/port-date-order-check.js, features/rearrange-vessels.js, features/schedule-cascade.js, features/validation.js, features/vessel-recommendation.js |
+| utils/dom.js | setFieldValue, PORT_NAME_FIELD_PATTERN, selectFieldSmart, mirrorPvShadow, waitForFieldValue, insertActionButtonAfter | features/date-step-buttons.js, features/date-syncing.js, features/duplicate-vessel.js, features/fix-vessel-dates.js, features/insert-port.js, features/live-check-relay.js, features/live-check.js, features/notes-sidebar.js, features/notes.js, features/schedule-cascade.js, features/vessel-to-be-announced.js, features/voyage-direction.js, features/voyage-step-buttons.js, utils/port-row.js, utils/vessel-row.js, features/keyboard-navigation.js, features/select-field-on-focus.js |
 | utils/port-row.js | PortRow | features/insert-port.js, features/port-no-date.js, features/schedule-capture-relay.js |
 | utils/relay-socket-client.js | RelayConnectionStatus, onRelayConnectionStatusChange, isRelayConnected, connectRelaySocket | features/due-service-scanner-relay.js, features/live-check-relay.js, features/schedule-preview-tools-relay.js, features/upload-proof-relay.js, utils/toolbar-relay.js, background-relay.js, features/merge-download-signal-relay.js, features/schedule-capture-relay.js, features/service-relay-send-relay.js |
 | utils/toolbar-relay.js | ToolbarRelay | - |
