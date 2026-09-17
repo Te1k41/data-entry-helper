@@ -179,25 +179,24 @@ const PortHighlighting = {
             console.log(`🔁 Scan limited to ${portNameFields.length} ports (boundary at SP${String(stopRow).padStart(3, "0")})`);
         }
 
-        // Full-bound service (no suffix) — the route is a loop, so
-        // rotate the scan order to start at the pivot row: pivot..end,
-        // then wrap around through the rows before the pivot. The
-        // pivot's own leg (leg 2) is itself a one-way run, so treat it
-        // as directional too once found.
+        // Full-bound service (no suffix) — restrict the scan to the
+        // pivot row and everything after it, same idea as stopRow but
+        // as a LOWER bound (no wraparound: rows before the pivot belong
+        // to the other leg and must never re-enter the candidate pool —
+        // confirmed against a real route where wrapping let a leg-1 USA
+        // port outrank the correct leg-2 Japan port by category rank).
+        // The pivot's own leg is itself a one-way run, so treat it as
+        // directional too once found.
         const suffixDirectional = this.isDirectionalService();
         const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
 
         if (pivotRow) {
-            const fromPivot = [];
-            const beforePivot = [];
-            portNameFields.forEach(f => {
+            portNameFields = portNameFields.filter(f => {
                 const match = f.name.match(/^SP(\d+)_port_name$/);
-                const row = match ? parseInt(match[1], 10) : null;
-                if (row === null || row >= pivotRow) fromPivot.push(f);
-                else beforePivot.push(f);
+                if (!match) return true;
+                return parseInt(match[1], 10) >= pivotRow;
             });
-            portNameFields = fromPivot.concat(beforePivot);
-            console.log(`🔁 Full-bound pivot at SP${String(pivotRow).padStart(3, "0")} — scan rotated to start there, wrapping through ${beforePivot.length} row(s) before it`);
+            console.log(`🔁 Full-bound pivot at SP${String(pivotRow).padStart(3, "0")} — scan restricted to ${portNameFields.length} port(s) from there down`);
         }
 
         const biasFirst = suffixDirectional || !!pivotRow;
@@ -240,6 +239,7 @@ const PortHighlighting = {
         if (!match) return false;
         const row = parseInt(match[1], 10);
         if (stopRow && row > stopRow) return false;
+        if (pivotRow && row < pivotRow) return false;
         return f.value.trim().toUpperCase() === code;
     });
 
