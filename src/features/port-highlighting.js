@@ -288,14 +288,15 @@ const PortHighlighting = {
 
         // Full-bound service (no suffix) = 2 legs run back-to-back.
         // Tradetech marks the pivot between them on whichever port
-        // row's SP*_port_key first carries an End ("E") marker. Each
-        // leg is scanned independently for its OWN special port —
-        // confirmed against a real route (Kaohsiung/Ningbo/Nagoya/
-        // Tokyo/Tacoma-USA/Vancouver-Canada/Tokyo/Kobe/Nagoya/
-        // Kaohsiung/Ningbo) where leg 1 has its own USA port (Tacoma)
-        // that must NOT be dropped just because leg 2 also has a hit —
-        // merging both legs into one rank contest let Tacoma silently
-        // outrank the correct leg-2 answer (Tokyo).
+        // row's SP*_port_key first carries an End ("E") marker. Leg 2
+        // is checked first and wins outright if it has any special
+        // port — leg 1 is only ever used as a fallback when leg 2 has
+        // nothing. Confirmed against a real route (Kaohsiung/Ningbo/
+        // Nagoya/Tokyo/Tacoma-USA/Vancouver-Canada/Tokyo/Kobe/Nagoya/
+        // Kaohsiung/Ningbo) where merging both legs into one shared
+        // rank contest let leg 1's Tacoma silently outrank the correct
+        // leg-2 answer (Tokyo) — they must be scanned as 2 separate,
+        // ranked attempts, not one combined candidate pool.
         const suffixDirectional = this.isDirectionalService();
         const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
         const biasFirst = suffixDirectional || !!pivotRow;
@@ -322,34 +323,32 @@ const PortHighlighting = {
             }
         }
 
-        let primaryField   = null; // leg 2 (or whole-route) — this is currentHighlightField
-        let secondaryField = null; // leg 1's own special port, full-bound only
+        // Only ever ONE port highlighted. Leg 2 is superior — if it
+        // has its own special port, that's the answer, full stop, even
+        // when leg 1 also has one (e.g. Tacoma/USA in leg 1 never wins
+        // over Tokyo/Japan in leg 2). Leg 1's hit is only ever used
+        // when leg 2 comes up empty.
+        let highlightField = null;
 
         if (pivotRow) {
             const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
             const leg2Fields = portNameFields.filter(f => rowOf(f) >= pivotRow);
             const leg1Fields = portNameFields.filter(f => rowOf(f) <  pivotRow);
 
-            primaryField   = this.findHighlightInWindow(leg2Fields, true);
-            secondaryField = this.findHighlightInWindow(leg1Fields, true);
-
-            if (!primaryField && !secondaryField) primaryField = portNameFields[0];
+            highlightField = this.findHighlightInWindow(leg2Fields, true)
+                || this.findHighlightInWindow(leg1Fields, true)
+                || portNameFields[0];
         } else {
-            primaryField = this.findHighlightInWindow(portNameFields, biasFirst) || portNameFields[0];
+            highlightField = this.findHighlightInWindow(portNameFields, biasFirst) || portNameFields[0];
         }
 
-        if (primaryField) this.applyHighlight(primaryField);
-        if (secondaryField && secondaryField !== primaryField) this.applyHighlight(secondaryField);
-
-        console.log(`🟡 Primary: ${primaryField?.name} (${primaryField?.value})` +
-            (secondaryField ? `, Secondary: ${secondaryField.name} (${secondaryField.value})` : ""));
+        if (highlightField) this.applyHighlight(highlightField);
+        console.log(`🟡 Highlighted: ${highlightField?.name} (${highlightField?.value})`);
 
         // Exposed so other features (e.g. vessel recommendation) can
         // know which port is currently highlighted without re-running
-        // this whole scan themselves. Only the primary (leg 2, or the
-        // whole-route result) is exposed here — that's the one that
-        // matters for "what port are we at now" downstream.
-        this.currentHighlightField = primaryField || null;
+        // this whole scan themselves.
+        this.currentHighlightField = highlightField || null;
     },
 
     init() {
