@@ -179,20 +179,25 @@ const PortHighlighting = {
             console.log(`🔁 Scan limited to ${portNameFields.length} ports (boundary at SP${String(stopRow).padStart(3, "0")})`);
         }
 
-        // Full-bound service (no suffix) — restrict the scan to the
-        // pivot row and everything after it, same idea as stopRow but
-        // as a LOWER bound. The pivot's own leg (leg 2) is itself a
-        // one-way run, so treat it as directional too once found.
+        // Full-bound service (no suffix) — the route is a loop, so
+        // rotate the scan order to start at the pivot row: pivot..end,
+        // then wrap around through the rows before the pivot. The
+        // pivot's own leg (leg 2) is itself a one-way run, so treat it
+        // as directional too once found.
         const suffixDirectional = this.isDirectionalService();
         const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
 
         if (pivotRow) {
-            portNameFields = portNameFields.filter(f => {
+            const fromPivot = [];
+            const beforePivot = [];
+            portNameFields.forEach(f => {
                 const match = f.name.match(/^SP(\d+)_port_name$/);
-                if (!match) return true;
-                return parseInt(match[1], 10) >= pivotRow;
+                const row = match ? parseInt(match[1], 10) : null;
+                if (row === null || row >= pivotRow) fromPivot.push(f);
+                else beforePivot.push(f);
             });
-            console.log(`🔁 Full-bound pivot at SP${String(pivotRow).padStart(3, "0")} — scan restricted to ${portNameFields.length} port(s) from there down`);
+            portNameFields = fromPivot.concat(beforePivot);
+            console.log(`🔁 Full-bound pivot at SP${String(pivotRow).padStart(3, "0")} — scan rotated to start there, wrapping through ${beforePivot.length} row(s) before it`);
         }
 
         const biasFirst = suffixDirectional || !!pivotRow;
@@ -235,7 +240,6 @@ const PortHighlighting = {
         if (!match) return false;
         const row = parseInt(match[1], 10);
         if (stopRow && row > stopRow) return false;
-        if (pivotRow && row < pivotRow) return false;
         return f.value.trim().toUpperCase() === code;
     });
 
@@ -255,16 +259,13 @@ const PortHighlighting = {
     if (!targetField) continue;
 
     // Get the port_name field directly above this row (for comparison).
-    // NOTE: portNameFields is sorted ascending by row, so the row
-    // truly adjacent to rowNum is the LAST one with row < rowNum —
-    // not the FIRST one (which would always be SP001, regardless of
-    // reordering, deletions, or re-adding a port at a new row number).
-    const aboveField = portNameFields
-        .filter(f => {
-            const match = f.name.match(/^SP(\d+)_port_name$/);
-            return match && parseInt(match[1], 10) < rowNum;
-        })
-        .pop();
+    // NOTE: this means "previous in the scan's own order", not
+    // "previous row number" — once a full-bound route rotates to
+    // start at the pivot row, the true adjacent port for the row
+    // right after the wrap is the LAST row before the pivot, not the
+    // row with the next-lowest number.
+    const targetIndex = portNameFields.indexOf(targetField);
+    const aboveField = targetIndex > 0 ? portNameFields[targetIndex - 1] : null;
 
     if (!aboveField || !aboveField.value.trim()) {
         console.log(`  ⚠ no port above SP${rowNum} — skipping priority highlight`);
