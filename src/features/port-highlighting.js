@@ -160,6 +160,108 @@ const PortHighlighting = {
         });
     },
 
+    // Finds the highlight target within one ordered slice of
+    // SP*_port_name fields — shared by run() for both the whole-route
+    // scan (no pivot) and each leg's own scan (full-bound, pivot
+    // found). Tries the first_us_port/first_eu_port priority fields
+    // first (bounded to rows actually inside this window), then falls
+    // back to a generic category-change scan. Returns the chosen
+    // field, or null if nothing in this window qualifies (caller
+    // decides what "nothing found" means — a 2nd leg to check, or the
+    // SP001 fallback).
+    findHighlightInWindow(fields, biasFirst) {
+        if (fields.length === 0) return null;
+
+        const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
+        const rows = fields.map(rowOf);
+        const minRow = Math.min(...rows);
+        const maxRow = Math.max(...rows);
+
+        // ── Priority pass ──
+        for (const key of this.PRIORITY_PORT_KEYS) {
+            const codeField = document.querySelector(`input[name="first_${key}_port"]`);
+            if (!codeField) continue;
+
+            const code = codeField.value.trim().toUpperCase();
+            if (!code) continue;
+
+            const matchingCodeField = Array.from(
+                document.querySelectorAll('input[name^="SP"][name$="_port_code"]:not([name^="PV_"])')
+            ).find(f => {
+                const match = f.name.match(/^SP(\d+)_port_code$/);
+                if (!match) return false;
+                const row = parseInt(match[1], 10);
+                if (row < minRow || row > maxRow) return false;
+                return f.value.trim().toUpperCase() === code;
+            });
+
+            if (!matchingCodeField) {
+                console.log(`  ⚠ no match for first_${key}_port code "${code}" in this window`);
+                continue;
+            }
+
+            const rowMatch  = matchingCodeField.name.match(/^SP(\d+)_port_code$/);
+            const rowNum    = parseInt(rowMatch[1], 10);
+            const targetField = document.querySelector(`input[name="SP${rowNum}_port_name"]`);
+            if (!targetField) continue;
+
+            // "Above" means previous in THIS window's own order, not
+            // previous row number — a leg's window can start mid-route.
+            const targetIndex = fields.indexOf(targetField);
+            const aboveField  = targetIndex > 0 ? fields[targetIndex - 1] : null;
+
+            if (!aboveField || !aboveField.value.trim()) {
+                console.log(`  ⚠ no port above SP${rowNum} in this window — skipping priority highlight`);
+                continue;
+            }
+
+            const currentCat = this.getPortCategory(targetField.value);
+            const aboveCat   = this.getPortCategory(aboveField.value);
+
+            console.log(`  first_${key}_port: SP${rowNum} is ${currentCat}, above is ${aboveCat}`);
+
+            if (currentCat === "OTHER" || currentCat === aboveCat) {
+                console.log(`  ⚠ not a valid entry transition — skipping`);
+                continue;
+            }
+
+            console.log(`🟡 Priority match: SP${rowNum}_port_name via first_${key}_port`);
+            return targetField;
+        }
+
+        // ── Generic scan: collect every valid category-change candidate ──
+        // Because Canada and USA share one category, this loop naturally
+        // highlights whichever of the two is entered FIRST (Canada, in a
+        // route like HKG → CANADA → USA) since the row immediately after
+        // it shares the same category and is skipped as "not a change."
+        const candidates = [];
+        console.log(`🔎 Scanning ${fields.length} ports, bias: ${biasFirst ? "FIRST" : "LAST"}`);
+
+        for (let i = 1; i < fields.length; i++) {
+            const current = fields[i];
+            const above   = fields[i - 1];
+
+            if (!current.value.trim() || !above.value.trim()) continue;
+
+            const currentCat = this.getPortCategory(current.value);
+            const aboveCat   = this.getPortCategory(above.value);
+
+            if (currentCat === "OTHER") continue; // leaving a category never counts
+            if (currentCat !== aboveCat) {
+                candidates.push({ field: current, rank: this.CATEGORY_RANK[currentCat] });
+            }
+        }
+
+        if (candidates.length === 0) return null;
+
+        // Best-ranked category wins; ties broken by direction.
+        const bestRank      = Math.min(...candidates.map(c => c.rank));
+        const topCandidates = candidates.filter(c => c.rank === bestRank);
+        const chosen = biasFirst ? topCandidates[0] : topCandidates[topCandidates.length - 1];
+        console.log(`🏆 Chosen: ${chosen.field.name}`);
+        return chosen.field;
+    },
+
     run() {
         let portNameFields = Array.from(document.querySelectorAll(
             'input[type="text"][name^="SP"][name$="_port_name"]'
@@ -179,26 +281,23 @@ const PortHighlighting = {
             console.log(`🔁 Scan limited to ${portNameFields.length} ports (boundary at SP${String(stopRow).padStart(3, "0")})`);
         }
 
-        // Full-bound service (no suffix) — restrict the scan to the
-        // pivot row and everything after it, same idea as stopRow but
-        // as a LOWER bound (no wraparound: rows before the pivot belong
-        // to the other leg and must never re-enter the candidate pool —
-        // confirmed against a real route where wrapping let a leg-1 USA
-        // port outrank the correct leg-2 Japan port by category rank).
-        // The pivot's own leg is itself a one-way run, so treat it as
-        // directional too once found.
-        const suffixDirectional = this.isDirectionalService();
-        const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
-
-        if (pivotRow) {
-            portNameFields = portNameFields.filter(f => {
-                const match = f.name.match(/^SP(\d+)_port_name$/);
-                if (!match) return true;
-                return parseInt(match[1], 10) >= pivotRow;
-            });
-            console.log(`🔁 Full-bound pivot at SP${String(pivotRow).padStart(3, "0")} — scan restricted to ${portNameFields.length} port(s) from there down`);
+        if (portNameFields.length === 0) {
+            console.warn("⚠ No SP*_port_name fields found");
+            return;
         }
 
+        // Full-bound service (no suffix) = 2 legs run back-to-back.
+        // Tradetech marks the pivot between them on whichever port
+        // row's SP*_port_key first carries an End ("E") marker. Each
+        // leg is scanned independently for its OWN special port —
+        // confirmed against a real route (Kaohsiung/Ningbo/Nagoya/
+        // Tokyo/Tacoma-USA/Vancouver-Canada/Tokyo/Kobe/Nagoya/
+        // Kaohsiung/Ningbo) where leg 1 has its own USA port (Tacoma)
+        // that must NOT be dropped just because leg 2 also has a hit —
+        // merging both legs into one rank contest let Tacoma silently
+        // outrank the correct leg-2 answer (Tokyo).
+        const suffixDirectional = this.isDirectionalService();
+        const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
         const biasFirst = suffixDirectional || !!pivotRow;
 
         // If directional and the first port repeats exactly at the
@@ -223,128 +322,34 @@ const PortHighlighting = {
             }
         }
 
-        // ── Priority pass: check first_us_port / first_eu_port fields first ──
-        for (const key of this.PRIORITY_PORT_KEYS) {
-    const codeField = document.querySelector(`input[name="first_${key}_port"]`);
-    if (!codeField) { console.log(`  (no first_${key}_port on page)`); continue; }
+        let primaryField   = null; // leg 2 (or whole-route) — this is currentHighlightField
+        let secondaryField = null; // leg 1's own special port, full-bound only
 
-    const code = codeField.value.trim().toUpperCase();
-    if (!code) continue;
+        if (pivotRow) {
+            const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
+            const leg2Fields = portNameFields.filter(f => rowOf(f) >= pivotRow);
+            const leg1Fields = portNameFields.filter(f => rowOf(f) <  pivotRow);
 
-    // Find the SP row whose port_code matches this priority code.
-    const matchingCodeField = Array.from(
-        document.querySelectorAll('input[name^="SP"][name$="_port_code"]:not([name^="PV_"])')
-    ).find(f => {
-        const match = f.name.match(/^SP(\d+)_port_code$/);
-        if (!match) return false;
-        const row = parseInt(match[1], 10);
-        if (stopRow && row > stopRow) return false;
-        if (pivotRow && row < pivotRow) return false;
-        return f.value.trim().toUpperCase() === code;
-    });
+            primaryField   = this.findHighlightInWindow(leg2Fields, true);
+            secondaryField = this.findHighlightInWindow(leg1Fields, true);
 
-    if (!matchingCodeField) { 
-        console.log(`  ⚠ no match for first_${key}_port code "${code}"`); 
-        continue; 
-    }
-
-    const rowMatch = matchingCodeField.name.match(/^SP(\d+)_port_code$/);
-    const rowNum   = parseInt(rowMatch[1], 10);
-
-    // Get this row's port_name field.
-    const targetField = document.querySelector(
-        `input[name="SP${rowNum}_port_name"]`
-    );
-
-    if (!targetField) continue;
-
-    // Get the port_name field directly above this row (for comparison).
-    // NOTE: this means "previous in the scan's own order", not
-    // "previous row number" — once a full-bound route rotates to
-    // start at the pivot row, the true adjacent port for the row
-    // right after the wrap is the LAST row before the pivot, not the
-    // row with the next-lowest number.
-    const targetIndex = portNameFields.indexOf(targetField);
-    const aboveField = targetIndex > 0 ? portNameFields[targetIndex - 1] : null;
-
-    if (!aboveField || !aboveField.value.trim()) {
-        console.log(`  ⚠ no port above SP${rowNum} — skipping priority highlight`);
-        continue;
-    }
-
-    const currentCat = this.getPortCategory(targetField.value);
-    const aboveCat   = this.getPortCategory(aboveField.value);
-
-    console.log(`  first_${key}_port: SP${rowNum} is ${currentCat}, above is ${aboveCat}`);
-
-    // Only highlight if it's a genuine category entry (not OTHER,
-    // and not the same category as the row above it — this is also
-    // what makes a Canada→USA (or USA→Canada) step a non-event, since
-    // both resolve to the same "USA" category).
-    if (currentCat === "OTHER" || currentCat === aboveCat) {
-        console.log(`  ⚠ not a valid entry transition — skipping`);
-        continue;
-    }
-
-    this.applyHighlight(targetField);
-    console.log(`🟡 Priority match: SP${rowNum}_port_name via first_${key}_port`);
-    return; // priority match found — skip the generic scan entirely
-    }
-
-        if (portNameFields.length === 0) {
-            console.warn("⚠ No SP*_port_name fields found");
-            return;
+            if (!primaryField && !secondaryField) primaryField = portNameFields[0];
+        } else {
+            primaryField = this.findHighlightInWindow(portNameFields, biasFirst) || portNameFields[0];
         }
 
-        // ── Generic scan: collect every valid category-change candidate ──
-        // Because Canada and USA share one category, this loop naturally
-        // highlights whichever of the two is entered FIRST (Canada, in a
-        // route like HKG → CANADA → USA) since the row immediately after
-        // it shares the same category and is skipped as "not a change."
-        const candidates = [];
-        console.log(`🔎 Scanning ${portNameFields.length} ports, bias: ${biasFirst ? "FIRST" : "LAST"}`);
+        if (primaryField) this.applyHighlight(primaryField);
+        if (secondaryField && secondaryField !== primaryField) this.applyHighlight(secondaryField);
 
-        for (let i = 1; i < portNameFields.length; i++) {
-            const current = portNameFields[i];
-            const above   = portNameFields[i - 1];
-
-            if (!current.value.trim() || !above.value.trim()) continue;
-
-            const currentCat = this.getPortCategory(current.value);
-            const aboveCat   = this.getPortCategory(above.value);
-
-            if (currentCat === "OTHER") continue; // leaving a category never counts
-            if (currentCat !== aboveCat) {
-                candidates.push({
-                    field: current,
-                    category: currentCat,
-                    rank: this.CATEGORY_RANK[currentCat]
-                });
-            }
-        }
-
-        let highlightField = null;
-
-        if (candidates.length > 0) {
-            // Pick the best-ranked category; if several candidates tie
-            // for best rank, pick first or last depending on direction.
-            const bestRank     = Math.min(...candidates.map(c => c.rank));
-            const topCandidates = candidates.filter(c => c.rank === bestRank);
-            const chosen = biasFirst ? topCandidates[0] : topCandidates[topCandidates.length - 1];
-            highlightField = chosen.field;
-            console.log(`🏆 Chosen: ${highlightField.name}`);
-        }
-
-        // Fallback: always highlight something — default to SP001.
-        if (!highlightField) highlightField = portNameFields[0];
-
-        if (highlightField) this.applyHighlight(highlightField);
-        console.log(`🟡 Highlighted: ${highlightField?.name} (${highlightField?.value})`);
+        console.log(`🟡 Primary: ${primaryField?.name} (${primaryField?.value})` +
+            (secondaryField ? `, Secondary: ${secondaryField.name} (${secondaryField.value})` : ""));
 
         // Exposed so other features (e.g. vessel recommendation) can
         // know which port is currently highlighted without re-running
-        // this whole scan themselves.
-        this.currentHighlightField = highlightField || null;
+        // this whole scan themselves. Only the primary (leg 2, or the
+        // whole-route result) is exposed here — that's the one that
+        // matters for "what port are we at now" downstream.
+        this.currentHighlightField = primaryField || null;
     },
 
     init() {
