@@ -12,15 +12,19 @@
 //  those don't do anything useful in a single-line input.
 //
 //  Tab is also restricted, forming a forced cycle between just
-//  arrival_date and depart_date — this does NOT rely on the
-//  browser's own tab order, since Tradetech's actual tab order
+//  arrival_date and depart_date on SP rows — this does NOT rely on
+//  the browser's own tab order, since Tradetech's actual tab order
 //  doesn't reliably land where you'd expect:
 //    Tab        on arrival_date (row N)   → depart_date   (row N)
 //    Tab        on depart_date  (row N)   → arrival_date  (row N+1)
 //    Shift+Tab  on depart_date  (row N)   → arrival_date  (row N)
 //    Shift+Tab  on arrival_date (row N)   → depart_date   (row N-1)
+//  SV rows get the SAME cycle between start_voyage/depart_date, but
+//  only when the "Tab: Voyage → Depart" Custom Rule is ON (default) —
+//  OFF keeps Tab in the same column instead (see handleTab()'s own
+//  comment for that shape).
 //  Every other field is left completely alone — normal browser tab
-//  order applies everywhere except this cycle.
+//  order applies everywhere except these cycles.
 //
 //  Every jump also selects the destination field's full text (like
 //  landing on a cell in a spreadsheet) — so you can start typing
@@ -106,16 +110,35 @@ const KeyboardFieldNav = {
     //   Shift+Tab  on depart_date  (row N)   → arrival_date  (row N)
     //   Shift+Tab  on arrival_date (row N)   → depart_date   (row N-1)
     //
-    // SV rows (Vessels tab) get a simpler rule instead: Tab on
-    // start_voyage or depart_date just stays in that same column,
+    // SV rows (Vessels tab): togglable via the "Tab: Voyage → Depart"
+    // Custom Rule. ON gives start_voyage/depart_date the same forced
+    // same-row-then-next-row cycle as SP's arrival/depart pair below.
+    // OFF (the original behavior) keeps Tab in that same column,
     // next/previous row — like ArrowDown/ArrowUp — rather than following
     // Tradetech's native tab order sideways into One-Off/Skipped Ports.
     //
     // Every other field is left alone — normal browser tab order.
     handleTab(prefix, row, width, rowStr, field, event) {
         if (prefix === "SV") {
-            if (field === "start_voyage" || field === "depart_date") {
+            if (field !== "start_voyage" && field !== "depart_date") return;
+
+            if (!CustomRules.isEnabled("tabStartVoyageToDepart")) {
                 this.moveVertical(prefix, row, width, field, event.shiftKey ? -1 : 1, event);
+                return;
+            }
+
+            if (event.shiftKey) {
+                if (field === "depart_date") {
+                    this.jumpToField(prefix, rowStr, "start_voyage", event);
+                } else {
+                    this.jumpToVesselRowField(rowStr, -1, "depart_date", event);
+                }
+            } else {
+                if (field === "start_voyage") {
+                    this.jumpToField(prefix, rowStr, "depart_date", event);
+                } else {
+                    this.jumpToVesselRowField(rowStr, 1, "start_voyage", event);
+                }
             }
             return;
         }
@@ -166,12 +189,32 @@ const KeyboardFieldNav = {
 
     // Same as jumpToField, but for crossing into a DIFFERENT row
     // number (used for depart_date → next row's arrival_date, and the
-    // Shift+Tab reverse). Preserves zero-padding via `width`.
+    // Shift+Tab reverse). Preserves zero-padding via `width`. SP-only —
+    // nothing ever physically reorders port rows, so plain row+delta
+    // arithmetic always matches visual order there (see moveVertical()'s
+    // own comment on the same distinction).
     jumpToRowField(prefix, row, width, targetField, event) {
         if (row < 1) return; // no such row — leave default tab alone
 
         const rowStr = String(row).padStart(width, "0");
         this.jumpToField(prefix, rowStr, targetField, event);
+    },
+
+    // SV equivalent of jumpToRowField — walks actual on-page row
+    // position (getVesselRowsInVisualOrder()) instead of row+delta
+    // arithmetic, same reason moveVerticalVisual() does: rearrange-
+    // vessels.js can physically reorder rows while keeping their field
+    // names attached, so ascending SV-number stops matching visual
+    // order after that.
+    jumpToVesselRowField(currentRowStr, delta, targetField, event) {
+        const order = this.getVesselRowsInVisualOrder();
+        const idx = order.indexOf(currentRowStr);
+        if (idx === -1) return;
+
+        const targetIdx = idx + delta;
+        if (targetIdx < 0 || targetIdx >= order.length) return; // edge of the table
+
+        this.jumpToField("SV", order[targetIdx], targetField, event);
     },
 
     // True if the caret is sitting at the very start of the field with

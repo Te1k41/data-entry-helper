@@ -22,6 +22,12 @@ const CustomRules = {
             default:     true
         },
         {
+            id:          "tabStartVoyageToDepart",
+            label:       "Tab: Voyage → Depart",
+            description: "ON: Tab on a vessel's Start Voyage jumps straight to that same row's Depart Date (and back with Shift+Tab), same forced cycle SP rows already do for arrival/depart. OFF (the original behavior): Tab on either field just moves to the next/previous row in the same column instead.",
+            default:     true
+        },
+        {
             id:          "skipDuplicateCheckOnNegativeIncrement",
             label:       "Allow same-voyage duplicates",
             description: "When the page's \"voyage_increment_by\" is negative, Duplicate Vessel intentionally reuses the same voyage number on purpose — don't flag those rows as a duplicate/one-off problem.",
