@@ -91,11 +91,14 @@ flowchart LR
   features_notes_js["features/notes.js"] --> features_notes_sidebar_js["features/notes-sidebar.js"]
   features_notes_js["features/notes.js"] --> main_js["main.js"]
   features_port_date_order_check_js["features/port-date-order-check.js"] --> main_js["main.js"]
+  features_port_highlighting_js["features/port-highlighting.js"] --> features_insert_port_js["features/insert-port.js"]
   features_port_highlighting_js["features/port-highlighting.js"] --> features_port_no_date_js["features/port-no-date.js"]
   features_port_highlighting_js["features/port-highlighting.js"] --> features_schedule_capture_relay_js["features/schedule-capture-relay.js"]
   features_port_highlighting_js["features/port-highlighting.js"] --> features_vessel_recommendation_js["features/vessel-recommendation.js"]
   features_port_highlighting_js["features/port-highlighting.js"] --> main_js["main.js"]
   features_port_name_reminder_js["features/port-name-reminder.js"] --> main_js["main.js"]
+  features_port_no_date_js["features/port-no-date.js"] --> features_insert_port_js["features/insert-port.js"]
+  features_port_no_date_js["features/port-no-date.js"] --> features_port_highlighting_js["features/port-highlighting.js"]
   features_port_no_date_js["features/port-no-date.js"] --> main_js["main.js"]
   features_rearrange_vessels_js["features/rearrange-vessels.js"] --> features_schedule_capture_relay_js["features/schedule-capture-relay.js"]
   features_rearrange_vessels_js["features/rearrange-vessels.js"] --> main_js["main.js"]
@@ -130,6 +133,7 @@ flowchart LR
   main_js["main.js"] --> features_schedule_cascade_js["features/schedule-cascade.js"]
   main_js["main.js"] --> features_duplicate_vessel_js["features/duplicate-vessel.js"]
   main_js["main.js"] --> features_keyboard_navigation_js["features/keyboard-navigation.js"]
+  main_js["main.js"] --> features_port_highlighting_js["features/port-highlighting.js"]
   main_js["main.js"] --> features_voyage_step_buttons_js["features/voyage-step-buttons.js"]
   utils_banner_js["utils/banner.js"] --> features_schedule_cascade_js["features/schedule-cascade.js"]
   utils_banner_js["utils/banner.js"] --> features_upload_proof_relay_js["features/upload-proof-relay.js"]
@@ -257,9 +261,9 @@ flowchart LR
 | features/notes-sidebar.js | NotesSidebar | features/notes.js, main.js |
 | features/notes.js | NotesDateReplacement | features/notes-sidebar.js, main.js |
 | features/port-date-order-check.js | PortDateOrderCheck | main.js |
-| features/port-highlighting.js | PortHighlighting | features/port-no-date.js, features/schedule-capture-relay.js, features/vessel-recommendation.js, main.js |
+| features/port-highlighting.js | PortHighlighting | features/insert-port.js, features/port-no-date.js, features/schedule-capture-relay.js, features/vessel-recommendation.js, main.js |
 | features/port-name-reminder.js | PortNameReminder | main.js |
-| features/port-no-date.js | DetectPortNoDate | main.js |
+| features/port-no-date.js | DetectPortNoDate | features/insert-port.js, features/port-highlighting.js, main.js |
 | features/rearrange-vessels.js | RearrangeVessels | features/schedule-capture-relay.js, main.js |
 | features/rename-toggle-relay.js | RenameToggle | rename-toggle-init-relay.js |
 | features/resize-toggle.js | ResizeToggleOff | main.js |
@@ -278,7 +282,7 @@ flowchart LR
 | features/vessel-to-be-announced.js | VesselTBA | main.js |
 | features/voyage-direction.js | VDirection | main.js |
 | features/voyage-step-buttons.js | VoyageStepButtons | main.js |
-| main.js | syncingDepth, beginSync, endSync, isSyncing, FEATURES, runFeature | features/date-step-buttons.js, features/fix-vessel-dates.js, features/insert-port.js, features/live-check.js, features/date-syncing.js, features/schedule-cascade.js, features/duplicate-vessel.js, features/keyboard-navigation.js, features/voyage-step-buttons.js |
+| main.js | syncingDepth, beginSync, endSync, isSyncing, FEATURES, runFeature | features/date-step-buttons.js, features/fix-vessel-dates.js, features/insert-port.js, features/live-check.js, features/date-syncing.js, features/schedule-cascade.js, features/duplicate-vessel.js, features/keyboard-navigation.js, features/port-highlighting.js, features/voyage-step-buttons.js |
 | rename-toggle-init-relay.js | - | - |
 | utils/banner.js | activeWarnings, showBanner, removeBanner, SUCCESS_GAP, getStackedBannerTop, getSuccessBannerTop, repositionStackedBanners, buildSuccessStyle, successBannerTimer, removeSuccessBanner, buildInfoStyle, INFO_BANNER_TEXT_SHADOW, removeInfoBanner, setInfoBanner, getSuggestionBannerTop, buildSuggestionStyle, removeSuggestionBanner, setSuggestionBanner, showTemporaryBanner, BANNER_STYLE, setWarning, WARNING_KEY_ALWAYS_SHOW_RULE, shouldShowWarning, renderWarnings, showCombinedBanner, ALL_BANNER_IDS, HIDEABLE_BANNER_IDS, BANNER_ALWAYS_SHOW_RULE, notificationsHidden, applyNotificationVisibility, toggleNotificationVisibility, createNotificationToggle | features/schedule-cascade.js, features/upload-proof-relay.js, features/validation.js, features/vessel-recommendation.js, features/awr-audit-relay.js, features/awr-flag.js, features/duplicate-vessel.js, features/insert-port.js, features/live-check.js, features/rearrange-vessels.js, utils/toolbar.js, features/notes-sidebar.js, features/arrival-depart-order-check.js, features/duplicate-vessel-check.js, features/last-foreign-port-check.js, features/port-date-order-check.js, features/port-no-date.js, features/vessel-no-date.js, features/custom-rules-settings.js |
 | utils/button.js | createButton, isDragging, didDrag, startX | features/rename-toggle-relay.js, utils/toolbar.js |

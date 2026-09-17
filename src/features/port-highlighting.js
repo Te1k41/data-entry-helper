@@ -6,6 +6,11 @@
 //  first_us_port / first_eu_port fields first; falls back
 //  to a generic scan of every port-to-port transition if
 //  no priority match is found.
+//
+//  A "full bound" service (no -N/-S/-E/-W suffix on the service
+//  code) still has a direction — it's encoded on SP001_port_key
+//  instead (e.g. "NEES" = North-End + East-Start). See
+//  isDirectionalService()/parsePortKeyDirections() below.
 // ─────────────────────────────────────────────────────
 const PortHighlighting = {
 
@@ -70,32 +75,83 @@ const PortHighlighting = {
         return "OTHER";
     },
 
+    // Parses SP001_port_key into its Start/End compass directions.
+    // Each 2-character chunk is [DIRECTION][S|E] — the letter is which
+    // end of the route it marks, not the compass direction itself
+    // (that's the first character). E.g. "NEES" is chunks "NE" (North,
+    // End) + "ES" (East, Start): the route starts heading East and
+    // ends heading North. A service can carry up to 2 such chunks (one
+    // Start, one End) — a bare 2-character key names just one of them.
+    // Returns null if the string doesn't cleanly parse as one or two
+    // such chunks.
+    parsePortKeyDirections(portKey) {
+        const value = (portKey || "").trim().toUpperCase();
+        if (!value || value.length % 2 !== 0 || value.length > 4) return null;
+
+        const directions = {};
+        for (let i = 0; i < value.length; i += 2) {
+            const [compass, marker] = [value[i], value[i + 1]];
+            if (!"NSEW".includes(compass) || !"SE".includes(marker)) return null;
+            if (marker === "S") directions.start = compass;
+            else directions.end = compass;
+        }
+        return (directions.start || directions.end) ? directions : null;
+    },
+
     // Reads the `service` field and checks whether it ends with a
     // compass direction suffix (-N/-S/-E/-W, case-insensitive). This
     // flag decides whether the scan below biases toward the FIRST
     // category-change candidate or the LAST one.
+    //
+    // A "full bound" service (no suffix on the code at all) still has
+    // a real direction — Tradetech just encodes it on SP001_port_key
+    // instead (see parsePortKeyDirections() above). The 2nd/End
+    // direction there is what makes it directional, the same way ANY
+    // of the 4 single-letter suffixes does above — this has never
+    // branched on WHICH compass letter, only whether one exists.
     isDirectionalService() {
         const serviceField = document.querySelector('input[type="text"][name="service"]');
-        if (!serviceField) {
-            console.warn("⚠ Service field not found — defaulting to non-directional");
-            return false;
+        const serviceValue = serviceField ? serviceField.value.trim() : "";
+
+        if (/-[NSEW]$/i.test(serviceValue)) {
+            console.log(`🧭 Service: "${serviceValue}" → directional (suffix)`);
+            return true;
         }
-        const isDirectional = /-[NSEW]$/i.test(serviceField.value.trim());
-        console.log(`🧭 Service: "${serviceField.value}" → directional: ${isDirectional}`);
-        return isDirectional;
+
+        const portKeyField = document.querySelector('input[type="text"][name="SP001_port_key"]');
+        const directions = this.parsePortKeyDirections(portKeyField?.value);
+
+        if (directions?.end) {
+            console.log(`🧭 Full-bound service — SP001_port_key "${portKeyField.value}" → directional (2nd/End direction: ${directions.end})`);
+            return true;
+        }
+
+        console.log(`🧭 Service: "${serviceValue}" → non-directional`);
+        return false;
     },
 
     applyHighlight(field) {
         field.style.outline = this.HIGHLIGHT_STYLE.outline;
         field.style.backgroundColor = this.HIGHLIGHT_STYLE.backgroundColor;
+        field.dataset.ttPortHighlightFlagged = "1";
     },
 
     // Resets styling so re-running the scan doesn't leave stale
-    // highlights on fields that are no longer the chosen one.
+    // highlights on fields that are no longer the chosen one. Only
+    // ever clears fields THIS feature previously flagged (same
+    // self-tagging convention port-no-date.js/validation.js/
+    // vessel-recommendation.js already use) — confirmed real bug: a
+    // blanket clear here was wiping DetectPortNoDate's red "missing
+    // dates" highlight on unrelated rows any time a port_code/service/
+    // first_xx_port field changed anywhere, since PortHighlighting
+    // runs before DetectPortNoDate in main.js's FEATURES order and
+    // both style the same SP*_port_name fields.
     clearAllHighlights(fields) {
         fields.forEach(f => {
+            if (!f.dataset.ttPortHighlightFlagged) return;
             f.style.outline = "";
             f.style.backgroundColor = "";
+            delete f.dataset.ttPortHighlightFlagged;
         });
     },
 
@@ -290,6 +346,7 @@ const PortHighlighting = {
             /^SP\d+_port_name$/.test(name) ||
             /^SP\d+_port_code$/.test(name) ||
             name === "service"             ||
+            name === "SP001_port_key"      || // drives isDirectionalService() for full-bound services
             /^first_(us|eu)_port(_desc)?$/.test(name);
 
         if (!relevant) return;

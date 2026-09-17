@@ -240,6 +240,8 @@ const InsertPort = {
                     endSync();
                 }
                 ArrivalDepartOrderCheck.check();
+                PortHighlighting.run();
+                DetectPortNoDate.check();
             }
         });
 
@@ -264,6 +266,13 @@ const InsertPort = {
         });
 
         ArrivalDepartOrderCheck.check(); // re-run once now that the shift is fully done, instead of mid-shift per field
+        // Same reason — port_code/port_name shift via plain .value (no
+        // change event), so PortHighlighting's highlight and
+        // DetectPortNoDate's red-flag stay on the row's OLD content
+        // unless explicitly re-run here (confirmed real bug: a stale
+        // highlight/flag on a now-blank or wrong-content row).
+        PortHighlighting.run();
+        DetectPortNoDate.check();
     },
 
     handle(_event) {}
@@ -366,6 +375,8 @@ const DeletePort = {
                     endSync();
                 }
                 ArrivalDepartOrderCheck.check();
+                PortHighlighting.run();
+                DetectPortNoDate.check();
             }
         });
 
@@ -390,6 +401,8 @@ const DeletePort = {
         });
 
         ArrivalDepartOrderCheck.check();
+        PortHighlighting.run();
+        DetectPortNoDate.check();
     },
 
     handle(_event) {}
