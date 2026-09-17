@@ -8,9 +8,13 @@
 //  no priority match is found.
 //
 //  A "full bound" service (no -N/-S/-E/-W suffix on the service
-//  code) still has a direction — it's encoded on SP001_port_key
-//  instead (e.g. "NEES" = North-End + East-Start). See
-//  isDirectionalService()/parsePortKeyDirections() below.
+//  code) is really 2 legs run back-to-back. Tradetech marks the
+//  pivot between them on whichever port row's SP*_port_key first
+//  carries an End ("E") marker (e.g. SP003 = "EEWS": the East leg
+//  ENDS here, the West leg STARTs here). Highlighting for that
+//  kind of service is based on that row and everything after it,
+//  the pivot acting as the effective SP001. See
+//  findFullBoundPivotRow()/parsePortKeyDirections() below.
 // ─────────────────────────────────────────────────────
 const PortHighlighting = {
 
@@ -102,32 +106,33 @@ const PortHighlighting = {
     // compass direction suffix (-N/-S/-E/-W, case-insensitive). This
     // flag decides whether the scan below biases toward the FIRST
     // category-change candidate or the LAST one.
-    //
-    // A "full bound" service (no suffix on the code at all) still has
-    // a real direction — Tradetech just encodes it on SP001_port_key
-    // instead (see parsePortKeyDirections() above). The 2nd/End
-    // direction there is what makes it directional, the same way ANY
-    // of the 4 single-letter suffixes does above — this has never
-    // branched on WHICH compass letter, only whether one exists.
     isDirectionalService() {
         const serviceField = document.querySelector('input[type="text"][name="service"]');
         const serviceValue = serviceField ? serviceField.value.trim() : "";
+        const isDirectional = /-[NSEW]$/i.test(serviceValue);
+        console.log(`🧭 Service: "${serviceValue}" → directional: ${isDirectional}`);
+        return isDirectional;
+    },
 
-        if (/-[NSEW]$/i.test(serviceValue)) {
-            console.log(`🧭 Service: "${serviceValue}" → directional (suffix)`);
-            return true;
+    // Full-bound service (no directional suffix): find the pivot row
+    // where the first leg ends. Scans every SP*_port_key field in row
+    // order and returns the row number of the first one whose value
+    // parses with an End ("E") marker — e.g. SP001="ES" (East-Start,
+    // no end, not a pivot), SP003="EEWS" (East-End + West-Start — this
+    // IS the pivot). Returns null if no row carries an End marker
+    // (route has no encoded 2nd leg).
+    findFullBoundPivotRow() {
+        const portKeyFields = Array.from(document.querySelectorAll(
+            'input[type="text"][name^="SP"][name$="_port_key"]'
+        ));
+
+        for (const field of portKeyFields) {
+            const match = field.name.match(/^SP(\d+)_port_key$/);
+            if (!match) continue;
+            const directions = this.parsePortKeyDirections(field.value);
+            if (directions?.end) return parseInt(match[1], 10);
         }
-
-        const portKeyField = document.querySelector('input[type="text"][name="SP001_port_key"]');
-        const directions = this.parsePortKeyDirections(portKeyField?.value);
-
-        if (directions?.end) {
-            console.log(`🧭 Full-bound service — SP001_port_key "${portKeyField.value}" → directional (2nd/End direction: ${directions.end})`);
-            return true;
-        }
-
-        console.log(`🧭 Service: "${serviceValue}" → non-directional`);
-        return false;
+        return null;
     },
 
     applyHighlight(field) {
@@ -174,7 +179,23 @@ const PortHighlighting = {
             console.log(`🔁 Scan limited to ${portNameFields.length} ports (boundary at SP${String(stopRow).padStart(3, "0")})`);
         }
 
-        const biasFirst = this.isDirectionalService();
+        // Full-bound service (no suffix) — restrict the scan to the
+        // pivot row and everything after it, same idea as stopRow but
+        // as a LOWER bound. The pivot's own leg (leg 2) is itself a
+        // one-way run, so treat it as directional too once found.
+        const suffixDirectional = this.isDirectionalService();
+        const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
+
+        if (pivotRow) {
+            portNameFields = portNameFields.filter(f => {
+                const match = f.name.match(/^SP(\d+)_port_name$/);
+                if (!match) return true;
+                return parseInt(match[1], 10) >= pivotRow;
+            });
+            console.log(`🔁 Full-bound pivot at SP${String(pivotRow).padStart(3, "0")} — scan restricted to ${portNameFields.length} port(s) from there down`);
+        }
+
+        const biasFirst = suffixDirectional || !!pivotRow;
 
         // If directional and the first port repeats exactly at the
         // very last row, exclude that last row from the candidate scan
@@ -214,6 +235,7 @@ const PortHighlighting = {
         if (!match) return false;
         const row = parseInt(match[1], 10);
         if (stopRow && row > stopRow) return false;
+        if (pivotRow && row < pivotRow) return false;
         return f.value.trim().toUpperCase() === code;
     });
 
@@ -346,7 +368,7 @@ const PortHighlighting = {
             /^SP\d+_port_name$/.test(name) ||
             /^SP\d+_port_code$/.test(name) ||
             name === "service"             ||
-            name === "SP001_port_key"      || // drives isDirectionalService() for full-bound services
+            /^SP\d+_port_key$/.test(name)  || // drives findFullBoundPivotRow() for full-bound services
             /^first_(us|eu)_port(_desc)?$/.test(name);
 
         if (!relevant) return;
