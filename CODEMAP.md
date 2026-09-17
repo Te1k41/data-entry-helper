@@ -106,6 +106,7 @@ flowchart LR
   features_select_field_on_focus_js["features/select-field-on-focus.js"] --> main_js["main.js"]
   features_service_relay_send_relay_js["features/service-relay-send-relay.js"] --> main_js["main.js"]
   features_tradetech_stars_js["features/tradetech-stars.js"] --> main_js["main.js"]
+  features_upload_proof_relay_js["features/upload-proof-relay.js"] --> features_custom_rules_settings_js["features/custom-rules-settings.js"]
   features_upload_proof_relay_js["features/upload-proof-relay.js"] --> features_schedule_table_scrape_relay_js["features/schedule-table-scrape-relay.js"]
   features_upload_proof_relay_js["features/upload-proof-relay.js"] --> main_js["main.js"]
   features_validation_js["features/validation.js"] --> features_date_syncing_js["features/date-syncing.js"]
@@ -260,7 +261,7 @@ flowchart LR
 | features/select-field-on-focus.js | SelectFieldOnFocus | main.js |
 | features/service-relay-send-relay.js | ServiceRelaySend | main.js |
 | features/tradetech-stars.js | TradetechStars | main.js |
-| features/upload-proof-relay.js | UploadProof | features/schedule-table-scrape-relay.js, main.js |
+| features/upload-proof-relay.js | UploadProof | features/custom-rules-settings.js, features/schedule-table-scrape-relay.js, main.js |
 | features/validation.js | SP001DateValidation | features/date-syncing.js, features/live-check-relay.js, main.js |
 | features/vessel-name-reminder.js | VesselNameReminder | main.js |
 | features/vessel-no-date.js | DetectVesselNoDate | main.js |

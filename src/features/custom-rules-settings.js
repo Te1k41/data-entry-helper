@@ -70,11 +70,24 @@ const CustomRulesSettings = {
         this.renderRules();
     },
 
+    // A rule tied to a feature that doesn't exist in this build (e.g.
+    // "Always show Upload Proof" when upload-proof-relay.js is excluded
+    // from the community edition) is inert there, not just harmless —
+    // showing it invites toggling a setting that does nothing. Filtered
+    // here at render time (a bare `typeof` check, same pattern the
+    // toggle handler below already uses) rather than in the build
+    // script, so the single shared RULES list stays correct for both
+    // editions without needing a build-time transform.
+    isRuleRelevantHere(rule) {
+        if (rule.id === "alwaysShowUploadProof") return typeof UploadProof !== "undefined";
+        return true;
+    },
+
     renderRules() {
         if (!this._list) return;
         this._list.innerHTML = "";
 
-        CustomRules.RULES.forEach(rule => {
+        CustomRules.RULES.filter(rule => this.isRuleRelevantHere(rule)).forEach(rule => {
             const row = document.createElement("div");
             row.style.cssText = "border-top: 1px dashed #000000 !important;";
 
