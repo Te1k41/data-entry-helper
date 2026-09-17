@@ -68,6 +68,12 @@ const CustomRules = {
             label:       "Always show Suggestions",
             description: "Keep the purple vessel-suggestion banner visible even while \"Hide updates\" is on.",
             default:     false
+        },
+        {
+            id:          "enableCtrlDHighlight",
+            label:       "Enable Ctrl+D Highlight",
+            description: "Ctrl+D on a text selection wraps it in a yellow highlight (click it again to remove). This runs on every site, not just Tradetech — this toggle only controls it here, since that's where the settings panel lives. Default ON.",
+            default:     true
         }
     ],
 

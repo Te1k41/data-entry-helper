@@ -111,8 +111,12 @@ function captureContext(range) {
 }
 
 // ── Create on Ctrl+D ────────────────────────────────────────
+// Togglable via Custom Rules on Tradetech only (that's the only place
+// the settings panel exists — CustomRules isn't loaded on other
+// sites, so the typeof guard leaves this always-on everywhere else).
 document.addEventListener("keydown", (event) => {
     if (!(event.ctrlKey && event.key.toLowerCase() === "d")) return;
+    if (typeof CustomRules !== "undefined" && !CustomRules.isEnabled("enableCtrlDHighlight")) return;
 
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
