@@ -2,11 +2,13 @@
 //  FEATURE: SP001 Date Validation
 //  Warns the user (via the shared banner) when SP001's
 //  departure date doesn't match any SV vessel's departure
-//  date, AND blocks Save in that same situation — a record
-//  shouldn't save with its first port not actually basing on
-//  any vessel. Blank SP001 is left alone (nothing to check yet,
-//  same as the warning itself), only a non-blank date with no
-//  match blocks.
+//  date, AND blocks Save in that same situation (togglable —
+//  see the "Block Save on SP001 mismatch" Custom Rule; the
+//  warning/highlight themselves are NOT part of that toggle,
+//  only the hard block is) — a record shouldn't save with its
+//  first port not actually basing on any vessel. Blank SP001 is
+//  left alone (nothing to check yet, same as the warning
+//  itself), only a non-blank date with no match blocks.
 //
 //  The Save BUTTON lives in a different frame than this form
 //  (confirmed live: onclick="parent.fr1.doSave()"). Two things
@@ -43,6 +45,12 @@ const SP001DateValidation = {
     // this session. Each frame access is wrapped individually — one
     // inaccessible/cross-origin frame must not abort checking the rest.
     isSaveBlocked() {
+        // Custom Rule (src/utils/custom-rules.js) — off means never block,
+        // regardless of mismatch state. The warning banner and red
+        // highlight are separate (driven by setWarning() in validate())
+        // and stay up either way; this only gates the hard Save block.
+        if (!CustomRules.isEnabled("blockSaveOnSp001Mismatch")) return false;
+
         if (document.documentElement.dataset[this.MISMATCH_FLAG]) return true;
 
         let siblingFrames;

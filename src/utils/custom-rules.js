@@ -16,6 +16,12 @@ const CustomRules = {
     // to be; the settings panel keeps it collapsed until asked for.
     RULES: [
         {
+            id:          "blockSaveOnSp001Mismatch",
+            label:       "Block Save on SP001 mismatch",
+            description: "Won't let a record save when SP001's departure date doesn't match any vessel's departure date. Turning this off still shows the mismatch warning banner and red highlight — it only stops blocking the Save button itself.",
+            default:     true
+        },
+        {
             id:          "skipDuplicateCheckOnNegativeIncrement",
             label:       "Allow same-voyage duplicates",
             description: "When the page's \"voyage_increment_by\" is negative, Duplicate Vessel intentionally reuses the same voyage number on purpose — don't flag those rows as a duplicate/one-off problem.",

@@ -3,7 +3,11 @@
 //  On page load, finds any stale date already typed into
 //  the notes textarea and swaps it for today's date,
 //  keeping whichever format (slash or bare digits) was
-//  already being used.
+//  already being used. Works line by line, not over the
+//  whole textarea at once — a line that mentions "map" is
+//  left completely alone (its date is a reference, e.g. a
+//  route-map link's own date, not a stale "as of" date this
+//  feature should be rolling forward).
 // ─────────────────────────────────────────────────────
 const NotesDateReplacement = {
 
@@ -43,12 +47,19 @@ const NotesDateReplacement = {
         };
 
         // Replace any bare 6-digit run (062526) and any slash-formatted
-        // date (06/25/26) anywhere in the notes text with today's date,
-        // in the matching format — but only when it's a real date. \b =
-        // word boundary, so this won't partially match inside a longer number.
-        const updated = pvNotes.value
+        // date (06/25/26) with today's date, in the matching format —
+        // but only when it's a real date. \b = word boundary, so this
+        // won't partially match inside a longer number.
+        const replaceDatesInLine = (line) => line
             .replace(/\b\d{6}\b/g, match => isRealDate(match) ? todayNS : match)
             .replace(/\b\d{2}\/\d{2}\/\d{2}\b/g, match => isRealDate(match) ? today : match);
+
+        const MAP_LINE_PATTERN = /map/i;
+
+        const updated = pvNotes.value
+            .split("\n")
+            .map(line => MAP_LINE_PATTERN.test(line) ? line : replaceDatesInLine(line))
+            .join("\n");
 
         // Only write back if something actually changed, to avoid an
         // unnecessary write on every page load. Goes through setFieldValue()
