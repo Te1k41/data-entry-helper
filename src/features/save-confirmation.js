@@ -127,12 +127,23 @@ const SaveConfirmation = {
         return false;
     },
 
+    // Sanitized `service` field value, e.g. "MEDEX-E" — falls back to
+    // "service" if the field is missing/blank so the filename is
+    // never left with an empty segment.
+    getServiceCode(formDoc) {
+        const field = formDoc.querySelector('input[type="text"][name="service"]');
+        const value = field ? field.value.trim() : "";
+        return value ? value.replace(/[^A-Za-z0-9-]/g, "_") : "service";
+    },
+
     // Renders the rotation table onto a canvas and exports it as a
     // PNG "receipt" image — a plain detached <a download> click, no
     // need to insert anything into any document (works regardless of
     // which frame this runs in, and sidesteps the same frameset-body
-    // quirk showOverlay() has to work around).
-    downloadRotationPng(rows) {
+    // quirk showOverlay() has to work around). Filename matches the
+    // {service}-{MMDDYY} convention Tradetech's own downloads already
+    // use (e.g. "MEDEX-E-091826.png"), with a "-receipt" suffix.
+    downloadRotationPng(rows, serviceCode) {
         const ROW_HEIGHT      = 22;
         const HEADER_Y        = 40;
         const PADDING         = 10;
@@ -210,7 +221,8 @@ const SaveConfirmation = {
             const url  = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
-            link.download = `rotation-receipt-${DateUtils.todayMMDDYY().replace(/\//g, "-")}.png`;
+            const dateStamp = DateUtils.todayMMDDYY().replace(/\//g, "");
+            link.download = `${serviceCode || "service"}-${dateStamp}-receipt.png`;
             link.click();
             URL.revokeObjectURL(url);
         }, "image/png");
@@ -226,7 +238,7 @@ const SaveConfirmation = {
     maybeDownloadReceipt(formDoc) {
         if (!CustomRules.isEnabled("downloadRotationReceipt")) return;
         try {
-            this.downloadRotationPng(this.buildRotationRows(formDoc));
+            this.downloadRotationPng(this.buildRotationRows(formDoc), this.getServiceCode(formDoc));
         } catch (err) {
             console.error("❌ Rotation receipt download failed:", err);
         }
@@ -234,7 +246,7 @@ const SaveConfirmation = {
 
     // Injected into window.top so the overlay covers the whole page
     // regardless of which small frame the Save button itself sits in.
-    showOverlay(rows, onConfirm) {
+    showOverlay(rows, serviceCode, onConfirm) {
         let topDoc;
         try {
             topDoc = window.top.document;
@@ -379,7 +391,7 @@ const SaveConfirmation = {
             border: 1px solid #000000 !important;
             cursor: pointer !important;
         `;
-        downloadBtn.addEventListener("click", () => this.downloadRotationPng(rows));
+        downloadBtn.addEventListener("click", () => this.downloadRotationPng(rows, serviceCode));
 
         const actionGroup = topDoc.createElement("div");
         actionGroup.style.cssText = "display: flex !important; gap: 8px !important;";
@@ -513,8 +525,9 @@ const SaveConfirmation = {
             // UI itself couldn't be shown.
             try {
                 const rows = this.buildRotationRows(formDoc);
+                const serviceCode = this.getServiceCode(formDoc);
                 console.log(`💾 Built ${rows.length} rotation row(s) — showing overlay`);
-                this.showOverlay(rows, () => {
+                this.showOverlay(rows, serviceCode, () => {
                     console.log("💾 Confirmed — re-clicking Save for real");
                     this.maybeDownloadReceipt(formDoc); // only on an actual confirm, not Back
                     // A real button.click() — NOT calling button.onclick()
