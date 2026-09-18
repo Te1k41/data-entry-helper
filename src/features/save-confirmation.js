@@ -105,7 +105,7 @@ const SaveConfirmation = {
             background: #ffffff !important;
             border: 2px solid #000000 !important;
             box-shadow: 4px 4px 0px #000000 !important;
-            width: 420px !important;
+            width: 520px !important;
             max-width: 90vw !important;
             max-height: 80vh !important;
             display: flex !important;
@@ -135,12 +135,53 @@ const SaveConfirmation = {
             empty.style.cssText = "color: #666666 !important; padding: 8px 0 !important;";
             list.appendChild(empty);
         } else {
-            rows.forEach(r => {
-                const line = topDoc.createElement("div");
-                line.style.cssText = "padding: 4px 0 !important; border-bottom: 1px dashed #cccccc !important;";
-                line.textContent = `SP${r.row}  ${r.name}  (Arr: ${r.arrival || "—"} / Dep: ${r.depart || "—"})`;
-                list.appendChild(line);
+            const table = topDoc.createElement("table");
+            table.style.cssText = `
+                width: 100% !important;
+                border-collapse: collapse !important;
+                font-family: monospace !important;
+                font-size: 11px !important;
+            `;
+
+            const thead = topDoc.createElement("thead");
+            const headRow = topDoc.createElement("tr");
+            ["Port", "Arrival", "Depart"].forEach(label => {
+                const th = topDoc.createElement("th");
+                th.textContent = label;
+                th.style.cssText = `
+                    text-align: left !important;
+                    padding: 4px 6px !important;
+                    border-bottom: 2px solid #000000 !important;
+                `;
+                headRow.appendChild(th);
             });
+            thead.appendChild(headRow);
+            table.appendChild(thead);
+
+            const tbody = topDoc.createElement("tbody");
+            rows.forEach(r => {
+                const tr = topDoc.createElement("tr");
+
+                const portCell = topDoc.createElement("td");
+                portCell.textContent = `SP${r.row}  ${r.name}`;
+                portCell.style.cssText = "padding: 4px 6px !important; border-bottom: 1px dashed #cccccc !important;";
+
+                const arrivalCell = topDoc.createElement("td");
+                arrivalCell.textContent = r.arrival || "—";
+                arrivalCell.style.cssText = "padding: 4px 6px !important; border-bottom: 1px dashed #cccccc !important;";
+
+                const departCell = topDoc.createElement("td");
+                departCell.textContent = r.depart || "—";
+                departCell.style.cssText = "padding: 4px 6px !important; border-bottom: 1px dashed #cccccc !important;";
+
+                tr.appendChild(portCell);
+                tr.appendChild(arrivalCell);
+                tr.appendChild(departCell);
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+
+            list.appendChild(table);
         }
 
         const footer = topDoc.createElement("div");
