@@ -30,8 +30,8 @@ const CustomRules = {
         {
             id:          "enableFixVesselDates",
             label:       "Enable Fix Vessel Dates",
-            description: "Adds a \"🛠 Fix Vessel Dates\" Tools-panel button that pushes any vessel dated earlier than SP001 forward in weekly steps from the latest vessel date, and bumps its voyage code to match. Off by default — an older feature brought back opt-in rather than always-on.",
-            default:     false
+            description: "Adds a \"🛠 Fix Vessel Dates\" Tools-panel button that pushes any vessel dated earlier than SP001 forward in weekly steps from the latest vessel date, and bumps its voyage code to match.",
+            default:     true
         },
         {
             id:          "tabStartVoyageToDepart",
@@ -49,31 +49,31 @@ const CustomRules = {
             id:          "alwaysShowWarnings",
             label:       "Always show Warnings",
             description: "Keep yellow validation-warning banners (Live Check, AWR, missing dates, mismatches, etc.) visible even while \"Hide updates\" is on. Doesn't cover \"Proof not uploaded\" — that one has its own rule below.",
-            default:     false
+            default:     true
         },
         {
             id:          "alwaysShowUploadProof",
             label:       "Always show Upload Proof",
             description: "Keep the \"Proof not uploaded yet\" reminder visible even while \"Hide updates\" is on — independent of the general Warnings rule above, since this is a reminder to do something, not a data-validation problem.",
-            default:     false
+            default:     true
         },
         {
             id:          "alwaysShowSuccess",
             label:       "Always show Success",
             description: "Keep the green one-off confirmation banner (e.g. \"Vessel Duplicated\", \"Snapshot Saved\") visible even while \"Hide updates\" is on.",
-            default:     false
+            default:     true
         },
         {
             id:          "alwaysShowInfo",
             label:       "Always show Info",
             description: "Keep the blue \"Basing on\" status banner visible even while \"Hide updates\" is on.",
-            default:     false
+            default:     true
         },
         {
             id:          "alwaysShowSuggestions",
             label:       "Always show Suggestions",
             description: "Keep the purple vessel-suggestion banner visible even while \"Hide updates\" is on.",
-            default:     false
+            default:     true
         },
         {
             id:          "enableCtrlDHighlight",
