@@ -207,10 +207,21 @@ const SaveConfirmation = {
             event.preventDefault();
             event.stopImmediatePropagation();
 
-            const rows = this.buildRotationRows(formDoc);
-            this.showOverlay(rows, () => {
+            // Once prevented, the real click is gone for good — if
+            // anything below throws (e.g. window.top access denied),
+            // the click must not be silently swallowed with no overlay
+            // AND no save. Falls back to calling the original handler
+            // directly so Save still happens even if the confirmation
+            // UI itself couldn't be shown.
+            try {
+                const rows = this.buildRotationRows(formDoc);
+                this.showOverlay(rows, () => {
+                    if (typeof button.onclick === "function") button.onclick();
+                });
+            } catch (err) {
+                console.error("❌ Save Confirmation failed — saving without it:", err);
                 if (typeof button.onclick === "function") button.onclick();
-            });
+            }
         }, true);
     },
 
