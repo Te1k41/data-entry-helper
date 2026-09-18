@@ -133,11 +133,38 @@ const SaveConfirmation = {
     // which frame this runs in, and sidesteps the same frameset-body
     // quirk showOverlay() has to work around).
     downloadRotationPng(rows) {
-        const COL_WIDTHS  = [260, 90, 90];
-        const ROW_HEIGHT  = 22;
-        const HEADER_Y    = 40;
-        const PADDING     = 10;
-        const width  = COL_WIDTHS.reduce((a, b) => a + b, 0) + PADDING * 2;
+        const ROW_HEIGHT      = 22;
+        const HEADER_Y        = 40;
+        const PADDING         = 10;
+        const COL_GAP         = 24; // breathing room after the longest port name
+        const DATE_COL_WIDTH  = 90;
+        const PORT_FONT       = "12px monospace";
+        const TITLE_FONT      = "bold 14px monospace";
+        const titleText       = `Port Rotation Receipt — ${DateUtils.todayMMDDYY()}`;
+
+        // Measure first — a canvas with no width/height set yet still
+        // measures text correctly (measureText only needs the font),
+        // so the Port column can be sized to whatever's actually in
+        // it instead of a fixed guess that clips a long port name into
+        // the date columns (confirmed live: "JAWAHARLAL NEHRU (NHAVA
+        // SHEVA), IN..." overlapping Arrival).
+        const measureCanvas = document.createElement("canvas");
+        const measureCtx    = measureCanvas.getContext("2d");
+
+        measureCtx.font = PORT_FONT;
+        const portTexts = rows.map(r => `SP${r.row} ${r.name}`);
+        const portColWidth = Math.max(
+            measureCtx.measureText("Port").width,
+            ...portTexts.map(t => measureCtx.measureText(t).width),
+            150
+        ) + COL_GAP;
+
+        measureCtx.font = TITLE_FONT;
+        const titleWidth = measureCtx.measureText(titleText).width;
+
+        const colWidths  = [portColWidth, DATE_COL_WIDTH, DATE_COL_WIDTH];
+        const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+        const width  = Math.max(tableWidth, titleWidth) + PADDING * 2;
         const height = HEADER_Y + 10 + ROW_HEIGHT * Math.max(rows.length, 1) + PADDING;
 
         const canvas = document.createElement("canvas");
@@ -149,14 +176,14 @@ const SaveConfirmation = {
         ctx.fillRect(0, 0, width, height);
 
         ctx.fillStyle = "#000000";
-        ctx.font = "bold 14px monospace";
-        ctx.fillText(`Port Rotation Receipt — ${DateUtils.todayMMDDYY()}`, PADDING, 20);
+        ctx.font = TITLE_FONT;
+        ctx.fillText(titleText, PADDING, 20);
 
         ctx.font = "bold 12px monospace";
         let x = PADDING;
         ["Port", "Arrival", "Depart"].forEach((label, i) => {
             ctx.fillText(label, x, HEADER_Y);
-            x += COL_WIDTHS[i];
+            x += colWidths[i];
         });
 
         ctx.strokeStyle = "#000000";
@@ -174,7 +201,7 @@ const SaveConfirmation = {
                 let x = PADDING;
                 [`SP${r.row} ${r.name}`, r.arrival || "—", r.depart || "—"].forEach((text, ci) => {
                     ctx.fillText(text, x, y);
-                    x += COL_WIDTHS[ci];
+                    x += colWidths[ci];
                 });
             });
         }
