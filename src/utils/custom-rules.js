@@ -16,6 +16,12 @@ const CustomRules = {
     // to be; the settings panel keeps it collapsed until asked for.
     RULES: [
         {
+            id:          "confirmRotationBeforeSave",
+            label:       "Confirm rotation before Save",
+            description: "Clicking Save shows a full-screen overlay listing the entire port rotation (every non-blank SP row with its arrival/depart dates) before actually saving — \"Back\" cancels, \"Confirm & Save\" proceeds. Default ON.",
+            default:     true
+        },
+        {
             id:          "blockSaveOnSp001Mismatch",
             label:       "Block Save on SP001 mismatch",
             description: "Won't let a record save when SP001's departure date doesn't match any vessel's departure date. Turning this off still shows the mismatch warning banner and red highlight — it only stops blocking the Save button itself.",

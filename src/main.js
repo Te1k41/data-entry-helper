@@ -42,6 +42,7 @@ const FEATURES = [
     NotesSidebar,
     TradetechStars,
     SP001DateValidation,
+    SaveConfirmation,
     DateSyncing,
     ManualEtdHighlight,
     ArrivalDepartOrderCheck,
