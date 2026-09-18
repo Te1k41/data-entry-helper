@@ -64,6 +64,26 @@ function selectFieldSmart(field) {
     }, 0);
 }
 
+// Forces Tradetech's own change/blur-driven recalculation to run for
+// every port/vessel date on the page, not just whichever field
+// happens to be focused. setFieldValue() above only fires input/
+// change — Tradetech's own SP*_arrival_date_diff / SP*_depart_date_diff
+// tracking fields appear to need a real blur to recalculate (confirmed
+// live: the +/- step buttons, which never focus the field they write
+// to, left dates saving 1-2 days off from what was shown). Dispatching
+// a synthetic blur on every date field, regardless of current focus,
+// gives that recalculation a real chance to run before it's relied on
+// — shared by save-confirmation.js (before Save) and schedule-cascade.js
+// (before snapshotting diffs, and after Cascade Continue writes new
+// dates).
+function commitAllDateFields(doc) {
+    doc.querySelectorAll(
+        'input[name^="SP"][name$="_arrival_date"], ' +
+        'input[name^="SP"][name$="_depart_date"], ' +
+        'input[name^="SV"][name$="_depart_date"]'
+    ).forEach(field => field.dispatchEvent(new Event("blur", { bubbles: false })));
+}
+
 // Tradetech keeps a hidden "PV_" duplicate of many fields (its own
 // previous-value tracking) with no listeners of its own — a plain
 // value assignment is all it ever needs, no event dispatch. Repeated

@@ -59,6 +59,15 @@ const ScheduleCascade = {
     },
 
     storeDiffs() {
+    // Tradetech's own SP*_arrival_date_diff/_depart_date_diff fields
+    // can be stale relative to the visible dates (confirmed: the +/-
+    // step buttons never focus the field they write, and Tradetech's
+    // diff recalculation appears to need a real blur) — force it to
+    // run before reading them, so what gets snapshotted reflects the
+    // real current dates, not a leftover value from an earlier
+    // programmatic edit.
+    commitAllDateFields(document);
+
     const sp001Field = document.querySelector('input[name="SP001_arrival_date"]');
     const sp001Date  = sp001Field ? DateUtils.parse(sp001Field.value) : null;
 
@@ -345,6 +354,13 @@ const ScheduleCascade = {
             const targetField = document.querySelector(`input[name="SP${row}_${fieldKind}_date"]`);
             if (targetField) setFieldValue(targetField, DateUtils.format(date));
         }
+
+        // setFieldValue() only fires input/change — Tradetech's own
+        // diff-tracking fields for every date just rewritten need a
+        // real blur to actually recalculate (same fix as storeDiffs()
+        // above), otherwise they're left stale relative to the dates
+        // Cascade Continue just wrote.
+        commitAllDateFields(document);
     } finally {
         this._cascading = false;
     }

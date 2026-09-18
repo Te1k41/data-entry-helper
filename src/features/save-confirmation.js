@@ -340,11 +340,7 @@ const SaveConfirmation = {
             active.blur();
         }
 
-        formDoc.querySelectorAll(
-            'input[name^="SP"][name$="_arrival_date"], ' +
-            'input[name^="SP"][name$="_depart_date"], ' +
-            'input[name^="SV"][name$="_depart_date"]'
-        ).forEach(field => field.dispatchEvent(new Event("blur", { bubbles: false })));
+        commitAllDateFields(formDoc);
     },
 
     init() {
