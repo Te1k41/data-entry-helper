@@ -355,12 +355,13 @@ const ScheduleCascade = {
             if (targetField) setFieldValue(targetField, DateUtils.format(date));
         }
 
-        // setFieldValue() only fires input/change — Tradetech's own
-        // diff-tracking fields for every date just rewritten need a
-        // real blur to actually recalculate (same fix as storeDiffs()
-        // above), otherwise they're left stale relative to the dates
-        // Cascade Continue just wrote.
-        commitAllDateFields(document);
+        // Re-snapshot after writing — this.diffs still holds the OLD
+        // intervals from before Continue ran, so a later Cascade Back/
+        // Continue would chain off stale data otherwise. storeDiffs()
+        // already force-blurs every date field before reading (so
+        // Tradetech's own diff-tracking fields recalculate first), then
+        // rebuilds this.diffs from what's actually on the page now.
+        this.storeDiffs();
     } finally {
         this._cascading = false;
     }
