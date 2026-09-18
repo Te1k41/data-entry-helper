@@ -1,15 +1,16 @@
 // ─────────────────────────────────────────────────────
 //  FEATURE: Date Calculator
 //  Small floating panel toggled from the toolbar — 3 linked
-//  fields (Base date, ± Days, Result date) and a "Solve for"
-//  selector picking which ONE of them is the computed output;
-//  the other 2 are free inputs. Base + ± Days -> Result,
-//  Base + Result -> ± Days, or Result + ± Days -> Base — all
-//  3 directions, picked explicitly rather than inferred from
-//  whichever field was last typed into (Base used to always be
-//  a fixed anchor that could never itself be solved for). Live
-//  as you type, no "Calculate" button, same always-live spirit
-//  as other panels in this codebase.
+//  fields (Base date, ± Days, Result date), no explicit mode
+//  to pick. Editing ANY field marks it "freshest"; whichever
+//  of the OTHER two hasn't been touched in the longest time
+//  is what gets recomputed from the 2 freshest values — like
+//  magnets, the 2 most recently touched fields always win as
+//  the "given" values. All 3 pairwise directions (Base+Offset
+//  ->Result, Base+Result->±Days, Result+±Days->Base) just fall
+//  out of that one rule with no mode switch needed. Live as
+//  you type, no "Calculate" button, same always-live spirit as
+//  other panels in this codebase.
 // ─────────────────────────────────────────────────────
 const DateCalculator = {
     WEEKDAYS: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
@@ -64,10 +65,6 @@ const DateCalculator = {
                 <span>🗓 Date Calc</span>
                 <span id="tt-date-calc-close" style="cursor:pointer;">✕</span>
             </div>
-            <div style="display:flex; align-items:center; gap:4px; margin-bottom:8px;">
-                <span style="color:#666666;">Solve:</span>
-                <div id="tt-date-calc-solve-row" style="display:flex; gap:2px; flex:1;"></div>
-            </div>
             <label style="display:block; margin-bottom:3px;">Base date (MM/DD/YY)</label>
             <div id="tt-date-calc-base-row" style="display:flex; align-items:center; gap:2px; margin-bottom:2px;">
                 <input id="tt-date-calc-base" type="text" style="flex:1; min-width:0; box-sizing:border-box; font-family:monospace; font-size:11px; padding:3px; border:1px solid #000000;">
@@ -91,7 +88,6 @@ const DateCalculator = {
         const resultInput   = panel.querySelector("#tt-date-calc-result");
         const baseWeekday   = panel.querySelector("#tt-date-calc-base-weekday");
         const resultWeekday = panel.querySelector("#tt-date-calc-result-weekday");
-        const solveRow      = panel.querySelector("#tt-date-calc-solve-row");
         const baseRow       = panel.querySelector("#tt-date-calc-base-row");
         const offsetRow     = panel.querySelector("#tt-date-calc-offset-row");
         const resultRow     = panel.querySelector("#tt-date-calc-result-row");
@@ -100,84 +96,49 @@ const DateCalculator = {
 
         baseInput.value = DateUtils.todayMMDDYY();
 
-        // Which ONE field is currently the computed output — the
-        // other 2 are free inputs. Starts on "result" (the original
-        // fixed behavior: Base + ± Days -> Result).
-        let solveFor = "result";
+        // Most-recently-touched first. Starts with "result" last, so
+        // the very first edit to anything (before the user has ever
+        // touched a 2nd field) computes Result — the original default
+        // "add N days" direction — same as before this redesign.
+        let touchOrder = ["base", "offset", "result"];
 
-        const recalc = () => this.recalcAll(fields, solveFor);
-
-        // Whichever field is the solve target becomes read-only (typing
-        // into a value that's about to be overwritten is confusing) and
-        // its own step/Today buttons get disabled — the other 2 fields'
-        // controls stay live.
-        const applySolveForState = () => {
-            baseInput.readOnly     = solveFor === "base";
-            offsetInput.readOnly   = solveFor === "offset";
-            resultInput.readOnly   = solveFor === "result";
-            [baseInput, offsetInput, resultInput].forEach(input => {
-                input.style.background = input.readOnly ? "#f0f0f0" : "#ffffff";
-            });
-            baseButtons.forEach(btn   => btn.disabled = solveFor === "base");
-            offsetButtons.forEach(btn => btn.disabled = solveFor === "offset");
-            resultButtons.forEach(btn => btn.disabled = solveFor === "result");
-            [...baseButtons, ...offsetButtons, ...resultButtons].forEach(btn => {
-                btn.style.opacity = btn.disabled ? "0.35" : "1";
-                btn.style.cursor  = btn.disabled ? "default" : "pointer";
-            });
-            solveRow.querySelectorAll("button").forEach(btn => {
-                const active = btn.dataset.solveFor === solveFor;
-                btn.style.background = active ? "#000000" : "#ffffff";
-                btn.style.color      = active ? "#ffffff" : "#000000";
-            });
+        // Every field stays a normal, always-editable input — no
+        // readOnly lock. Touching (typing into, or stepping) a field
+        // just moves it to the front of touchOrder; whichever field
+        // is now LAST (touched longest ago, or never) is the one
+        // recomputed from the other 2's current values.
+        const touch = (key) => {
+            touchOrder = [key, ...touchOrder.filter(k => k !== key)];
+            const staleField = touchOrder[2];
+            this.recalcAll(fields, staleField);
+            [baseInput, offsetInput, resultInput].forEach(input => input.style.background = "#ffffff");
+            const staleInput = staleField === "base" ? baseInput : staleField === "offset" ? offsetInput : resultInput;
+            staleInput.style.background = "#f0f0f0"; // just a hint which one is currently computed, not a lock
         };
 
-        ["base", "offset", "result"].forEach(key => {
-            const btn = this.makeActionButton(
-                key === "base" ? "Base" : key === "offset" ? "±Days" : "Result",
-                () => { solveFor = key; applySolveForState(); recalc(); }
-            );
-            btn.dataset.solveFor = key;
-            btn.style.flex = "1";
-            solveRow.appendChild(btn);
-        });
-
-        baseInput.addEventListener("input", recalc);
-        offsetInput.addEventListener("input", recalc);
-        resultInput.addEventListener("input", recalc);
+        baseInput.addEventListener("input", () => touch("base"));
+        offsetInput.addEventListener("input", () => touch("offset"));
+        resultInput.addEventListener("input", () => touch("result"));
         panel.querySelector("#tt-date-calc-close").addEventListener("click", () => panel.remove());
 
         // Click-only controls for all 3 fields — same click=±1,
         // Shift+click=±7 convention as DateStepButtons' own [−][+]
-        // pair, so the whole panel works without ever typing. Kept
-        // even on the solve-target field's row (just disabled there
-        // via applySolveForState) so the row layout doesn't jump
-        // around when Solve is switched.
-        const todayBtn = this.makeActionButton("Today", () => {
+        // pair, so the whole panel works without ever typing.
+        baseRow.appendChild(this.makeActionButton("Today", () => {
             baseInput.value = DateUtils.todayMMDDYY();
-            recalc();
-        });
-        const baseMinus = this.makeStepButton("−", n => { this.stepDate(baseInput, -n); recalc(); });
-        const basePlus  = this.makeStepButton("+", n => { this.stepDate(baseInput, n); recalc(); });
-        baseRow.appendChild(todayBtn);
-        baseRow.appendChild(baseMinus);
-        baseRow.appendChild(basePlus);
-        const baseButtons = [todayBtn, baseMinus, basePlus];
+            touch("base");
+        }));
+        baseRow.appendChild(this.makeStepButton("−", n => { this.stepDate(baseInput, -n); touch("base"); }));
+        baseRow.appendChild(this.makeStepButton("+", n => { this.stepDate(baseInput, n); touch("base"); }));
 
-        const offsetMinus = this.makeStepButton("−", n => { this.stepOffset(offsetInput, -n); recalc(); });
-        const offsetPlus  = this.makeStepButton("+", n => { this.stepOffset(offsetInput, n); recalc(); });
-        offsetRow.appendChild(offsetMinus);
-        offsetRow.appendChild(offsetPlus);
-        const offsetButtons = [offsetMinus, offsetPlus];
+        offsetRow.appendChild(this.makeStepButton("−", n => { this.stepOffset(offsetInput, -n); touch("offset"); }));
+        offsetRow.appendChild(this.makeStepButton("+", n => { this.stepOffset(offsetInput, n); touch("offset"); }));
 
-        const resultMinus = this.makeStepButton("−", n => { this.stepDate(resultInput, -n); recalc(); });
-        const resultPlus  = this.makeStepButton("+", n => { this.stepDate(resultInput, n); recalc(); });
-        resultRow.appendChild(resultMinus);
-        resultRow.appendChild(resultPlus);
-        const resultButtons = [resultMinus, resultPlus];
+        resultRow.appendChild(this.makeStepButton("−", n => { this.stepDate(resultInput, -n); touch("result"); }));
+        resultRow.appendChild(this.makeStepButton("+", n => { this.stepDate(resultInput, n); touch("result"); }));
 
-        applySolveForState();
-        recalc();
+        this.recalcAll(fields, touchOrder[2]);
+        resultInput.style.background = "#f0f0f0";
     },
 
     // No valid date yet (empty/unparseable)? Base off today instead
