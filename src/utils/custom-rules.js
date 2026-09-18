@@ -18,14 +18,14 @@ const CustomRules = {
         {
             id:          "confirmRotationBeforeSave",
             label:       "Confirm rotation before Save",
-            description: "Clicking Save shows a full-screen overlay listing the entire port rotation (every non-blank SP row with its arrival/depart dates) before actually saving — \"Back\" cancels, \"Confirm & Save\" proceeds. Default ON.",
-            default:     true
+            description: "Clicking Save shows a full-screen overlay listing the entire port rotation (every non-blank SP row with its arrival/depart dates) before actually saving — \"Back\" cancels, \"Confirm & Save\" proceeds.",
+            default:     false
         },
         {
             id:          "blockSaveOnSp001Mismatch",
             label:       "Block Save on SP001 mismatch",
             description: "Won't let a record save when SP001's departure date doesn't match any vessel's departure date. Turning this off still shows the mismatch warning banner and red highlight — it only stops blocking the Save button itself.",
-            default:     true
+            default:     false
         },
         {
             id:          "enableFixVesselDates",
@@ -37,7 +37,7 @@ const CustomRules = {
             id:          "tabStartVoyageToDepart",
             label:       "Tab: Voyage → Depart",
             description: "ON: Tab on a vessel's Start Voyage jumps straight to that same row's Depart Date (and back with Shift+Tab), same forced cycle SP rows already do for arrival/depart. OFF (the original behavior): Tab on either field just moves to the next/previous row in the same column instead.",
-            default:     false
+            default:     true
         },
         {
             id:          "skipDuplicateCheckOnNegativeIncrement",
@@ -78,14 +78,14 @@ const CustomRules = {
         {
             id:          "enableCtrlDHighlight",
             label:       "Enable Ctrl+D Highlight",
-            description: "Ctrl+D on a text selection wraps it in a yellow highlight (click it again to remove). This runs on every site, not just Tradetech — this toggle only controls it here, since that's where the settings panel lives. Default ON.",
-            default:     true
+            description: "Ctrl+D on a text selection wraps it in a yellow highlight (click it again to remove). This runs on every site, not just Tradetech — this toggle only controls it here, since that's where the settings panel lives.",
+            default:     false
         },
         {
             id:          "enableNotesDateReplacement",
             label:       "Enable Notes Date Auto-Update",
-            description: "On page load, swaps any stale date already typed into the notes textarea for today's date (lines mentioning \"map\" are left alone). Only runs once the SP (port) and SV (vessel) rows have actually loaded. Default ON.",
-            default:     true
+            description: "On page load, swaps any stale date already typed into the notes textarea for today's date (lines mentioning \"map\" are left alone). Only runs once the SP (port) and SV (vessel) rows have actually loaded.",
+            default:     false
         }
     ],
 
