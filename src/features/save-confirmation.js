@@ -9,18 +9,18 @@
 //
 //  The Save BUTTON can live in a different frame than the port
 //  rows (same page/quirk validation.js already documents). This
-//  attaches directly in whichever frame the button itself is
-//  found in (via polling, same shape as validation.js's own
-//  watchSaveButton()), then reads the port rotation cross-frame
-//  (same-origin) from whichever sibling frame actually has the
-//  SP*_port_name fields. The listener is registered on `document`
-//  with capture:true — NOT on the button itself — because a
-//  capture-phase listener on the target element runs in plain
-//  REGISTRATION ORDER same as any other target-phase listener
-//  (the inline onclick="..." attribute was already attached
-//  during page parse, long before this content script runs), so
-//  only a listener on an ANCESTOR actually fires first and can
-//  stop the event before Tradetech's own onclick ever executes.
+//  runs in every frame; whichever one actually has the click reads
+//  the port rotation cross-frame (same-origin) from whichever
+//  sibling frame has the SP*_port_name fields. The listener is
+//  registered on `document` with capture:true, matched by SELECTOR
+//  rather than bound to one found-in-advance element — see init()'s
+//  own comment for why. capture:true on `document` (an ANCESTOR,
+//  not the button itself) is what wins the race against the inline
+//  onclick="..." attribute: a capture-phase listener on the target
+//  element itself would run in plain REGISTRATION ORDER same as any
+//  other target-phase listener, and the onclick attribute was
+//  already attached during page parse, long before this content
+//  script runs — only a listener on an ancestor fires first.
 // ─────────────────────────────────────────────────────
 const SaveConfirmation = {
     SAVE_BUTTON_SELECTOR: 'input[type="button"][value="Save"]',
@@ -193,9 +193,18 @@ const SaveConfirmation = {
         topDoc.body.appendChild(overlay);
     },
 
-    attach(button) {
+    // Delegated on `document` by SELECTOR MATCH, not bound to one
+    // polled-for element reference. This page's frameset is known to
+    // duplicate/recreate elements (see project_tradetech_frameset_
+    // duplication) — a listener attached to one specific button node
+    // found early can end up watching a stale, already-replaced
+    // element while the real, currently-rendered Save button goes
+    // unmonitored. Matching on every click by selector instead means
+    // it doesn't matter which node is live at click time.
+    init() {
         document.addEventListener("click", (event) => {
-            if (event.target !== button) return;
+            const button = event.target.closest?.(this.SAVE_BUTTON_SELECTOR);
+            if (!button) return;
             if (!CustomRules.isEnabled("confirmRotationBeforeSave")) return;
 
             const formDoc = this.findFormDocument();
@@ -223,35 +232,6 @@ const SaveConfirmation = {
                 if (typeof button.onclick === "function") button.onclick();
             }
         }, true);
-    },
-
-    // Polls briefly for the Save button — same shape as
-    // validation.js's watchSaveButton() — since a one-shot check at
-    // document_idle that finds nothing would otherwise never manage
-    // Save for the rest of this page load if it rendered a moment late.
-    watchSaveButton() {
-        const button = document.querySelector(this.SAVE_BUTTON_SELECTOR);
-        if (button) {
-            this.attach(button);
-            return;
-        }
-
-        let attempts = 0;
-        const maxAttempts = 50; // 5s ceiling
-        const timer = setInterval(() => {
-            attempts++;
-            const found = document.querySelector(this.SAVE_BUTTON_SELECTOR);
-            if (found) {
-                clearInterval(timer);
-                this.attach(found);
-                return;
-            }
-            if (attempts >= maxAttempts) clearInterval(timer); // no Save button in this frame — nothing to manage
-        }, 100);
-    },
-
-    init() {
-        this.watchSaveButton();
     },
 
     handle(_event) {}
