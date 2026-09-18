@@ -107,6 +107,7 @@ flowchart LR
   features_resize_toggle_js["features/resize-toggle.js"] --> main_js["main.js"]
   features_save_confirmation_js["features/save-confirmation.js"] --> main_js["main.js"]
   features_schedule_capture_relay_js["features/schedule-capture-relay.js"] --> main_js["main.js"]
+  features_schedule_cascade_js["features/schedule-cascade.js"] --> features_date_step_buttons_js["features/date-step-buttons.js"]
   features_schedule_cascade_js["features/schedule-cascade.js"] --> features_vessel_recommendation_js["features/vessel-recommendation.js"]
   features_schedule_cascade_js["features/schedule-cascade.js"] --> main_js["main.js"]
   features_schedule_preview_tools_relay_js["features/schedule-preview-tools-relay.js"] --> main_js["main.js"]
@@ -132,7 +133,6 @@ flowchart LR
   main_js["main.js"] --> features_fix_vessel_dates_js["features/fix-vessel-dates.js"]
   main_js["main.js"] --> features_insert_port_js["features/insert-port.js"]
   main_js["main.js"] --> features_live_check_js["features/live-check.js"]
-  main_js["main.js"] --> features_date_syncing_js["features/date-syncing.js"]
   main_js["main.js"] --> features_schedule_cascade_js["features/schedule-cascade.js"]
   main_js["main.js"] --> features_duplicate_vessel_js["features/duplicate-vessel.js"]
   main_js["main.js"] --> features_keyboard_navigation_js["features/keyboard-navigation.js"]
@@ -277,7 +277,7 @@ flowchart LR
 | features/resize-toggle.js | ResizeToggleOff | main.js |
 | features/save-confirmation.js | SaveConfirmation | main.js |
 | features/schedule-capture-relay.js | ScheduleCapture | main.js |
-| features/schedule-cascade.js | ScheduleCascade | features/vessel-recommendation.js, main.js |
+| features/schedule-cascade.js | ScheduleCascade | features/date-step-buttons.js, features/vessel-recommendation.js, main.js |
 | features/schedule-preview-tools-relay.js | MARK_DONE_BUTTON_STYLE, createMarkDoneButton, SchedulePreviewTools | main.js |
 | features/schedule-table-scrape-relay.js | ScheduleTableScrape | - |
 | features/select-field-on-focus.js | SelectFieldOnFocus | main.js |
@@ -291,7 +291,7 @@ flowchart LR
 | features/vessel-to-be-announced.js | VesselTBA | main.js |
 | features/voyage-direction.js | VDirection | main.js |
 | features/voyage-step-buttons.js | VoyageStepButtons | main.js |
-| main.js | syncingDepth, beginSync, endSync, isSyncing, FEATURES, runFeature | features/date-step-buttons.js, features/fix-vessel-dates.js, features/insert-port.js, features/live-check.js, features/date-syncing.js, features/schedule-cascade.js, features/duplicate-vessel.js, features/keyboard-navigation.js, features/port-highlighting.js, features/voyage-step-buttons.js |
+| main.js | syncingDepth, beginSync, endSync, isSyncing, FEATURES, runFeature | features/date-step-buttons.js, features/fix-vessel-dates.js, features/insert-port.js, features/live-check.js, features/schedule-cascade.js, features/duplicate-vessel.js, features/keyboard-navigation.js, features/port-highlighting.js, features/voyage-step-buttons.js |
 | rename-toggle-init-relay.js | - | - |
 | utils/banner.js | activeWarnings, showBanner, removeBanner, SUCCESS_GAP, getStackedBannerTop, getSuccessBannerTop, repositionStackedBanners, buildSuccessStyle, successBannerTimer, removeSuccessBanner, buildInfoStyle, INFO_BANNER_TEXT_SHADOW, removeInfoBanner, setInfoBanner, getSuggestionBannerTop, buildSuggestionStyle, removeSuggestionBanner, setSuggestionBanner, showTemporaryBanner, BANNER_STYLE, setWarning, WARNING_KEY_ALWAYS_SHOW_RULE, shouldShowWarning, renderWarnings, showCombinedBanner, ALL_BANNER_IDS, HIDEABLE_BANNER_IDS, BANNER_ALWAYS_SHOW_RULE, notificationsHidden, applyNotificationVisibility, toggleNotificationVisibility, createNotificationToggle | features/schedule-cascade.js, features/upload-proof-relay.js, features/validation.js, features/vessel-recommendation.js, features/awr-audit-relay.js, features/awr-flag.js, features/duplicate-vessel.js, features/insert-port.js, features/live-check.js, features/rearrange-vessels.js, utils/toolbar.js, features/notes-sidebar.js, features/arrival-depart-order-check.js, features/duplicate-vessel-check.js, features/last-foreign-port-check.js, features/port-date-order-check.js, features/port-no-date.js, features/vessel-no-date.js, features/custom-rules-settings.js |
 | utils/button.js | createButton, isDragging, didDrag, startX | features/rename-toggle-relay.js, utils/toolbar.js |

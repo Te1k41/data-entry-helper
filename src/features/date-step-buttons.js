@@ -116,6 +116,7 @@ const DateStepButtons = {
         // typed by hand — so SP001 is deliberately NOT guarded below.
         if (field.name === "SP001_arrival_date" || field.name === "SP001_depart_date") {
             setFieldValue(field, DateUtils.format(next));
+            this.notifyCascade(field);
             return;
         }
 
@@ -138,6 +139,23 @@ const DateStepButtons = {
             this.keepArrivalBeforeDepart(field, next, deltaDays);
         } finally {
             endSync(); // always release the guard, even on error
+        }
+        this.notifyCascade(field);
+    },
+
+    // schedule-cascade.js's Cascade Back/Continue anchor on whichever
+    // SP*_arrival/depart_date field was last REALLY edited, tracked via
+    // its own delegated "change" listener gated on isSyncing() — which
+    // is exactly the guard this file wraps its own write in above, so
+    // a +/- click's own primary field change was silently invisible to
+    // it (unlike a real typed edit, whose change event fires BEFORE
+    // any beginSync() wrapping). Telling it directly here means a step
+    // click counts as valid cascade input the same way typing does,
+    // regardless of FEATURES array order or which guard happened to be
+    // active when the write occurred.
+    notifyCascade(field) {
+        if (typeof ScheduleCascade !== "undefined") {
+            ScheduleCascade.lastEditedField = field.name;
         }
     },
 
