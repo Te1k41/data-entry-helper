@@ -16,6 +16,12 @@ const CustomRules = {
     // to be; the settings panel keeps it collapsed until asked for.
     RULES: [
         {
+            id:          "downloadRotationReceipt",
+            label:       "Download Rotation Receipt",
+            description: "Every time Save is clicked, downloads a PNG image of the whole port rotation table (name + arrival/depart dates) at that moment — a permanent record of what was saved. Independent of \"Confirm rotation before Save\" below — downloads whether or not that one is on (if it's on, the download happens only when you actually click Confirm & Save, not if you Back out).",
+            default:     false
+        },
+        {
             id:          "confirmRotationBeforeSave",
             label:       "Confirm rotation before Save",
             description: "Clicking Save shows a full-screen overlay listing the entire port rotation (every non-blank SP row with its arrival/depart dates) before actually saving — \"Back\" cancels, \"Confirm & Save\" proceeds.",

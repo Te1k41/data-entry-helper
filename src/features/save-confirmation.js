@@ -127,6 +127,84 @@ const SaveConfirmation = {
         return false;
     },
 
+    // Renders the rotation table onto a canvas and exports it as a
+    // PNG "receipt" image — a plain detached <a download> click, no
+    // need to insert anything into any document (works regardless of
+    // which frame this runs in, and sidesteps the same frameset-body
+    // quirk showOverlay() has to work around).
+    downloadRotationPng(rows) {
+        const COL_WIDTHS  = [260, 90, 90];
+        const ROW_HEIGHT  = 22;
+        const HEADER_Y    = 40;
+        const PADDING     = 10;
+        const width  = COL_WIDTHS.reduce((a, b) => a + b, 0) + PADDING * 2;
+        const height = HEADER_Y + 10 + ROW_HEIGHT * Math.max(rows.length, 1) + PADDING;
+
+        const canvas = document.createElement("canvas");
+        canvas.width  = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.fillStyle = "#000000";
+        ctx.font = "bold 14px monospace";
+        ctx.fillText(`Port Rotation Receipt — ${DateUtils.todayMMDDYY()}`, PADDING, 20);
+
+        ctx.font = "bold 12px monospace";
+        let x = PADDING;
+        ["Port", "Arrival", "Depart"].forEach((label, i) => {
+            ctx.fillText(label, x, HEADER_Y);
+            x += COL_WIDTHS[i];
+        });
+
+        ctx.strokeStyle = "#000000";
+        ctx.beginPath();
+        ctx.moveTo(PADDING, HEADER_Y + 6);
+        ctx.lineTo(width - PADDING, HEADER_Y + 6);
+        ctx.stroke();
+
+        ctx.font = "12px monospace";
+        if (rows.length === 0) {
+            ctx.fillText("(no ports entered yet)", PADDING, HEADER_Y + 6 + ROW_HEIGHT);
+        } else {
+            rows.forEach((r, i) => {
+                const y = HEADER_Y + 6 + ROW_HEIGHT * (i + 1);
+                let x = PADDING;
+                [`SP${r.row} ${r.name}`, r.arrival || "—", r.depart || "—"].forEach((text, ci) => {
+                    ctx.fillText(text, x, y);
+                    x += COL_WIDTHS[ci];
+                });
+            });
+        }
+
+        canvas.toBlob(blob => {
+            const url  = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `rotation-receipt-${DateUtils.todayMMDDYY().replace(/\//g, "-")}.png`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }, "image/png");
+    },
+
+    // Independent of the confirmation overlay entirely — the
+    // "Download Rotation Receipt" Custom Rule downloads a receipt
+    // every time Save actually goes through, whether or not "Confirm
+    // rotation before Save" is even on. When it IS on, the caller only
+    // invokes this from the "Confirm & Save" callback (not on Back),
+    // so a cancelled save never produces a receipt for something that
+    // didn't happen.
+    maybeDownloadReceipt(formDoc) {
+        if (!CustomRules.isEnabled("downloadRotationReceipt")) return;
+        try {
+            this.downloadRotationPng(this.buildRotationRows(formDoc));
+        } catch (err) {
+            console.error("❌ Rotation receipt download failed:", err);
+        }
+    },
+
     // Injected into window.top so the overlay covers the whole page
     // regardless of which small frame the Save button itself sits in.
     showOverlay(rows, onConfirm) {
@@ -257,9 +335,27 @@ const SaveConfirmation = {
             padding: 10px 14px !important;
             display: flex !important;
             gap: 8px !important;
-            justify-content: flex-end !important;
+            justify-content: space-between !important;
             border-top: 2px solid #000000 !important;
         `;
+
+        const downloadBtn = topDoc.createElement("button");
+        downloadBtn.type = "button";
+        downloadBtn.textContent = "⬇ Download";
+        downloadBtn.title = "Save this rotation table as a PNG image";
+        downloadBtn.style.cssText = `
+            padding: 6px 12px !important;
+            font-family: monospace !important;
+            font-weight: bold !important;
+            font-size: 11px !important;
+            background: #f0f0f0 !important;
+            border: 1px solid #000000 !important;
+            cursor: pointer !important;
+        `;
+        downloadBtn.addEventListener("click", () => this.downloadRotationPng(rows));
+
+        const actionGroup = topDoc.createElement("div");
+        actionGroup.style.cssText = "display: flex !important; gap: 8px !important;";
 
         const backBtn = topDoc.createElement("button");
         backBtn.type = "button";
@@ -292,8 +388,10 @@ const SaveConfirmation = {
             onConfirm();
         });
 
-        footer.appendChild(backBtn);
-        footer.appendChild(confirmBtn);
+        actionGroup.appendChild(backBtn);
+        actionGroup.appendChild(confirmBtn);
+        footer.appendChild(downloadBtn);
+        footer.appendChild(actionGroup);
 
         box.appendChild(header);
         if (warning) box.appendChild(warning);
@@ -365,7 +463,13 @@ const SaveConfirmation = {
             // always apply.
             if (formDoc) this.commitAllFields(formDoc);
 
-            if (!CustomRules.isEnabled("confirmRotationBeforeSave")) return; // let Save proceed — fields already committed above
+            if (!CustomRules.isEnabled("confirmRotationBeforeSave")) {
+                // Overlay is off — but the receipt download is its own
+                // independent toggle and still fires here, right as
+                // Save proceeds uninterrupted.
+                if (formDoc) this.maybeDownloadReceipt(formDoc);
+                return;
+            }
             if (!formDoc) return; // no rotation data found anywhere — never block Save on a page we can't read
 
             // Capture phase on an ANCESTOR (document, not the button
@@ -385,6 +489,7 @@ const SaveConfirmation = {
                 console.log(`💾 Built ${rows.length} rotation row(s) — showing overlay`);
                 this.showOverlay(rows, () => {
                     console.log("💾 Confirmed — re-clicking Save for real");
+                    this.maybeDownloadReceipt(formDoc); // only on an actual confirm, not Back
                     // A real button.click() — NOT calling button.onclick()
                     // directly — so every listener Tradetech has wired to
                     // this button fires exactly as it would for a genuine
@@ -394,6 +499,7 @@ const SaveConfirmation = {
                 });
             } catch (err) {
                 console.error("❌ Save Confirmation failed — saving without it:", err);
+                this.maybeDownloadReceipt(formDoc); // save is proceeding here too
                 button.dataset.ttSaveConfirmBypass = "1";
                 button.click();
             }
