@@ -31,17 +31,6 @@ const DuplicateVesselCheck = {
             delete f.dataset.ttDupVesselFlagged;
         });
 
-        // A negative voyage_increment_by means Duplicate Vessel is
-        // deliberately reusing the same voyage number on purpose — see
-        // CustomRules (src/utils/custom-rules.js). Skip the
-        // whole check rather than trying to exempt just the rows
-        // Duplicate created, since there's no reliable way from here to
-        // tell those apart from a genuine accidental duplicate anyway.
-        if (CustomRules.isEnabled("skipDuplicateCheckOnNegativeIncrement") && VoyageUtils.getIncrement() < 0) {
-            setWarning("duplicate-vessel", null);
-            return;
-        }
-
         // Group every row that has BOTH a Lloyds code and a voyage
         // number by the exact "code|voyage" pair.
         const groups = new Map();

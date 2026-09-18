@@ -65,11 +65,12 @@ const LiveCheck = {
     // skipDuplicateCheckOnNegativeIncrement rule is on AND the page's
     // voyage increment is negative (CustomRules).
     checkDuplicateImos(add) {
-        // A negative voyage_increment_by means Duplicate Vessel is
-        // deliberately reusing the same voyage number on purpose — see
-        // CustomRules (src/utils/custom-rules.js). Same
-        // exemption duplicate-vessel-check.js applies for the same
-        // reason.
+        // A negative voyage_increment_by means the same IMO is
+        // deliberately reusing the same voyage on purpose — see
+        // CustomRules (src/utils/custom-rules.js). This exemption is
+        // scoped to THIS one-off check only — duplicate-vessel-check.js's
+        // separate code+voyage safety net always runs regardless of
+        // increment sign, on purpose.
         if (CustomRules.isEnabled("skipDuplicateCheckOnNegativeIncrement") && VoyageUtils.getIncrement() < 0) {
             return;
         }

@@ -48,7 +48,7 @@ const CustomRules = {
         {
             id:          "skipDuplicateCheckOnNegativeIncrement",
             label:       "Allow same-voyage duplicates",
-            description: "When the page's \"voyage_increment_by\" is negative, Duplicate Vessel intentionally reuses the same voyage number on purpose — don't flag those rows as a duplicate/one-off problem.",
+            description: "When the page's \"voyage_increment_by\" is negative, a repeated IMO is intentionally reusing the same voyage on purpose — skips Live Check's \"One-off\" duplicate-IMO warning in that case. Only affects that one-off check; the separate code+voyage Duplicate Vessel safety net always runs regardless of increment sign.",
             default:     false
         },
         {
