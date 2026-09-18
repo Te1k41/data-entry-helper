@@ -323,6 +323,30 @@ const SaveConfirmation = {
     // element while the real, currently-rendered Save button goes
     // unmonitored. Matching on every click by selector instead means
     // it doesn't matter which node is live at click time.
+    // A field the user is still typing in hasn't fired its "change" yet
+    // — blurring it BEFORE Save forces any pending onchange handler
+    // (date reformatting, insert-port.js's async port-name autofill
+    // trigger, Tradetech's own diff recalculation) to actually commit.
+    // Also covers every OTHER date field, not just whichever one
+    // happens to be focused — the +/- step buttons never focus the
+    // field they write to at all (setFieldValue only fires input/
+    // change), so ANY date touched that way can be sitting on a stale
+    // diff (see checkDiffMismatch()). This is a correctness fix, not a
+    // confirmation-UI nicety — it must run every time Save is clicked,
+    // whether or not the confirmation overlay itself is turned on.
+    commitAllFields(formDoc) {
+        const active = formDoc.activeElement;
+        if (active && typeof active.blur === "function" && active !== formDoc.body) {
+            active.blur();
+        }
+
+        formDoc.querySelectorAll(
+            'input[name^="SP"][name$="_arrival_date"], ' +
+            'input[name^="SP"][name$="_depart_date"], ' +
+            'input[name^="SV"][name$="_depart_date"]'
+        ).forEach(field => field.dispatchEvent(new Event("blur", { bubbles: false })));
+    },
+
     init() {
         document.addEventListener("click", (event) => {
             const button = event.target.closest?.(this.SAVE_BUTTON_SELECTOR);
@@ -337,9 +361,15 @@ const SaveConfirmation = {
                 return;
             }
 
-            if (!CustomRules.isEnabled("confirmRotationBeforeSave")) return;
-
             const formDoc = this.findFormDocument();
+
+            // Runs regardless of the Custom Rule below — committing
+            // pending field state isn't part of the "show a review
+            // screen" preference, it's a correctness fix that must
+            // always apply.
+            if (formDoc) this.commitAllFields(formDoc);
+
+            if (!CustomRules.isEnabled("confirmRotationBeforeSave")) return; // let Save proceed — fields already committed above
             if (!formDoc) return; // no rotation data found anywhere — never block Save on a page we can't read
 
             // Capture phase on an ANCESTOR (document, not the button
@@ -355,34 +385,6 @@ const SaveConfirmation = {
             // directly so Save still happens even if the confirmation
             // UI itself couldn't be shown.
             try {
-                // A field the user is still typing in hasn't fired its
-                // "change" yet — blurring it here BEFORE reading values
-                // forces any pending onchange handler (date reformatting,
-                // insert-port.js's async port-name autofill trigger, etc.)
-                // to actually commit, so the table reflects what the page
-                // will really save, not whatever's visually sitting in an
-                // uncommitted field.
-                const active = formDoc.activeElement;
-                if (active && typeof active.blur === "function" && active !== formDoc.body) {
-                    active.blur();
-                }
-
-                // Covers every OTHER date field too, not just whichever
-                // one happens to be focused — the +/- step buttons never
-                // focus the field they write to at all (they only fire
-                // input/change via setFieldValue), so ANY date on the
-                // page touched that way, not only the currently-active
-                // one, can be sitting on a stale diff (see
-                // checkDiffMismatch()'s own comment). Forcing a blur on
-                // all of them here gives Tradetech's own recalculation
-                // a real chance to run for every row before Save, not
-                // just the last one someone happened to click into.
-                formDoc.querySelectorAll(
-                    'input[name^="SP"][name$="_arrival_date"], ' +
-                    'input[name^="SP"][name$="_depart_date"], ' +
-                    'input[name^="SV"][name$="_depart_date"]'
-                ).forEach(field => field.dispatchEvent(new Event("blur", { bubbles: false })));
-
                 const rows = this.buildRotationRows(formDoc);
                 console.log(`💾 Built ${rows.length} rotation row(s) — showing overlay`);
                 this.showOverlay(rows, () => {
