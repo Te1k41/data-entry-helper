@@ -84,7 +84,7 @@ const CustomRules = {
         {
             id:          "enableNotesDateReplacement",
             label:       "Enable Notes Date Auto-Update",
-            description: "On page load, swaps any stale date already typed into the notes textarea for today's date (lines mentioning \"map\" are left alone). Only ever runs on the schedule_detailsB.pl page. Default ON.",
+            description: "On page load, swaps any stale date already typed into the notes textarea for today's date (lines mentioning \"map\" are left alone). Only runs once the SP (port) and SV (vessel) rows have actually loaded. Default ON.",
             default:     true
         }
     ],

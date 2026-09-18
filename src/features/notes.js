@@ -11,10 +11,17 @@
 // ─────────────────────────────────────────────────────
 const NotesDateReplacement = {
 
-    URL_PREFIX: "https://www.tradetech.net/cgi/inframe/cgi/u/schedule_detailsB.pl?",
-
     init() {
-        if (!location.href.startsWith(this.URL_PREFIX)) return;
+        // URL-string matching broke this outright (the live URL never
+        // actually matched the assumed prefix) — check the page's own
+        // content instead: only run once the SP (port) and SV (vessel)
+        // rows have actually loaded. Neither present means this isn't
+        // really the schedule-edit form yet (or a frame without it) —
+        // leave the notes field alone rather than guess.
+        const hasPortFields   = document.querySelector('input[name^="SP"][name$="_port_name"]');
+        const hasVesselFields = document.querySelector('input[name^="SV"][name$="_vessel_name"]');
+        if (!hasPortFields || !hasVesselFields) return;
+
         if (!CustomRules.isEnabled("enableNotesDateReplacement")) return;
 
         const pvNotes = document.querySelector('textarea[name="notes"]');
