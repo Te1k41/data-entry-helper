@@ -202,13 +202,33 @@ const SaveConfirmation = {
     // unmonitored. Matching on every click by selector instead means
     // it doesn't matter which node is live at click time.
     init() {
+        console.log(`💾 Save Confirmation armed in frame: ${location.href}`);
+
         document.addEventListener("click", (event) => {
+            // Temporary wide net — logs EVERY input/button click in this
+            // frame regardless of match, so a selector mismatch (wrong
+            // value text, wrong element type, etc.) shows up directly
+            // instead of silently doing nothing.
+            const clicked = event.target.closest?.('input, button');
+            if (clicked) {
+                console.log(`💾 Save Confirmation saw a click: tag=${clicked.tagName} type=${clicked.type} value="${clicked.value}"`);
+            }
+
             const button = event.target.closest?.(this.SAVE_BUTTON_SELECTOR);
             if (!button) return;
-            if (!CustomRules.isEnabled("confirmRotationBeforeSave")) return;
+
+            console.log("💾 Save button matched — checking Custom Rule");
+            if (!CustomRules.isEnabled("confirmRotationBeforeSave")) {
+                console.log("💾 Custom Rule is OFF — letting Save proceed normally");
+                return;
+            }
 
             const formDoc = this.findFormDocument();
-            if (!formDoc) return; // no rotation data found anywhere — never block Save on a page we can't read
+            if (!formDoc) {
+                console.log("💾 No frame with SP*_port_name fields found — letting Save proceed normally");
+                return;
+            }
+            console.log("💾 Found form document — intercepting click");
 
             // Capture phase on an ANCESTOR (document, not the button
             // itself) — this is what actually wins the race against
@@ -224,7 +244,9 @@ const SaveConfirmation = {
             // UI itself couldn't be shown.
             try {
                 const rows = this.buildRotationRows(formDoc);
+                console.log(`💾 Built ${rows.length} rotation row(s) — showing overlay`);
                 this.showOverlay(rows, () => {
+                    console.log("💾 Confirmed — invoking original Save handler");
                     if (typeof button.onclick === "function") button.onclick();
                 });
             } catch (err) {
