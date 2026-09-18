@@ -69,10 +69,58 @@ const SaveConfirmation = {
                 const row     = match[1];
                 const arrival = formDoc.querySelector(`input[name="SP${row}_arrival_date"]`)?.value.trim() || "";
                 const depart  = formDoc.querySelector(`input[name="SP${row}_depart_date"]`)?.value.trim()  || "";
+                const diffMismatch = this.checkDiffMismatch(formDoc, row, arrival, depart);
 
-                return { row, name, arrival, depart };
+                return { row, name, arrival, depart, diffMismatch };
             })
             .filter(Boolean);
+    },
+
+    // SP*_arrival_date_diff / SP*_depart_date_diff are Tradetech's OWN
+    // fields tracking each date as a day-offset from SP001's arrival
+    // date (confirmed via schedule-cascade.js's applyCascade(), which
+    // reconstructs SP{row}_arrival_date as SP001_arrival_date + the
+    // stored diff). This is exactly the kind of "visual only, not
+    // confirmed" gap reported: the +/- step buttons write the date
+    // field directly (setFieldValue fires input/change), but if
+    // Tradetech's own diff recalculation for that field is driven by
+    // something else (e.g. a real blur, which clicking an adjacent
+    // button never causes since the date field itself never gets
+    // focus), the diff field can go stale — schedule-cascade.js's own
+    // storeDiffs() already had to guard against exactly this ("that's
+    // the sign Tradetech hasn't recalculated it yet"). If the diff
+    // field's value doesn't match what the visible date actually
+    // implies, Tradetech's save may end up using the stale diff
+    // instead of the date on screen — reported as saved dates slipping
+    // 1-2 days off from what was shown before Save.
+    checkDiffMismatch(formDoc, row, arrivalStr, departStr) {
+        const sp001Field = formDoc.querySelector('input[name="SP001_arrival_date"]');
+        const sp001Date  = sp001Field ? DateUtils.parse(sp001Field.value) : null;
+        if (!sp001Date) return false;
+
+        const DAY_MS = 86400000;
+
+        const arrivalDiffField = formDoc.querySelector(`input[name="SP${row}_arrival_date_diff"]`);
+        if (arrivalDiffField?.value.trim() && arrivalStr) {
+            const actualDate = DateUtils.parse(arrivalStr);
+            const storedDiff = parseInt(arrivalDiffField.value.trim(), 10);
+            if (actualDate && !isNaN(storedDiff)) {
+                const expectedDiff = Math.round((actualDate - sp001Date) / DAY_MS);
+                if (storedDiff !== expectedDiff) return true;
+            }
+        }
+
+        const departDiffField = formDoc.querySelector(`input[name="SP${row}_depart_date_diff"]`);
+        if (departDiffField?.value.trim() && departStr) {
+            const actualDate = DateUtils.parse(departStr);
+            const storedDiff = parseInt(departDiffField.value.trim(), 10);
+            if (actualDate && !isNaN(storedDiff)) {
+                const expectedDiff = Math.round((actualDate - sp001Date) / DAY_MS);
+                if (storedDiff !== expectedDiff) return true;
+            }
+        }
+
+        return false;
     },
 
     // Injected into window.top so the overlay covers the whole page
@@ -122,6 +170,21 @@ const SaveConfirmation = {
             font-size: 13px !important;
         `;
 
+        const mismatchCount = rows.filter(r => r.diffMismatch).length;
+        let warning = null;
+        if (mismatchCount > 0) {
+            warning = topDoc.createElement("div");
+            warning.textContent = `⚠ ${mismatchCount} port(s) below (highlighted) don't match Tradetech's own saved date offset — the date shown may not be what actually gets saved. Double-check before confirming.`;
+            warning.style.cssText = `
+                padding: 8px 14px !important;
+                background: #ffe9d6 !important;
+                color: #7a3b00 !important;
+                font-size: 10px !important;
+                font-weight: bold !important;
+                border-bottom: 1px solid #cc7a00 !important;
+            `;
+        }
+
         const list = topDoc.createElement("div");
         list.style.cssText = `
             padding: 8px 14px !important;
@@ -161,9 +224,10 @@ const SaveConfirmation = {
             const tbody = topDoc.createElement("tbody");
             rows.forEach(r => {
                 const tr = topDoc.createElement("tr");
+                if (r.diffMismatch) tr.style.cssText = "background: #ffe9d6 !important;";
 
                 const portCell = topDoc.createElement("td");
-                portCell.textContent = `SP${r.row}  ${r.name}`;
+                portCell.textContent = `${r.diffMismatch ? "⚠ " : ""}SP${r.row}  ${r.name}`;
                 portCell.style.cssText = "padding: 4px 6px !important; border-bottom: 1px dashed #cccccc !important;";
 
                 const arrivalCell = topDoc.createElement("td");
@@ -228,6 +292,7 @@ const SaveConfirmation = {
         footer.appendChild(confirmBtn);
 
         box.appendChild(header);
+        if (warning) box.appendChild(warning);
         box.appendChild(list);
         box.appendChild(footer);
         overlay.appendChild(box);
