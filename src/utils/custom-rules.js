@@ -74,6 +74,12 @@ const CustomRules = {
             label:       "Enable Ctrl+D Highlight",
             description: "Ctrl+D on a text selection wraps it in a yellow highlight (click it again to remove). This runs on every site, not just Tradetech — this toggle only controls it here, since that's where the settings panel lives. Default ON.",
             default:     true
+        },
+        {
+            id:          "enableNotesDateReplacement",
+            label:       "Enable Notes Date Auto-Update",
+            description: "On page load, swaps any stale date already typed into the notes textarea for today's date (lines mentioning \"map\" are left alone). Only ever runs on the schedule_detailsB.pl page. Default ON.",
+            default:     true
         }
     ],
 

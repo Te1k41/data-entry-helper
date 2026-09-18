@@ -11,7 +11,12 @@
 // ─────────────────────────────────────────────────────
 const NotesDateReplacement = {
 
+    URL_PREFIX: "https://www.tradetech.net/cgi/inframe/cgi/u/schedule_detailsB.pl?",
+
     init() {
+        if (!location.href.startsWith(this.URL_PREFIX)) return;
+        if (!CustomRules.isEnabled("enableNotesDateReplacement")) return;
+
         const pvNotes = document.querySelector('textarea[name="notes"]');
         if (!pvNotes) return; // no notes field on this page, nothing to do
 
