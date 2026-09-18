@@ -276,6 +276,18 @@ const SaveConfirmation = {
             // directly so Save still happens even if the confirmation
             // UI itself couldn't be shown.
             try {
+                // A field the user is still typing in hasn't fired its
+                // "change" yet — blurring it here BEFORE reading values
+                // forces any pending onchange handler (date reformatting,
+                // insert-port.js's async port-name autofill trigger, etc.)
+                // to actually commit, so the table reflects what the page
+                // will really save, not whatever's visually sitting in an
+                // uncommitted field.
+                const active = formDoc.activeElement;
+                if (active && typeof active.blur === "function" && active !== formDoc.body) {
+                    active.blur();
+                }
+
                 const rows = this.buildRotationRows(formDoc);
                 console.log(`💾 Built ${rows.length} rotation row(s) — showing overlay`);
                 this.showOverlay(rows, () => {
