@@ -4,8 +4,12 @@
 //  listing the entire port rotation before actually saving —
 //  a last look at the whole route so a mistake isn't committed
 //  by reflex. "Back" cancels (Save never runs); "Confirm & Save"
-//  re-invokes the button's own original click handler. Togglable
-//  via the "Confirm rotation before Save" Custom Rule.
+//  fires a real button.click() back at the Save button (marked
+//  with a one-shot bypass flag so it isn't re-intercepted) — not
+//  a direct button.onclick() call, so every listener Tradetech
+//  has wired to it fires exactly as a genuine click would, not
+//  just the inline onclick="..." attribute alone. Togglable via
+//  the "Confirm rotation before Save" Custom Rule.
 //
 //  The Save BUTTON can live in a different frame than the port
 //  rows (same page/quirk validation.js already documents). This
@@ -323,6 +327,16 @@ const SaveConfirmation = {
         document.addEventListener("click", (event) => {
             const button = event.target.closest?.(this.SAVE_BUTTON_SELECTOR);
             if (!button) return;
+
+            // One-shot bypass for the click WE fire back at this exact
+            // button (see the "Confirm & Save" callback below) — without
+            // this, that programmatic click would loop straight back
+            // into this same listener and re-show the overlay forever.
+            if (button.dataset.ttSaveConfirmBypass) {
+                delete button.dataset.ttSaveConfirmBypass;
+                return;
+            }
+
             if (!CustomRules.isEnabled("confirmRotationBeforeSave")) return;
 
             const formDoc = this.findFormDocument();
@@ -356,12 +370,18 @@ const SaveConfirmation = {
                 const rows = this.buildRotationRows(formDoc);
                 console.log(`💾 Built ${rows.length} rotation row(s) — showing overlay`);
                 this.showOverlay(rows, () => {
-                    console.log("💾 Confirmed — invoking original Save handler");
-                    if (typeof button.onclick === "function") button.onclick();
+                    console.log("💾 Confirmed — re-clicking Save for real");
+                    // A real button.click() — NOT calling button.onclick()
+                    // directly — so every listener Tradetech has wired to
+                    // this button fires exactly as it would for a genuine
+                    // user click, not just the inline onclick="..." one.
+                    button.dataset.ttSaveConfirmBypass = "1";
+                    button.click();
                 });
             } catch (err) {
                 console.error("❌ Save Confirmation failed — saving without it:", err);
-                if (typeof button.onclick === "function") button.onclick();
+                button.dataset.ttSaveConfirmBypass = "1";
+                button.click();
             }
         }, true);
     },
