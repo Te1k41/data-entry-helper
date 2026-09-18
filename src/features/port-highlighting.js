@@ -169,7 +169,18 @@ const PortHighlighting = {
     // field, or null if nothing in this window qualifies (caller
     // decides what "nothing found" means — a 2nd leg to check, or the
     // SP001 fallback).
-    findHighlightInWindow(fields, biasFirst) {
+    //
+    // `precedingField`, when given, is the real port immediately
+    // before fields[0] in the WHOLE route (not part of this window,
+    // never itself a candidate) — used only so fields[0] can be
+    // evaluated as a genuine category-change entry. Without this, a
+    // window's own first row can NEVER be flagged (nothing to compare
+    // it against), which is wrong for a full-bound route's pivot row:
+    // confirmed live — a pivot row that itself was the first US port
+    // (Los Angeles) was invisible to leg 2's scan for exactly this
+    // reason, so the whole thing fell through to leg 1, then all the
+    // way back to true SP001 (Singapore) — the wrong port entirely.
+    findHighlightInWindow(fields, biasFirst, precedingField = null) {
         if (fields.length === 0) return null;
 
         const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
@@ -207,8 +218,9 @@ const PortHighlighting = {
 
             // "Above" means previous in THIS window's own order, not
             // previous row number — a leg's window can start mid-route.
+            // Falls back to precedingField when the match IS fields[0].
             const targetIndex = fields.indexOf(targetField);
-            const aboveField  = targetIndex > 0 ? fields[targetIndex - 1] : null;
+            const aboveField  = targetIndex > 0 ? fields[targetIndex - 1] : precedingField;
 
             if (!aboveField || !aboveField.value.trim()) {
                 console.log(`  ⚠ no port above SP${rowNum} in this window — skipping priority highlight`);
@@ -237,11 +249,11 @@ const PortHighlighting = {
         const candidates = [];
         console.log(`🔎 Scanning ${fields.length} ports, bias: ${biasFirst ? "FIRST" : "LAST"}`);
 
-        for (let i = 1; i < fields.length; i++) {
+        for (let i = 0; i < fields.length; i++) {
             const current = fields[i];
-            const above   = fields[i - 1];
+            const above   = i > 0 ? fields[i - 1] : precedingField;
 
-            if (!current.value.trim() || !above.value.trim()) continue;
+            if (!current.value.trim() || !above?.value.trim()) continue;
 
             const currentCat = this.getPortCategory(current.value);
             const aboveCat   = this.getPortCategory(above.value);
@@ -335,7 +347,12 @@ const PortHighlighting = {
             const leg2Fields = portNameFields.filter(f => rowOf(f) >= pivotRow);
             const leg1Fields = portNameFields.filter(f => rowOf(f) <  pivotRow);
 
-            highlightField = this.findHighlightInWindow(leg2Fields, true)
+            // The pivot row itself (leg2Fields[0]) needs to be checked
+            // against the real port right before it — leg1's last row
+            // — not left uncheckable just because it's window-first.
+            const precedingField = leg1Fields[leg1Fields.length - 1] || null;
+
+            highlightField = this.findHighlightInWindow(leg2Fields, true, precedingField)
                 || this.findHighlightInWindow(leg1Fields, true)
                 || portNameFields[0];
         } else {
