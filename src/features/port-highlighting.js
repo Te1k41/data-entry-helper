@@ -135,6 +135,30 @@ const PortHighlighting = {
         return null;
     },
 
+    // Leg 2 has its own End marker too, same as the pivot row's End
+    // marker marks where leg 1 stopped. E.g. pivot SP004="EEWS" (West
+    // leg starts here) — leg 2's own end shows up later as a row whose
+    // key ends with West too, e.g. SP008="WE" (West-End). Scans
+    // forward FROM the pivot for the first row whose port_key carries
+    // an End marker for that SAME compass letter. Returns null if none
+    // found (leg 2's scan window then stays unbounded except by the
+    // ordinary sync boundary, same as before this existed).
+    findLegEndRow(fromRow, compass) {
+        const portKeyFields = Array.from(document.querySelectorAll(
+            'input[type="text"][name^="SP"][name$="_port_key"]'
+        ));
+
+        for (const field of portKeyFields) {
+            const match = field.name.match(/^SP(\d+)_port_key$/);
+            if (!match) continue;
+            const row = parseInt(match[1], 10);
+            if (row < fromRow) continue;
+            const directions = this.parsePortKeyDirections(field.value);
+            if (directions?.end === compass) return row;
+        }
+        return null;
+    },
+
     applyHighlight(field) {
         field.style.outline = this.HIGHLIGHT_STYLE.outline;
         field.style.backgroundColor = this.HIGHLIGHT_STYLE.backgroundColor;
@@ -344,8 +368,22 @@ const PortHighlighting = {
 
         if (pivotRow) {
             const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
-            const leg2Fields = portNameFields.filter(f => rowOf(f) >= pivotRow);
+            let leg2Fields = portNameFields.filter(f => rowOf(f) >= pivotRow);
             const leg1Fields = portNameFields.filter(f => rowOf(f) <  pivotRow);
+
+            // Leg 2 has its own End marker too (e.g. pivot SP004="EEWS"
+            // starts the West leg; SP008="WE" ends it) — stop leg 2's
+            // scan window there instead of letting it run all the way
+            // to the unrelated sync boundary.
+            const pivotKeyField = document.querySelector(`input[name="SP${pivotRow}_port_key"]`);
+            const pivotDirections = this.parsePortKeyDirections(pivotKeyField?.value);
+            if (pivotDirections?.start) {
+                const leg2EndRow = this.findLegEndRow(pivotRow, pivotDirections.start);
+                if (leg2EndRow) {
+                    leg2Fields = leg2Fields.filter(f => rowOf(f) <= leg2EndRow);
+                    console.log(`🔁 Leg 2 bounded to SP${String(leg2EndRow).padStart(3, "0")} (own End marker)`);
+                }
+            }
 
             // The pivot row itself (leg2Fields[0]) needs to be checked
             // against the real port right before it — leg1's last row
