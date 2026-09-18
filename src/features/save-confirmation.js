@@ -190,7 +190,19 @@ const SaveConfirmation = {
         box.appendChild(list);
         box.appendChild(footer);
         overlay.appendChild(box);
-        topDoc.body.appendChild(overlay);
+
+        // topDoc.body is NOT necessarily a real <body> — per the HTML
+        // spec, "the body element" of a frameset document IS the
+        // <frameset> element itself (this page has no <body> at all).
+        // A <frameset> only lays out <frame> children per its own
+        // cols/rows grid; any other appended child (our overlay) gets
+        // no layout slot and silently never paints, even though the
+        // DOM insertion itself succeeds with no error — confirmed live
+        // (all the way through "showing overlay" logged, nothing ever
+        // appeared). <html> has no such restriction, so that's the
+        // real fix, not .body.
+        const container = topDoc.body?.tagName === "BODY" ? topDoc.body : topDoc.documentElement;
+        container.appendChild(overlay);
     },
 
     // Delegated on `document` by SELECTOR MATCH, not bound to one
@@ -202,33 +214,13 @@ const SaveConfirmation = {
     // unmonitored. Matching on every click by selector instead means
     // it doesn't matter which node is live at click time.
     init() {
-        console.log(`💾 Save Confirmation armed in frame: ${location.href}`);
-
         document.addEventListener("click", (event) => {
-            // Temporary wide net — logs EVERY input/button click in this
-            // frame regardless of match, so a selector mismatch (wrong
-            // value text, wrong element type, etc.) shows up directly
-            // instead of silently doing nothing.
-            const clicked = event.target.closest?.('input, button');
-            if (clicked) {
-                console.log(`💾 Save Confirmation saw a click: tag=${clicked.tagName} type=${clicked.type} value="${clicked.value}"`);
-            }
-
             const button = event.target.closest?.(this.SAVE_BUTTON_SELECTOR);
             if (!button) return;
-
-            console.log("💾 Save button matched — checking Custom Rule");
-            if (!CustomRules.isEnabled("confirmRotationBeforeSave")) {
-                console.log("💾 Custom Rule is OFF — letting Save proceed normally");
-                return;
-            }
+            if (!CustomRules.isEnabled("confirmRotationBeforeSave")) return;
 
             const formDoc = this.findFormDocument();
-            if (!formDoc) {
-                console.log("💾 No frame with SP*_port_name fields found — letting Save proceed normally");
-                return;
-            }
-            console.log("💾 Found form document — intercepting click");
+            if (!formDoc) return; // no rotation data found anywhere — never block Save on a page we can't read
 
             // Capture phase on an ANCESTOR (document, not the button
             // itself) — this is what actually wins the race against
