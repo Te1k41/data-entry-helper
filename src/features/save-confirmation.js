@@ -367,6 +367,22 @@ const SaveConfirmation = {
                     active.blur();
                 }
 
+                // Covers every OTHER date field too, not just whichever
+                // one happens to be focused — the +/- step buttons never
+                // focus the field they write to at all (they only fire
+                // input/change via setFieldValue), so ANY date on the
+                // page touched that way, not only the currently-active
+                // one, can be sitting on a stale diff (see
+                // checkDiffMismatch()'s own comment). Forcing a blur on
+                // all of them here gives Tradetech's own recalculation
+                // a real chance to run for every row before Save, not
+                // just the last one someone happened to click into.
+                formDoc.querySelectorAll(
+                    'input[name^="SP"][name$="_arrival_date"], ' +
+                    'input[name^="SP"][name$="_depart_date"], ' +
+                    'input[name^="SV"][name$="_depart_date"]'
+                ).forEach(field => field.dispatchEvent(new Event("blur", { bubbles: false })));
+
                 const rows = this.buildRotationRows(formDoc);
                 console.log(`💾 Built ${rows.length} rotation row(s) — showing overlay`);
                 this.showOverlay(rows, () => {
