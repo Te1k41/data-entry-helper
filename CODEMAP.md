@@ -56,6 +56,7 @@ flowchart LR
   features_awr_flag_js["features/awr-flag.js"] --> main_js["main.js"]
   features_custom_rules_settings_js["features/custom-rules-settings.js"] --> main_js["main.js"]
   features_date_calculator_js["features/date-calculator.js"] --> main_js["main.js"]
+  features_date_step_buttons_js["features/date-step-buttons.js"] --> features_date_calculator_js["features/date-calculator.js"]
   features_date_step_buttons_js["features/date-step-buttons.js"] --> features_schedule_cascade_js["features/schedule-cascade.js"]
   features_date_step_buttons_js["features/date-step-buttons.js"] --> main_js["main.js"]
   features_date_syncing_js["features/date-syncing.js"] --> main_js["main.js"]
@@ -250,7 +251,7 @@ flowchart LR
 | features/awr-flag.js | AwrFlag | background-relay.js, main.js |
 | features/custom-rules-settings.js | CustomRulesSettings | main.js |
 | features/date-calculator.js | DateCalculator | main.js |
-| features/date-step-buttons.js | DateStepButtons | features/schedule-cascade.js, main.js |
+| features/date-step-buttons.js | DateStepButtons | features/date-calculator.js, features/schedule-cascade.js, main.js |
 | features/date-syncing.js | DateSyncing | main.js |
 | features/due-service-scanner-relay.js | DueServiceScanner | main.js |
 | features/duplicate-vessel-check.js | DuplicateVesselCheck | features/custom-rules-settings.js, main.js |

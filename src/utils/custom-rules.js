@@ -30,26 +30,26 @@ const CustomRules = {
         {
             id:          "enableFixVesselDates",
             label:       "Enable Fix Vessel Dates",
-            description: "Adds a \"🛠 Fix Vessel Dates\" Tools-panel button that pushes any vessel dated earlier than SP001 forward in weekly steps from the latest vessel date, and bumps its voyage code to match.",
-            default:     true
+            description: "Adds a \"🛠 Fix Vessel Dates\" Tools-panel button that pushes any vessel dated earlier than SP001 forward in weekly steps from the latest vessel date, and bumps its voyage code to match. Off by default — an older feature brought back opt-in rather than always-on.",
+            default:     false
         },
         {
             id:          "tabStartVoyageToDepart",
             label:       "Tab: Voyage → Depart",
             description: "ON: Tab on a vessel's Start Voyage jumps straight to that same row's Depart Date (and back with Shift+Tab), same forced cycle SP rows already do for arrival/depart. OFF (the original behavior): Tab on either field just moves to the next/previous row in the same column instead.",
-            default:     true
+            default:     false
         },
         {
             id:          "skipDuplicateCheckOnNegativeIncrement",
             label:       "Allow same-voyage duplicates",
             description: "When the page's \"voyage_increment_by\" is negative, Duplicate Vessel intentionally reuses the same voyage number on purpose — don't flag those rows as a duplicate/one-off problem.",
-            default:     true
+            default:     false
         },
         {
             id:          "alwaysShowWarnings",
             label:       "Always show Warnings",
             description: "Keep yellow validation-warning banners (Live Check, AWR, missing dates, mismatches, etc.) visible even while \"Hide updates\" is on. Doesn't cover \"Proof not uploaded\" — that one has its own rule below.",
-            default:     true
+            default:     false
         },
         {
             id:          "alwaysShowUploadProof",
@@ -61,7 +61,7 @@ const CustomRules = {
             id:          "alwaysShowSuccess",
             label:       "Always show Success",
             description: "Keep the green one-off confirmation banner (e.g. \"Vessel Duplicated\", \"Snapshot Saved\") visible even while \"Hide updates\" is on.",
-            default:     true
+            default:     false
         },
         {
             id:          "alwaysShowInfo",
@@ -73,7 +73,7 @@ const CustomRules = {
             id:          "alwaysShowSuggestions",
             label:       "Always show Suggestions",
             description: "Keep the purple vessel-suggestion banner visible even while \"Hide updates\" is on.",
-            default:     true
+            default:     false
         },
         {
             id:          "enableCtrlDHighlight",
