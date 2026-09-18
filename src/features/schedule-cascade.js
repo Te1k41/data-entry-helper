@@ -46,6 +46,16 @@ const ScheduleCascade = {
                 this.cascadeBack();
             }
         });
+
+        Toolbar.register({
+            id:      "tt-cascade-continue",
+            label:   "➡️ Cascade Continue",
+            title:   "Rebuild every port AFTER the last-edited one using the saved intervals (never touches SP001 or earlier ports)",
+            group:   "date",
+            onClick: () => {
+                this.cascadeContinue();
+            }
+        });
     },
 
     storeDiffs() {
@@ -245,6 +255,103 @@ const ScheduleCascade = {
     showTemporaryBanner({
         title:   "⏪ Cascade Back complete",
         message: `SP001 → ${DateUtils.format(sp001Date)}, recalculated from SP${rowStr} ${kind}`
+    });
+},
+
+    // Flattens this.diffs into one ordered chain of {row, kind, diff}
+    // points — every row's arrival diff, then its depart diff — sorted
+    // ascending by diff value. storeDiffs()'s own monotonic-chain
+    // validation already guarantees this ordering matches the real
+    // arrival_001 <= depart_001 <= arrival_002 <= ... sequence, so a
+    // consecutive pair in this list is always two genuinely adjacent
+    // points in the actual schedule, whether that's the same row's
+    // own arrival/depart pair or a gap between two different rows.
+    buildDiffChain() {
+        const points = [];
+        for (const [row, diff] of Object.entries(this.diffs)) {
+            if (diff.arrival !== undefined) points.push({ row, kind: "arrival", diff: diff.arrival });
+            if (diff.depart  !== undefined) points.push({ row, kind: "depart",  diff: diff.depart });
+        }
+        points.sort((a, b) => a.diff - b.diff);
+        return points;
+    },
+
+    // "Cascade Continue": rebuilds every port strictly AFTER whichever
+    // field was last typed into, using the ORIGINAL snapshotted gaps
+    // between consecutive chain points — never re-derives SP001 and
+    // never touches SP001 or any port before/at the edited one (unlike
+    // Cascade Back, which resets SP001 and rebuilds the whole route).
+    //
+    // One asymmetric case: if the edited field is a DEPART date, the
+    // same row's ARRIVAL — the immediately preceding chain point — is
+    // fixed backward once, using that row's own dwell time (depart
+    // diff minus arrival diff). If the edited field is an ARRIVAL,
+    // this same math already falls out of the normal forward walk
+    // with no special case, since that row's own depart is simply the
+    // next chain point.
+    cascadeContinue() {
+    if (!this.lastEditedField) {
+        this.flashCascadeError("⚠ Cascade Continue failed", "Type a date into a port field first");
+        return;
+    }
+
+    if (Object.keys(this.diffs).length === 0) {
+        this.flashCascadeError("⚠ No snapshot", "Click 📸 Snapshot Diffs first");
+        return;
+    }
+
+    const field      = document.querySelector(`input[name="${this.lastEditedField}"]`);
+    const anchorDate = field ? DateUtils.parse(field.value) : null;
+    if (!anchorDate) {
+        this.flashCascadeError("⚠ Cascade Continue failed", `${this.lastEditedField} is empty or unreadable`);
+        return;
+    }
+
+    const [, rowStr, kind] = this.lastEditedField.match(/^SP(\d+)_(arrival|depart)_date$/);
+    if (this.diffs[rowStr]?.[kind] === undefined) {
+        this.flashCascadeError("⚠ Cascade Continue failed", `No stored diff for SP${rowStr} ${kind}`);
+        return;
+    }
+
+    const chain = this.buildDiffChain();
+    const anchorIndex = chain.findIndex(p => p.row === rowStr && p.kind === kind);
+
+    // newDates keyed by "row_kind" (e.g. "003_depart") — same shape
+    // buildDiffChain()'s points use, so a chain entry maps straight in.
+    const newDates = { [`${rowStr}_${kind}`]: anchorDate };
+    const keyOf = p => `${p.row}_${p.kind}`;
+
+    // Same-row backward fix — only when the anchor is a depart date
+    // and the immediately preceding chain point is that same row's
+    // arrival.
+    const prev = chain[anchorIndex - 1];
+    if (kind === "depart" && prev?.row === rowStr && prev.kind === "arrival") {
+        const gap = chain[anchorIndex].diff - prev.diff;
+        newDates[keyOf(prev)] = DateUtils.addDays(anchorDate, -gap);
+    }
+
+    // Forward walk — every point after the anchor, chained off
+    // whichever new date was just computed for the point right before it.
+    for (let i = anchorIndex + 1; i < chain.length; i++) {
+        const gap = chain[i].diff - chain[i - 1].diff;
+        newDates[keyOf(chain[i])] = DateUtils.addDays(newDates[keyOf(chain[i - 1])], gap);
+    }
+
+    this._cascading = true;
+    try {
+        for (const [key, date] of Object.entries(newDates)) {
+            if (key === `${rowStr}_${kind}`) continue; // the anchor itself — already exactly what was typed
+            const [row, fieldKind] = key.split("_");
+            const targetField = document.querySelector(`input[name="SP${row}_${fieldKind}_date"]`);
+            if (targetField) setFieldValue(targetField, DateUtils.format(date));
+        }
+    } finally {
+        this._cascading = false;
+    }
+
+    showTemporaryBanner({
+        title:   "➡️ Cascade Continue complete",
+        message: `Rebuilt ports after SP${rowStr} ${kind} using the saved intervals`
     });
 },
 
