@@ -25,6 +25,26 @@ function endSync() {
         return;
     }
     syncingDepth--;
+
+    // Belt-and-suspenders: any feature that batch-writes fields under
+    // this guard (Cascade, Insert/Delete/Restore, FixVesselDates, etc.)
+    // usually bypasses real "change" events, so handle()'s field-name
+    // matching in the document-level listener never sees it — port
+    // category highlighting would then go stale until an unrelated
+    // field's real change event happens to trigger a rescan. Rerunning
+    // here once the OUTERMOST sync closes covers every writer, present
+    // and future, without each one having to remember to call
+    // PortHighlighting.run() itself. Cheap (a few dozen field reads) and
+    // idempotent, so a caller that already calls it explicitly too is
+    // harmless. Wrapped so a highlighting bug can never break the sync
+    // guard for the write that triggered it.
+    if (syncingDepth === 0) {
+        try {
+            PortHighlighting.run();
+        } catch (err) {
+            console.error("❌ PortHighlighting rescan after sync failed:", err);
+        }
+    }
 }
 
 function isSyncing() {
