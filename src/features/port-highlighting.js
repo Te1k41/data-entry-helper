@@ -408,14 +408,7 @@ const PortHighlighting = {
         // ranked attempts, not one combined candidate pool.
         const suffixDirectional = this.isDirectionalService();
         const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
-
-        // Every service is one of exactly 2 shapes: directional (1
-        // bound, e.g. "SVC-E") or not (2 bounds — a full round trip out
-        // and back, whether or not a port_key End marker was actually
-        // found to pin down exactly where the pivot sits). Both bias
-        // toward the FIRST candidate — there's no 3rd "normal, tie-break
-        // toward last" shape anymore.
-        const biasFirst = true;
+        const biasFirst = suffixDirectional || !!pivotRow;
 
         // Directional services (e.g. "SVC-E") loop back to the exact
         // port they started from — the last populated port row is
