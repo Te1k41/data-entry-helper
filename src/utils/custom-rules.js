@@ -92,6 +92,12 @@ const CustomRules = {
             label:       "Enable Notes Date Auto-Update",
             description: "On page load, swaps any stale date already typed into the notes textarea for today's date (lines mentioning \"map\" are left alone). Only runs once the SP (port) and SV (vessel) rows have actually loaded.",
             default:     false
+        },
+        {
+            id:          "enableAwrAudit",
+            label:       "Enable Audit AWR",
+            description: "Adds a \"🔍 Audit AWR\" Tools-panel button that re-checks AWR on every relay-tracked record in background tabs, fixing and saving only the ones that are wrong. Off by default — opt-in rather than always-on, same as Fix Vessel Dates.",
+            default:     false
         }
     ],
 

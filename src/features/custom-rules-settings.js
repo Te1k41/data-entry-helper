@@ -150,6 +150,7 @@ const CustomRulesSettings = {
                 if (typeof applyNotificationVisibility === "function") applyNotificationVisibility();
                 if (typeof renderWarnings === "function") renderWarnings();
                 if (typeof FixVesselDates !== "undefined") FixVesselDates.applyVisibility();
+                if (typeof AwrAudit !== "undefined") AwrAudit.applyVisibility();
             });
 
             line.appendChild(expandBtn);

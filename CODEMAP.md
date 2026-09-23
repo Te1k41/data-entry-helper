@@ -52,6 +52,7 @@ flowchart LR
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> utils_banner_js["utils/banner.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> utils_button_js["utils/button.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> utils_toolbar_js["utils/toolbar.js"]
+  features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_custom_rules_settings_js["features/custom-rules-settings.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> main_js["main.js"]
   features_awr_flag_js["features/awr-flag.js"] --> background_relay_js["background-relay.js"]
   features_awr_flag_js["features/awr-flag.js"] --> main_js["main.js"]
@@ -164,6 +165,7 @@ flowchart LR
   utils_banner_js["utils/banner.js"] --> features_custom_rules_settings_js["features/custom-rules-settings.js"]
   utils_button_js["utils/button.js"] --> features_rename_toggle_relay_js["features/rename-toggle-relay.js"]
   utils_button_js["utils/button.js"] --> utils_toolbar_js["utils/toolbar.js"]
+  utils_custom_rules_js["utils/custom-rules.js"] --> features_awr_audit_relay_js["features/awr-audit-relay.js"]
   utils_custom_rules_js["utils/custom-rules.js"] --> features_custom_rules_settings_js["features/custom-rules-settings.js"]
   utils_custom_rules_js["utils/custom-rules.js"] --> features_fix_vessel_dates_js["features/fix-vessel-dates.js"]
   utils_custom_rules_js["utils/custom-rules.js"] --> features_highlighter_js["features/highlighter.js"]
@@ -250,7 +252,7 @@ flowchart LR
 | core/boundary.js | PortSyncBoundary | features/date-syncing.js, features/manual-etd-highlight.js, features/port-highlighting.js |
 | features/arrival-depart-order-check.js | ArrivalDepartOrderCheck | features/insert-port.js, main.js |
 | features/auto-nav-schedules.js | AutoNavSchedules | features/due-service-scanner-relay.js, main.js |
-| features/awr-audit-relay.js | top, AwrAudit | background-relay.js, core/boundary.js, features/awr-flag.js, features/date-calculator.js, features/keyboard-navigation.js, features/live-check-relay.js, features/notes-sidebar.js, features/port-name-reminder.js, features/rename-toggle-relay.js, features/save-confirmation.js, features/schedule-preview-tools-relay.js, features/tradetech-stars.js, features/upload-proof-relay.js, features/vessel-name-reminder.js, features/vessel-recommendation.js, features/voyage-direction.js, utils/banner.js, utils/button.js, utils/toolbar.js, main.js |
+| features/awr-audit-relay.js | top, AwrAudit | background-relay.js, core/boundary.js, features/awr-flag.js, features/date-calculator.js, features/keyboard-navigation.js, features/live-check-relay.js, features/notes-sidebar.js, features/port-name-reminder.js, features/rename-toggle-relay.js, features/save-confirmation.js, features/schedule-preview-tools-relay.js, features/tradetech-stars.js, features/upload-proof-relay.js, features/vessel-name-reminder.js, features/vessel-recommendation.js, features/voyage-direction.js, utils/banner.js, utils/button.js, utils/toolbar.js, features/custom-rules-settings.js, main.js |
 | features/awr-flag.js | AwrFlag | background-relay.js, main.js |
 | features/custom-rules-settings.js | CustomRulesSettings | main.js |
 | features/date-calculator.js | DateCalculator | main.js |
@@ -299,7 +301,7 @@ flowchart LR
 | rename-toggle-init-relay.js | - | - |
 | utils/banner.js | activeWarnings, showBanner, removeBanner, SUCCESS_GAP, getStackedBannerTop, getSuccessBannerTop, repositionStackedBanners, buildSuccessStyle, successBannerTimer, removeSuccessBanner, buildInfoStyle, INFO_BANNER_TEXT_SHADOW, removeInfoBanner, setInfoBanner, getSuggestionBannerTop, buildSuggestionStyle, removeSuggestionBanner, setSuggestionBanner, showTemporaryBanner, BANNER_STYLE, setWarning, WARNING_KEY_ALWAYS_SHOW_RULE, shouldShowWarning, renderWarnings, showCombinedBanner, ALL_BANNER_IDS, HIDEABLE_BANNER_IDS, BANNER_ALWAYS_SHOW_RULE, notificationsHidden, applyNotificationVisibility, toggleNotificationVisibility, createNotificationToggle | features/schedule-cascade.js, features/upload-proof-relay.js, features/validation.js, features/vessel-recommendation.js, features/awr-audit-relay.js, features/awr-flag.js, features/duplicate-vessel.js, features/insert-port.js, features/live-check.js, features/rearrange-vessels.js, utils/toolbar.js, features/notes-sidebar.js, features/arrival-depart-order-check.js, features/duplicate-vessel-check.js, features/last-foreign-port-check.js, features/port-date-order-check.js, features/port-no-date.js, features/vessel-no-date.js, features/custom-rules-settings.js |
 | utils/button.js | createButton, isDragging, didDrag, startX | features/rename-toggle-relay.js, utils/toolbar.js |
-| utils/custom-rules.js | CustomRules | features/custom-rules-settings.js, features/fix-vessel-dates.js, features/highlighter.js, features/keyboard-navigation.js, features/live-check.js, features/notes.js, features/save-confirmation.js, features/validation.js, utils/banner.js |
+| utils/custom-rules.js | CustomRules | features/awr-audit-relay.js, features/custom-rules-settings.js, features/fix-vessel-dates.js, features/highlighter.js, features/keyboard-navigation.js, features/live-check.js, features/notes.js, features/save-confirmation.js, features/validation.js, utils/banner.js |
 | utils/date.js | DateUtils | features/arrival-depart-order-check.js, features/date-calculator.js, features/date-step-buttons.js, features/fix-vessel-dates.js, features/live-check-relay.js, features/notes.js, features/port-date-order-check.js, features/rearrange-vessels.js, features/save-confirmation.js, features/schedule-cascade.js, features/validation.js, features/vessel-recommendation.js |
 | utils/dom.js | setFieldValue, PORT_NAME_FIELD_PATTERN, selectFieldSmart, commitAllDateFields, mirrorPvShadow, waitForFieldValue, insertActionButtonAfter | features/date-step-buttons.js, features/date-syncing.js, features/duplicate-vessel.js, features/fix-vessel-dates.js, features/insert-port.js, features/live-check-relay.js, features/live-check.js, features/notes-sidebar.js, features/notes.js, features/save-confirmation.js, features/schedule-cascade.js, features/vessel-to-be-announced.js, features/voyage-direction.js, features/voyage-step-buttons.js, utils/port-row.js, utils/vessel-row.js, features/keyboard-navigation.js, features/select-field-on-focus.js |
 | utils/port-row.js | PortRow | features/insert-port.js, features/port-no-date.js, features/schedule-capture-relay.js |

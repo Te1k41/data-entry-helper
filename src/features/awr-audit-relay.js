@@ -26,11 +26,31 @@
 //  frameset page, and a double-click reruns the whole audit twice —
 //  wasteful, not broken (RUN_AWR_AUDIT is idempotent-ish). Reliably
 //  showing up beats a "clever" guard that silently hides it everywhere.
+//
+//  Only registers its Toolbar button when the "Enable Audit AWR"
+//  Custom Rule is ON (default OFF) — same opt-in pattern
+//  fix-vessel-dates.js uses. applyVisibility() is re-run whenever any
+//  Custom Rule is toggled (see custom-rules-settings.js), so flipping
+//  the rule adds/removes the button immediately without a page reload.
 // ─────────────────────────────────────────────────────
 const AwrAudit = {
+    BUTTON_ID: "tt-awr-audit-btn",
+
     init() {
+        this.applyVisibility();
+    },
+
+    applyVisibility() {
+        if (CustomRules.isEnabled("enableAwrAudit")) {
+            this.registerButton();
+        } else {
+            Toolbar.unregister(this.BUTTON_ID);
+        }
+    },
+
+    registerButton() {
         Toolbar.register({
-            id:        "tt-awr-audit-btn",
+            id:        this.BUTTON_ID,
             label:     "🔍 Audit AWR",
             title:     "Re-check AWR on every relay-tracked record; fixes and saves only the ones that are wrong",
             group:     "proof",
