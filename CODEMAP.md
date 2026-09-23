@@ -120,12 +120,14 @@ flowchart LR
   features_upload_proof_relay_js["features/upload-proof-relay.js"] --> features_schedule_table_scrape_relay_js["features/schedule-table-scrape-relay.js"]
   features_upload_proof_relay_js["features/upload-proof-relay.js"] --> main_js["main.js"]
   features_validation_js["features/validation.js"] --> features_date_syncing_js["features/date-syncing.js"]
-  features_validation_js["features/validation.js"] --> features_fix_vessel_dates_js["features/fix-vessel-dates.js"]
+  features_validation_js["features/validation.js"] --> features_duplicate_vessel_js["features/duplicate-vessel.js"]
   features_validation_js["features/validation.js"] --> features_live_check_relay_js["features/live-check-relay.js"]
   features_validation_js["features/validation.js"] --> features_save_confirmation_js["features/save-confirmation.js"]
   features_validation_js["features/validation.js"] --> main_js["main.js"]
   features_vessel_name_reminder_js["features/vessel-name-reminder.js"] --> main_js["main.js"]
+  features_vessel_no_date_js["features/vessel-no-date.js"] --> features_duplicate_vessel_js["features/duplicate-vessel.js"]
   features_vessel_no_date_js["features/vessel-no-date.js"] --> main_js["main.js"]
+  features_vessel_recommendation_js["features/vessel-recommendation.js"] --> features_duplicate_vessel_js["features/duplicate-vessel.js"]
   features_vessel_recommendation_js["features/vessel-recommendation.js"] --> features_schedule_cascade_js["features/schedule-cascade.js"]
   features_vessel_recommendation_js["features/vessel-recommendation.js"] --> main_js["main.js"]
   features_vessel_to_be_announced_js["features/vessel-to-be-announced.js"] --> main_js["main.js"]
@@ -285,10 +287,10 @@ flowchart LR
 | features/service-relay-send-relay.js | ServiceRelaySend | main.js |
 | features/tradetech-stars.js | TradetechStars | main.js |
 | features/upload-proof-relay.js | UploadProof | features/custom-rules-settings.js, features/schedule-table-scrape-relay.js, main.js |
-| features/validation.js | SP001DateValidation | features/date-syncing.js, features/fix-vessel-dates.js, features/live-check-relay.js, features/save-confirmation.js, main.js |
+| features/validation.js | SP001DateValidation | features/date-syncing.js, features/duplicate-vessel.js, features/live-check-relay.js, features/save-confirmation.js, main.js |
 | features/vessel-name-reminder.js | VesselNameReminder | main.js |
-| features/vessel-no-date.js | DetectVesselNoDate | main.js |
-| features/vessel-recommendation.js | VesselRecommendation | features/schedule-cascade.js, main.js |
+| features/vessel-no-date.js | DetectVesselNoDate | features/duplicate-vessel.js, main.js |
+| features/vessel-recommendation.js | VesselRecommendation | features/duplicate-vessel.js, features/schedule-cascade.js, main.js |
 | features/vessel-to-be-announced.js | VesselTBA | main.js |
 | features/voyage-direction.js | VDirection | main.js |
 | features/voyage-step-buttons.js | VoyageStepButtons | main.js |

@@ -286,6 +286,18 @@ const DuplicateVessel = {
         // actual source of truth for what that code's vessel is called.
         setFieldValue(target.codeField, sourceCodeField.value);
 
+        // Tradetech's own lookup above fills target.nameField.value
+        // directly (plain assignment, no change event — same bypass
+        // insert-port.js documents for port_name-after-port_code), so
+        // nothing that reacts to SV*_vessel_name changing (vessel
+        // recommendation, no-date detection, SP001 validation) would
+        // ever hear about the new name otherwise.
+        waitForFieldValue(target.nameField, () => {
+            VesselRecommendation.suggest();
+            DetectVesselNoDate.check();
+            SP001DateValidation.validate();
+        });
+
         // The hidden lloyds_code has no listener depending on a real
         // event to fire — plain-copy it and its PV_ shadow same as
         // insert-port.js does for port_code ("relocating already-valid
