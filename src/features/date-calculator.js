@@ -94,6 +94,22 @@ const DateCalculator = {
 
         const fields = { baseInput, offsetInput, resultInput, baseWeekday, resultWeekday };
 
+        // Selecting (focusing) any of the 3 boxes copies its whole
+        // current value to the clipboard — lets a value get pasted
+        // straight into the real page field without retyping it.
+        const copyOnFocus = (input, label) => {
+            input.addEventListener("focus", () => {
+                const value = input.value.trim();
+                if (!value) return;
+                navigator.clipboard.writeText(value)
+                    .then(() => showTemporaryBanner({ title: "📋 Copied", message: `${label}: ${value}` }))
+                    .catch(() => {});
+            });
+        };
+        copyOnFocus(baseInput, "Base date");
+        copyOnFocus(offsetInput, "± Days");
+        copyOnFocus(resultInput, "Result date");
+
         baseInput.value = DateUtils.todayMMDDYY();
 
         // Most-recently-touched first. Starts with "result" last, so
