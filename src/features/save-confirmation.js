@@ -156,17 +156,22 @@ const SaveConfirmation = {
             return `${label}: ${combined || "—"}`;
         };
 
-        const lines = [
+        return [
             portField("last_foreign_port", "last_foreign_port_desc", "Last Foreign Port"),
             portField("first_us_port",     "first_us_port_desc",     "First US Port"),
             portField("first_eu_port",     "first_eu_port_desc",     "First EU Port"),
         ];
+    },
 
-        const highlighted = typeof PortHighlighting !== "undefined" ? PortHighlighting.currentHighlightField : null;
-        const rowMatch = highlighted?.name.match(/^SP(\d+)_port_name$/);
-        lines.push(`Highlighted Port: ${highlighted ? `SP${rowMatch ? rowMatch[1] : "?"} ${highlighted.value.trim()}` : "—"}`);
-
-        return lines;
+    // SP row number PortHighlighting currently has flagged (e.g. "003"),
+    // or null. Shown as a full yellow row in the table itself (see
+    // renderRotationCanvas()) rather than as a separate text line — bare
+    // `PortHighlighting` reference, so this only reflects THIS frame's
+    // own scan; harmless no-op (returns null) on a frame that isn't the
+    // one with the port rows.
+    getHighlightedRow() {
+        const field = typeof PortHighlighting !== "undefined" ? PortHighlighting.currentHighlightField : null;
+        return field?.name.match(/^SP(\d+)_port_name$/)?.[1] || null;
     },
 
     // Filename matches the {service}-{MMDDYY} convention Tradetech's own
@@ -189,19 +194,27 @@ const SaveConfirmation = {
     //
     // `extraLines` (optional) are plain text lines rendered below the
     // title, above the table — used by the batch Rotation Receipt
-    // Capture feature to stamp on last foreign port / first US-EU port /
-    // currently-highlighted port. Defaults to [] so both existing
-    // callers (the Custom Rule download, the Confirm & Save button) are
-    // byte-for-byte unchanged.
-    renderRotationCanvas(rows, extraLines = []) {
-        const ROW_HEIGHT      = 22;
-        const HEADER_Y        = 40 + extraLines.length * ROW_HEIGHT;
-        const PADDING         = 10;
+    // Capture feature to stamp on last foreign port / first US-EU port.
+    // `highlightedRow` (optional) is an SP row number string (e.g.
+    // "003") — that row gets a full-width yellow background in the
+    // table, mirroring the live page's own orange region-change
+    // highlight. Both default to [] / null so the 2 existing interactive
+    // callers keep working unchanged if they don't pass them.
+    renderRotationCanvas(rows, extraLines = [], highlightedRow = null) {
+        const ROW_HEIGHT      = 26;
+        const PADDING         = 14;
         const COL_GAP         = 24; // breathing room after the longest port name
-        const DATE_COL_WIDTH  = 90;
-        const PORT_FONT       = "12px monospace";
-        const TITLE_FONT      = "bold 14px monospace";
-        const EXTRA_FONT      = "12px monospace";
+        const DATE_COL_WIDTH  = 100;
+        const PORT_FONT       = "13px monospace";
+        const TITLE_FONT      = "bold 16px monospace";
+        const EXTRA_FONT      = "13px monospace";
+        const HEADER_FONT     = "bold 13px monospace";
+        const TITLE_AREA_HEIGHT = 30;
+        const TEXT_BASELINE_OFFSET = Math.round(ROW_HEIGHT * 0.68);
+        const ZEBRA_COLOR     = "#f2f2f2";
+        const HEADER_BG       = "#e4e4e4";
+        const HIGHLIGHT_COLOR = "#fff176"; // clear yellow, dark text stays legible on it
+        const BORDER_COLOR    = "#999999";
         const titleText       = `Port Rotation Receipt — ${DateUtils.todayMMDDYY()}`;
 
         // Measure first — a canvas with no width/height set yet still
@@ -227,10 +240,17 @@ const SaveConfirmation = {
         measureCtx.font = EXTRA_FONT;
         const extraLinesWidth = Math.max(0, ...extraLines.map(t => measureCtx.measureText(t).width));
 
-        const colWidths  = [portColWidth, DATE_COL_WIDTH, DATE_COL_WIDTH];
-        const tableWidth = colWidths.reduce((a, b) => a + b, 0);
-        const width  = Math.max(tableWidth, titleWidth, extraLinesWidth) + PADDING * 2;
-        const height = HEADER_Y + 10 + ROW_HEIGHT * Math.max(rows.length, 1) + PADDING;
+        const colWidths   = [portColWidth, DATE_COL_WIDTH, DATE_COL_WIDTH];
+        const tableWidth  = colWidths.reduce((a, b) => a + b, 0);
+        const width       = Math.max(tableWidth, titleWidth, extraLinesWidth) + PADDING * 2;
+        const tableLeft   = PADDING;
+        const tableRight  = tableLeft + tableWidth;
+
+        const headerTop  = PADDING + TITLE_AREA_HEIGHT + extraLines.length * ROW_HEIGHT;
+        const rowsTop    = headerTop + ROW_HEIGHT;
+        const rowCount   = Math.max(rows.length, 1);
+        const tableBottom = rowsTop + rowCount * ROW_HEIGHT;
+        const height = tableBottom + PADDING;
 
         const canvas = document.createElement("canvas");
         canvas.width  = width;
@@ -242,39 +262,60 @@ const SaveConfirmation = {
 
         ctx.fillStyle = "#000000";
         ctx.font = TITLE_FONT;
-        ctx.fillText(titleText, PADDING, 20);
+        ctx.fillText(titleText, PADDING, PADDING + 18);
 
         ctx.font = EXTRA_FONT;
         extraLines.forEach((text, i) => {
-            ctx.fillText(text, PADDING, 20 + ROW_HEIGHT * (i + 1));
+            ctx.fillText(text, PADDING, PADDING + TITLE_AREA_HEIGHT + ROW_HEIGHT * i + TEXT_BASELINE_OFFSET);
         });
 
-        ctx.font = "bold 12px monospace";
-        let x = PADDING;
+        // Header band — a filled bar instead of a plain baseline label,
+        // clearer separation between "what this is" and the data.
+        ctx.fillStyle = HEADER_BG;
+        ctx.fillRect(tableLeft, headerTop, tableWidth, ROW_HEIGHT);
+        ctx.fillStyle = "#000000";
+        ctx.font = HEADER_FONT;
+        let hx = tableLeft;
         ["Port", "Arrival", "Depart"].forEach((label, i) => {
-            ctx.fillText(label, x, HEADER_Y);
-            x += colWidths[i];
+            ctx.fillText(label, hx + 6, headerTop + TEXT_BASELINE_OFFSET);
+            hx += colWidths[i];
         });
 
-        ctx.strokeStyle = "#000000";
-        ctx.beginPath();
-        ctx.moveTo(PADDING, HEADER_Y + 6);
-        ctx.lineTo(width - PADDING, HEADER_Y + 6);
-        ctx.stroke();
-
-        ctx.font = "12px monospace";
+        ctx.font = PORT_FONT;
         if (rows.length === 0) {
-            ctx.fillText("(no ports entered yet)", PADDING, HEADER_Y + 6 + ROW_HEIGHT);
+            ctx.fillStyle = "#666666";
+            ctx.fillText("(no ports entered yet)", tableLeft + 6, rowsTop + TEXT_BASELINE_OFFSET);
         } else {
             rows.forEach((r, i) => {
-                const y = HEADER_Y + 6 + ROW_HEIGHT * (i + 1);
-                let x = PADDING;
+                const rowTop = rowsTop + ROW_HEIGHT * i;
+
+                if (r.row === highlightedRow) {
+                    ctx.fillStyle = HIGHLIGHT_COLOR;
+                    ctx.fillRect(tableLeft, rowTop, tableWidth, ROW_HEIGHT);
+                } else if (i % 2 === 1) {
+                    ctx.fillStyle = ZEBRA_COLOR;
+                    ctx.fillRect(tableLeft, rowTop, tableWidth, ROW_HEIGHT);
+                }
+
+                ctx.fillStyle = "#000000";
+                let cx = tableLeft;
                 [`SP${r.row} ${r.name}`, r.arrival || "—", r.depart || "—"].forEach((text, ci) => {
-                    ctx.fillText(text, x, y);
-                    x += colWidths[ci];
+                    ctx.fillText(text, cx + 6, rowTop + TEXT_BASELINE_OFFSET);
+                    cx += colWidths[ci];
                 });
             });
         }
+
+        // One clean border around the whole table (header band + rows)
+        // instead of a single hairline under the header — clearer edge,
+        // less "text floating on a blank page."
+        ctx.strokeStyle = BORDER_COLOR;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(tableLeft + 0.5, headerTop + 0.5, tableWidth - 1, tableBottom - headerTop - 1);
+        ctx.beginPath();
+        ctx.moveTo(tableLeft, headerTop + ROW_HEIGHT + 0.5);
+        ctx.lineTo(tableRight, headerTop + ROW_HEIGHT + 0.5);
+        ctx.stroke();
 
         return canvas;
     },
@@ -286,8 +327,8 @@ const SaveConfirmation = {
     // document, so this works regardless of which frame it runs in and
     // sidesteps the same frameset-body quirk showOverlay() has to work
     // around.
-    downloadRotationPng(rows, serviceCode, extraLines = []) {
-        const canvas = this.renderRotationCanvas(rows, extraLines);
+    downloadRotationPng(rows, serviceCode, extraLines = [], highlightedRow = null) {
+        const canvas = this.renderRotationCanvas(rows, extraLines, highlightedRow);
         canvas.toBlob(blob => {
             const url  = URL.createObjectURL(blob);
             const link = document.createElement("a");
@@ -308,7 +349,7 @@ const SaveConfirmation = {
     maybeDownloadReceipt(formDoc) {
         if (!CustomRules.isEnabled("downloadRotationReceipt")) return;
         try {
-            this.downloadRotationPng(this.buildRotationRows(formDoc), this.getServiceCode(formDoc));
+            this.downloadRotationPng(this.buildRotationRows(formDoc), this.getServiceCode(formDoc), [], this.getHighlightedRow());
         } catch (err) {
             console.error("❌ Rotation receipt download failed:", err);
         }
@@ -326,6 +367,12 @@ const SaveConfirmation = {
     // Purely reads the DOM — never writes a field, never clicks
     // anything, never saves.
     //
+    // Skips (no capture at all) unless PortHighlighting found a genuine
+    // special port — routes that fell all the way through to the hard
+    // SP001 default have nothing worth a receipt for. Confirmed request:
+    // a 300+-record run over EVERY due-service record is mostly noise;
+    // this cuts it down to only the ones with something to actually flag.
+    //
     // Returns a data URL instead of doing its own click-triggered
     // download (unlike downloadRotationPng): confirmed real bug —
     // Chrome's automatic-download-blocking guard targets exactly this
@@ -340,10 +387,14 @@ const SaveConfirmation = {
         if (!document.querySelector('input[name^="SP"][name$="_port_name"]')) {
             return { ok: false, reason: "no port rows in this frame" };
         }
+        if (typeof PortHighlighting === "undefined" || !PortHighlighting.hasSpecialPort) {
+            return { ok: false, reason: "no special port found — skipped" };
+        }
         try {
             const rows = this.buildRotationRows(document);
             const extraLines = this.getExtraCaptureFields(document);
-            const canvas = this.renderRotationCanvas(rows, extraLines);
+            const highlightedRow = this.getHighlightedRow();
+            const canvas = this.renderRotationCanvas(rows, extraLines, highlightedRow);
             return {
                 ok: true,
                 dataUrl: canvas.toDataURL("image/png"),
@@ -357,7 +408,7 @@ const SaveConfirmation = {
 
     // Injected into window.top so the overlay covers the whole page
     // regardless of which small frame the Save button itself sits in.
-    showOverlay(rows, serviceCode, onConfirm) {
+    showOverlay(rows, serviceCode, highlightedRow, onConfirm) {
         let topDoc;
         try {
             topDoc = window.top.document;
@@ -502,7 +553,7 @@ const SaveConfirmation = {
             border: 1px solid #000000 !important;
             cursor: pointer !important;
         `;
-        downloadBtn.addEventListener("click", () => this.downloadRotationPng(rows, serviceCode));
+        downloadBtn.addEventListener("click", () => this.downloadRotationPng(rows, serviceCode, [], highlightedRow));
 
         const actionGroup = topDoc.createElement("div");
         actionGroup.style.cssText = "display: flex !important; gap: 8px !important;";
@@ -637,8 +688,9 @@ const SaveConfirmation = {
             try {
                 const rows = this.buildRotationRows(formDoc);
                 const serviceCode = this.getServiceCode(formDoc);
+                const highlightedRow = this.getHighlightedRow();
                 console.log(`💾 Built ${rows.length} rotation row(s) — showing overlay`);
-                this.showOverlay(rows, serviceCode, () => {
+                this.showOverlay(rows, serviceCode, highlightedRow, () => {
                     console.log("💾 Confirmed — re-clicking Save for real");
                     this.maybeDownloadReceipt(formDoc); // only on an actual confirm, not Back
                     // A real button.click() — NOT calling button.onclick()

@@ -392,6 +392,8 @@ const PortHighlighting = {
 
         if (portNameFields.length === 0) {
             console.warn("⚠ No SP*_port_name fields found");
+            this.currentHighlightField = null;
+            this.hasSpecialPort = false; // stale true from a previous run would wrongly pass the "special only" filter
             return;
         }
 
@@ -477,8 +479,18 @@ const PortHighlighting = {
         // Nothing found at all (route never leaves one broad category —
         // see getFineCategory()'s header comment) — try the finer UK/EU
         // or Canada/USA split before giving up and defaulting to SP001.
+        // `isSpecialFind` tracks whether highlightField is a genuine
+        // region-change/UK-Canada find, as opposed to the hard SP001
+        // fallback with nothing actually notable about the route —
+        // consumers that only care about a real find (e.g. the batch
+        // Rotation Receipt Capture feature's "only special routes"
+        // filter) check hasSpecialPort below instead of just truthiness
+        // of currentHighlightField, which is always set either way.
+        let isSpecialFind = !!highlightField;
         if (!highlightField) {
-            highlightField = this.findFineCategoryHighlight(portNameFields) || portNameFields[0];
+            highlightField = this.findFineCategoryHighlight(portNameFields);
+            isSpecialFind = !!highlightField;
+            highlightField = highlightField || portNameFields[0];
         }
 
         if (highlightField) this.applyHighlight(highlightField);
@@ -488,6 +500,7 @@ const PortHighlighting = {
         // know which port is currently highlighted without re-running
         // this whole scan themselves.
         this.currentHighlightField = highlightField || null;
+        this.hasSpecialPort = isSpecialFind;
     },
 
     init() {
