@@ -79,6 +79,51 @@ const PortHighlighting = {
         return "OTHER";
     },
 
+    // Finer split than getPortCategory() — used ONLY as a fallback (see
+    // findFineCategoryHighlight() below) for a route that never leaves
+    // one broad category, so the normal region-change scan finds
+    // nothing at all (e.g. every port is EU/UK, or every port is
+    // USA/Canada). Splits UK back out of EU_UK and Canada back out of
+    // USA; returns null for Japan/Other, which have no finer split to
+    // fall back on — those routes keep hitting the hard SP001 fallback,
+    // same as before this existed.
+    getFineCategory(portName) {
+        if (!portName) return null;
+        const name = portName.trim().toUpperCase();
+
+        if (name.endsWith("UNITED KINGDOM")) return "UK";
+        if (name.endsWith("CANADA"))         return "CANADA";
+
+        const coarse = this.getPortCategory(portName);
+        if (coarse === "EU_UK") return "EU";
+        if (coarse === "USA")   return "USA";
+        return null;
+    },
+
+    // Same consecutive-pair scan shape as the generic pass inside
+    // findHighlightInWindow(), just keyed off getFineCategory() instead
+    // of getPortCategory(). No rank/priority logic needed — this only
+    // ever runs when the whole window is already one coarse category,
+    // so a UK/EU pair and a CANADA/USA pair can never both show up in
+    // the same call.
+    findFineCategoryHighlight(fields, biasFirst) {
+        const candidates = [];
+
+        for (let i = 1; i < fields.length; i++) {
+            const current = fields[i];
+            const above   = fields[i - 1];
+            if (!current.value.trim() || !above.value.trim()) continue;
+
+            const currentFine = this.getFineCategory(current.value);
+            const aboveFine   = this.getFineCategory(above.value);
+            if (!currentFine || !aboveFine) continue;
+            if (currentFine !== aboveFine) candidates.push(current);
+        }
+
+        if (!candidates.length) return null;
+        return biasFirst ? candidates[0] : candidates[candidates.length - 1];
+    },
+
     // Parses SP001_port_key into its Start/End compass directions.
     // Each 2-character chunk is [DIRECTION][S|E] — the letter is which
     // end of the route it marks, not the compass direction itself
@@ -387,10 +432,16 @@ const PortHighlighting = {
             const precedingField = leg1Fields[leg1Fields.length - 1] || null;
 
             highlightField = this.findHighlightInWindow(leg2Fields, true, precedingField)
-                || this.findHighlightInWindow(leg1Fields, true)
-                || portNameFields[0];
+                || this.findHighlightInWindow(leg1Fields, true);
         } else {
-            highlightField = this.findHighlightInWindow(portNameFields, biasFirst) || portNameFields[0];
+            highlightField = this.findHighlightInWindow(portNameFields, biasFirst);
+        }
+
+        // Nothing found at all (route never leaves one broad category —
+        // see getFineCategory()'s header comment) — try the finer UK/EU
+        // or Canada/USA split before giving up and defaulting to SP001.
+        if (!highlightField) {
+            highlightField = this.findFineCategoryHighlight(portNameFields, biasFirst) || portNameFields[0];
         }
 
         if (highlightField) this.applyHighlight(highlightField);
