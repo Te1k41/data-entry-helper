@@ -111,12 +111,10 @@ const PortHighlighting = {
     // change that just wasn't leg2's/leg1's own problem to catch —
     // never something this finer UK/Canada split should touch.
     //
-    // UK/Canada are NOT treated as special here — same "entering the new
-    // category" convention as the generic scan above (highlights
-    // `current` whenever it differs from `above`, whichever direction
-    // that runs). UK and EU (or Canada and USA) are just two ordinary
-    // fine categories being compared, same as USA/JAPAN/EU_UK are in the
-    // coarse scan.
+    // UK/Canada ARE the special side here — normal (EU/USA) port
+    // crossing into a UK/Canada port, or a UK/Canada port crossing back
+    // into a normal one, always highlights the UK/Canada row, never the
+    // plain EU/USA one, regardless of which direction the crossing runs.
     findFineCategoryHighlight(fields, biasFirst) {
         const coarseCats = new Set(
             fields.map(f => f.value.trim() ? this.getPortCategory(f.value) : null).filter(Boolean)
@@ -124,6 +122,7 @@ const PortHighlighting = {
         const onlyCoarseCat = coarseCats.size === 1 ? [...coarseCats][0] : null;
         if (onlyCoarseCat !== "EU_UK" && onlyCoarseCat !== "USA") return null;
 
+        const isSpecial = fine => fine === "UK" || fine === "CANADA";
         const candidates = [];
 
         for (let i = 1; i < fields.length; i++) {
@@ -135,7 +134,7 @@ const PortHighlighting = {
             const aboveFine   = this.getFineCategory(above.value);
             if (!currentFine || !aboveFine || currentFine === aboveFine) continue;
 
-            candidates.push(current);
+            candidates.push(isSpecial(currentFine) ? current : above);
         }
 
         if (!candidates.length) return null;
