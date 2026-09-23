@@ -102,11 +102,21 @@ const PortHighlighting = {
 
     // Same consecutive-pair scan shape as the generic pass inside
     // findHighlightInWindow(), just keyed off getFineCategory() instead
-    // of getPortCategory(). No rank/priority logic needed — this only
-    // ever runs when the whole window is already one coarse category,
-    // so a UK/EU pair and a CANADA/USA pair can never both show up in
-    // the same call.
+    // of getPortCategory(). Only ever allowed to fire when the WHOLE
+    // window is a single coarse category (all EU_UK, or all USA) — a
+    // full-bound (pivot) route can reach here with leg1 individually
+    // flat-EU and leg2 individually flat-USA (each leg's own scan found
+    // nothing), but the combined window isn't "all EU" or "all USA" at
+    // all, and the leg boundary itself is a real coarse-level region
+    // change that just wasn't leg2's/leg1's own problem to catch —
+    // never something this finer UK/Canada split should touch.
     findFineCategoryHighlight(fields, biasFirst) {
+        const coarseCats = new Set(
+            fields.map(f => f.value.trim() ? this.getPortCategory(f.value) : null).filter(Boolean)
+        );
+        const onlyCoarseCat = coarseCats.size === 1 ? [...coarseCats][0] : null;
+        if (onlyCoarseCat !== "EU_UK" && onlyCoarseCat !== "USA") return null;
+
         const candidates = [];
 
         for (let i = 1; i < fields.length; i++) {
