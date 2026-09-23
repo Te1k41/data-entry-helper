@@ -103,13 +103,15 @@ const PortHighlighting = {
     },
 
     // Reads the `service` field and checks whether it ends with a
-    // compass direction suffix (-N/-S/-E/-W, case-insensitive). This
+    // trailing letter suffix (-A through -Z, case-insensitive — not just
+    // compass N/S/E/W, since services also use plain string letters like
+    // "-A"/"-B" for the same "loops back to its own start" naming). This
     // flag decides whether the scan below biases toward the FIRST
     // category-change candidate or the LAST one.
     isDirectionalService() {
         const serviceField = document.querySelector('input[type="text"][name="service"]');
         const serviceValue = serviceField ? serviceField.value.trim() : "";
-        const isDirectional = /-[NSEW]$/i.test(serviceValue);
+        const isDirectional = /-[A-Z]$/i.test(serviceValue);
         console.log(`🧭 Service: "${serviceValue}" → directional: ${isDirectional}`);
         return isDirectional;
     },

@@ -48,6 +48,7 @@ flowchart LR
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_upload_proof_relay_js["features/upload-proof-relay.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_vessel_name_reminder_js["features/vessel-name-reminder.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_vessel_recommendation_js["features/vessel-recommendation.js"]
+  features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_voyage_direction_js["features/voyage-direction.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> utils_banner_js["utils/banner.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> utils_button_js["utils/button.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> utils_toolbar_js["utils/toolbar.js"]
@@ -249,7 +250,7 @@ flowchart LR
 | core/boundary.js | PortSyncBoundary | features/date-syncing.js, features/manual-etd-highlight.js, features/port-highlighting.js |
 | features/arrival-depart-order-check.js | ArrivalDepartOrderCheck | features/insert-port.js, main.js |
 | features/auto-nav-schedules.js | AutoNavSchedules | features/due-service-scanner-relay.js, main.js |
-| features/awr-audit-relay.js | top, AwrAudit | background-relay.js, core/boundary.js, features/awr-flag.js, features/date-calculator.js, features/keyboard-navigation.js, features/live-check-relay.js, features/notes-sidebar.js, features/port-name-reminder.js, features/rename-toggle-relay.js, features/save-confirmation.js, features/schedule-preview-tools-relay.js, features/tradetech-stars.js, features/upload-proof-relay.js, features/vessel-name-reminder.js, features/vessel-recommendation.js, utils/banner.js, utils/button.js, utils/toolbar.js, main.js |
+| features/awr-audit-relay.js | top, AwrAudit | background-relay.js, core/boundary.js, features/awr-flag.js, features/date-calculator.js, features/keyboard-navigation.js, features/live-check-relay.js, features/notes-sidebar.js, features/port-name-reminder.js, features/rename-toggle-relay.js, features/save-confirmation.js, features/schedule-preview-tools-relay.js, features/tradetech-stars.js, features/upload-proof-relay.js, features/vessel-name-reminder.js, features/vessel-recommendation.js, features/voyage-direction.js, utils/banner.js, utils/button.js, utils/toolbar.js, main.js |
 | features/awr-flag.js | AwrFlag | background-relay.js, main.js |
 | features/custom-rules-settings.js | CustomRulesSettings | main.js |
 | features/date-calculator.js | DateCalculator | main.js |
