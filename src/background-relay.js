@@ -532,9 +532,18 @@ async function captureOneReceipt(record, windowId) {
             func: () => (typeof SaveConfirmation === "undefined" ? null : SaveConfirmation.captureForBatchAudit())
         });
         // Exactly one frame actually has the port rows directly (see
-        // captureForBatchAudit()'s own comment) — same first-truthy-result
-        // dedup AWR Audit already relies on for its own allFrames reads.
-        const result = frames.map(f => f.result).find(r => r);
+        // captureForBatchAudit()'s own comment) — every OTHER frame
+        // (the frameset shell itself included) still returns a real
+        // {ok:false, reason:...} object, not null, so a plain
+        // `.find(r => r)` (AWR Audit's own dedup works because its func
+        // returns null for a non-matching frame, not an object) would
+        // grab the first frame's failure and stop, never reaching the
+        // one that actually succeeded — confirmed live, every single
+        // record reported "no port rows in this frame" even though the
+        // ports were right there in a child frame. Prefer the first
+        // ok:true result; only fall back to a failure if truly none.
+        const allResults = frames.map(f => f.result).filter(Boolean);
+        const result = allResults.find(r => r.ok) || allResults[0] || null;
 
         if (!result?.ok) {
             return { record, captured: false, reason: result?.reason || "no port rows found in any frame" };
