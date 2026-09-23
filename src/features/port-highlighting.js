@@ -337,26 +337,20 @@ const PortHighlighting = {
         const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
         const biasFirst = suffixDirectional || !!pivotRow;
 
-        // If directional and the first port repeats exactly at the
-        // very last row, exclude that last row from the candidate scan
-        // — that repeat is just the loop closing, not a real region change.
-        if (biasFirst && stopRow) {
-            const rowsWithContent = new Set();
-
-            document.querySelectorAll(
-                'input[name^="SP"][name$="_port_code"]:not([name^="PV_"]),' +
-                'input[name^="SP"][name$="_port_name"]:not([name^="PV_"])'
-            ).forEach(f => {
-                const match = f.name.match(/^SP(\d+)_port_(code|name)$/);
-                if (match && f.value.trim()) rowsWithContent.add(parseInt(match[1], 10));
-            });
-
-            const lastRow = rowsWithContent.size > 0 ? Math.max(...rowsWithContent) : null;
-
-            if (lastRow !== null && stopRow === lastRow) {
-                console.log(`🔁 First port repeats at last row SP${String(lastRow).padStart(3, "0")} — excluding from scan`);
-                portNameFields = portNameFields.slice(0, -1);
-            }
+        // Directional services (e.g. "SVC-E") loop back to the exact
+        // port they started from — the last populated port row is
+        // always that repeat, by definition of the service naming,
+        // regardless of whether its port_code text happens to match the
+        // first row's (might not be filled in yet, or formatted
+        // differently). Always excluded so it can never count as a fake
+        // region-change candidate. Scoped to suffixDirectional only, not
+        // the broader biasFirst — a full-bound/pivot route isn't a
+        // same-origin loop and shouldn't have its last row dropped.
+        if (suffixDirectional && portNameFields.length > 1) {
+            const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
+            const lastRow = Math.max(...portNameFields.map(rowOf));
+            console.log(`🔁 Directional service — excluding last port row SP${String(lastRow).padStart(3, "0")} (same as first)`);
+            portNameFields = portNameFields.filter(f => rowOf(f) !== lastRow);
         }
 
         // Only ever ONE port highlighted. Leg 2 is superior — if it
