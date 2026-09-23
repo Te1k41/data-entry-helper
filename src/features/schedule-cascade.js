@@ -215,6 +215,15 @@ const ScheduleCascade = {
     } finally {
         this._cascading = false;
     }
+
+    // Cascade only ever rewrites dates, which port category highlighting
+    // doesn't key off of — but setFieldValue()'s "change" event still
+    // never reaches PortHighlighting.handle() (its relevant-field regex
+    // doesn't match *_arrival_date/*_depart_date), so a highlight left
+    // stale by some earlier action would otherwise never get a chance to
+    // refresh here either. Single choke point for both Cascade Dates and
+    // Cascade Back, since both route through here.
+    PortHighlighting.run();
 },
 
     // "Cascade Back": anchors on whichever port date field you last
@@ -365,6 +374,8 @@ const ScheduleCascade = {
     } finally {
         this._cascading = false;
     }
+
+    PortHighlighting.run(); // same reason applyCascade() does — this writes dates too, outside PortHighlighting's own change-event trigger
 
     showTemporaryBanner({
         title:   "➡️ Cascade Continue complete",

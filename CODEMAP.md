@@ -96,6 +96,7 @@ flowchart LR
   features_port_highlighting_js["features/port-highlighting.js"] --> features_insert_port_js["features/insert-port.js"]
   features_port_highlighting_js["features/port-highlighting.js"] --> features_port_no_date_js["features/port-no-date.js"]
   features_port_highlighting_js["features/port-highlighting.js"] --> features_schedule_capture_relay_js["features/schedule-capture-relay.js"]
+  features_port_highlighting_js["features/port-highlighting.js"] --> features_schedule_cascade_js["features/schedule-cascade.js"]
   features_port_highlighting_js["features/port-highlighting.js"] --> features_vessel_recommendation_js["features/vessel-recommendation.js"]
   features_port_highlighting_js["features/port-highlighting.js"] --> main_js["main.js"]
   features_port_name_reminder_js["features/port-name-reminder.js"] --> main_js["main.js"]
@@ -269,7 +270,7 @@ flowchart LR
 | features/notes-sidebar.js | NotesSidebar | features/notes.js, main.js |
 | features/notes.js | NotesDateReplacement | features/notes-sidebar.js, main.js |
 | features/port-date-order-check.js | PortDateOrderCheck | main.js |
-| features/port-highlighting.js | PortHighlighting | features/insert-port.js, features/port-no-date.js, features/schedule-capture-relay.js, features/vessel-recommendation.js, main.js |
+| features/port-highlighting.js | PortHighlighting | features/insert-port.js, features/port-no-date.js, features/schedule-capture-relay.js, features/schedule-cascade.js, features/vessel-recommendation.js, main.js |
 | features/port-name-reminder.js | PortNameReminder | main.js |
 | features/port-no-date.js | DetectPortNoDate | features/insert-port.js, features/port-highlighting.js, main.js |
 | features/rearrange-vessels.js | RearrangeVessels | features/schedule-capture-relay.js, main.js |
