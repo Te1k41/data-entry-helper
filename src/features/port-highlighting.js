@@ -111,10 +111,14 @@ const PortHighlighting = {
     // change that just wasn't leg2's/leg1's own problem to catch —
     // never something this finer UK/Canada split should touch.
     //
-    // UK/Canada ARE the special side here — normal (EU/USA) port
-    // crossing into a UK/Canada port, or a UK/Canada port crossing back
-    // into a normal one, always highlights the UK/Canada row, never the
-    // plain EU/USA one, regardless of which direction the crossing runs.
+    // Mirrors the generic scan's own "leaving a category never counts"
+    // rule (`if (currentCat === "OTHER") continue` above) exactly, one
+    // level finer: a row is only a candidate when `current` ITSELF is
+    // the special UK/Canada category — entering UK/Canada from a plain
+    // EU/USA port. Leaving UK/Canada back into a plain port never counts
+    // (`current` would be EU/USA there, same as `current === "OTHER"`
+    // never counting up in the coarse scan) — only entering is a signal
+    // worth flagging, same philosophy, one category level down.
     findFineCategoryHighlight(fields, biasFirst) {
         const coarseCats = new Set(
             fields.map(f => f.value.trim() ? this.getPortCategory(f.value) : null).filter(Boolean)
@@ -132,9 +136,9 @@ const PortHighlighting = {
 
             const currentFine = this.getFineCategory(current.value);
             const aboveFine   = this.getFineCategory(above.value);
-            if (!currentFine || !aboveFine || currentFine === aboveFine) continue;
-
-            candidates.push(isSpecial(currentFine) ? current : above);
+            if (!currentFine || !aboveFine) continue;
+            if (!isSpecial(currentFine)) continue; // leaving UK/Canada never counts
+            if (currentFine !== aboveFine) candidates.push(current);
         }
 
         if (!candidates.length) return null;
