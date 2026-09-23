@@ -144,14 +144,20 @@ const SaveConfirmation = {
         const read = name => formDoc.querySelector(`input[name="${name}"]`)?.value.trim() || "";
         const lines = [];
 
-        const lastForeignPort = read("last_foreign_port_desc");
-        if (lastForeignPort) lines.push(`Last Foreign Port: ${lastForeignPort}`);
+        // Each of these 3 is a CODE field (e.g. "last_foreign_port" =
+        // "SIN") paired with its own separate _desc field (the city
+        // name Tradetech's own validport_v2/validcity_v2 fills in) —
+        // both captured together on one line, code first.
+        const addPortField = (codeName, descName, label) => {
+            const code = read(codeName);
+            const desc = read(descName);
+            if (!code && !desc) return;
+            lines.push(`${label}: ${[code, desc].filter(Boolean).join(" — ")}`);
+        };
 
-        const firstUsPort = read("first_us_port_desc");
-        if (firstUsPort) lines.push(`First US Port: ${firstUsPort}`);
-
-        const firstEuPort = read("first_eu_port_desc");
-        if (firstEuPort) lines.push(`First EU Port: ${firstEuPort}`);
+        addPortField("last_foreign_port", "last_foreign_port_desc", "Last Foreign Port");
+        addPortField("first_us_port",     "first_us_port_desc",     "First US Port");
+        addPortField("first_eu_port",     "first_eu_port_desc",     "First EU Port");
 
         const highlighted = typeof PortHighlighting !== "undefined" ? PortHighlighting.currentHighlightField : null;
         if (highlighted) {
@@ -264,7 +270,13 @@ const SaveConfirmation = {
             const link = document.createElement("a");
             link.href = url;
             const dateStamp = DateUtils.todayMMDDYY().replace(/\//g, "");
-            link.download = `${serviceCode || "service"}-${dateStamp}-receipt.png`;
+            // A relative subfolder in the download attribute lands under
+            // the browser's default Downloads dir (Chrome creates it if
+            // missing) — keeps receipts out of the relay server's
+            // download-watcher.js, which watches Downloads directly and
+            // auto-renames whatever PNGs land there for the rename-toggle
+            // feature; this was clobbering receipt filenames too.
+            link.download = `rotation-receipts/${serviceCode || "service"}-${dateStamp}-receipt.png`;
             link.click();
             URL.revokeObjectURL(url);
         }, "image/png");
