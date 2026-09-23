@@ -110,6 +110,12 @@ const PortHighlighting = {
     // all, and the leg boundary itself is a real coarse-level region
     // change that just wasn't leg2's/leg1's own problem to catch —
     // never something this finer UK/Canada split should touch.
+    //
+    // The candidate is always the "plain" EU/USA side of the pair, NEVER
+    // the UK/Canada side — the port UK or Canada leads INTO, not the UK/
+    // Canada port itself — regardless of which direction the crossing
+    // runs (EU-then-UK highlights the EU row before it; UK-then-EU
+    // highlights the EU row after it).
     findFineCategoryHighlight(fields, biasFirst) {
         const coarseCats = new Set(
             fields.map(f => f.value.trim() ? this.getPortCategory(f.value) : null).filter(Boolean)
@@ -117,6 +123,7 @@ const PortHighlighting = {
         const onlyCoarseCat = coarseCats.size === 1 ? [...coarseCats][0] : null;
         if (onlyCoarseCat !== "EU_UK" && onlyCoarseCat !== "USA") return null;
 
+        const isSpecial = fine => fine === "UK" || fine === "CANADA";
         const candidates = [];
 
         for (let i = 1; i < fields.length; i++) {
@@ -126,8 +133,9 @@ const PortHighlighting = {
 
             const currentFine = this.getFineCategory(current.value);
             const aboveFine   = this.getFineCategory(above.value);
-            if (!currentFine || !aboveFine) continue;
-            if (currentFine !== aboveFine) candidates.push(current);
+            if (!currentFine || !aboveFine || currentFine === aboveFine) continue;
+
+            candidates.push(isSpecial(currentFine) ? above : current);
         }
 
         if (!candidates.length) return null;
