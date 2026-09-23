@@ -118,7 +118,13 @@ const PortHighlighting = {
     // counts (`current` IS the special category — skipped), but the
     // plain EU/USA port you land back on right after leaving UK/Canada
     // does — never the UK/Canada row itself.
-    findFineCategoryHighlight(fields, biasFirst) {
+    //
+    // Always the LAST such crossing when more than one exists, never the
+    // first — unlike the rest of this file's biasFirst convention. The
+    // point of this whole fallback is to say where the service is
+    // actually going, so the most recent UK/Canada->EU/USA return is the
+    // one that matters, not the earliest.
+    findFineCategoryHighlight(fields) {
         const coarseCats = new Set(
             fields.map(f => f.value.trim() ? this.getPortCategory(f.value) : null).filter(Boolean)
         );
@@ -141,7 +147,7 @@ const PortHighlighting = {
         }
 
         if (!candidates.length) return null;
-        return biasFirst ? candidates[0] : candidates[candidates.length - 1];
+        return candidates[candidates.length - 1];
     },
 
     // Parses SP001_port_key into its Start/End compass directions.
@@ -472,7 +478,7 @@ const PortHighlighting = {
         // see getFineCategory()'s header comment) — try the finer UK/EU
         // or Canada/USA split before giving up and defaulting to SP001.
         if (!highlightField) {
-            highlightField = this.findFineCategoryHighlight(portNameFields, biasFirst) || portNameFields[0];
+            highlightField = this.findFineCategoryHighlight(portNameFields) || portNameFields[0];
         }
 
         if (highlightField) this.applyHighlight(highlightField);
