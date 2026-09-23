@@ -27,6 +27,12 @@ const DUE_SERVICES_FILE = path.join(DATA_FOLDER, "due-services.json");
 const ACTIVITY_LOG_FILE = path.join(DATA_FOLDER, "activity-log.json");
 const CURRENT_BATCH_FILE = path.join(DATA_FOLDER, "current-batch.json");
 
+// Deliberately NOT under WATCH_FOLDER — that's the Downloads folder
+// download-watcher.js watches and auto-renames files in for the
+// rename-toggle feature, which was clobbering batch-captured receipt
+// filenames (see routes/receipts.js).
+const RECEIPTS_FOLDER = path.join(DATA_FOLDER, "rotation-receipts");
+
 module.exports = {
     PORT,
     WATCH_FOLDER,
@@ -36,4 +42,5 @@ module.exports = {
     DUE_SERVICES_FILE,
     ACTIVITY_LOG_FILE,
     CURRENT_BATCH_FILE,
+    RECEIPTS_FOLDER,
 };

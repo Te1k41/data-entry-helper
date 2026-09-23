@@ -26,6 +26,7 @@ const scheduleGuidelineRoutes = require("./routes/schedule-guideline");
 const resultRoutes = require("./routes/result");
 const vesselDictionaryRoutes = require("./routes/vessel-dictionary");
 const fillTestRoutes = require("./routes/fill-test");
+const receiptsRoutes = require("./routes/receipts");
 
 const relaySocket     = require("./relay-socket");
 const downloadWatcher = require("./download-watcher");
@@ -133,6 +134,7 @@ const ROUTES = [
     { method: "GET",  match: exact("/vessel-dictionary"),               handler: vesselDictionaryRoutes.handleGetAll },
     { method: "POST", match: exact("/vessel-dictionary/learn-batch"),   handler: vesselDictionaryRoutes.handleLearnBatch },
     { method: "POST", match: exact("/vessel-dictionary/remove"),        handler: vesselDictionaryRoutes.handleRemove },
+    { method: "POST", match: exact("/save-receipt"),                    handler: receiptsRoutes.handleSaveReceipt },
 ];
 
 function handleRequest(req, res) {

@@ -540,18 +540,30 @@ async function captureOneReceipt(record, windowId) {
             return { record, captured: false, reason: result?.reason || "no port rows found in any frame" };
         }
 
-        // chrome.downloads.download() — a privileged extension API call,
-        // not a page-triggered <a>.click() — deliberately used here
-        // instead of letting the content script download its own PNG.
-        // Confirmed real bug: many click-triggered downloads fired
-        // back-to-back from background tabs with no per-tab user gesture
-        // is exactly what Chrome's automatic-download-blocking guard
-        // targets, and it was silently dropping some records' receipts
-        // partway through a run with no visible error anywhere.
+        // POSTs straight to the local relay server, which writes the PNG
+        // to disk itself (routes/receipts.js) — not Chrome's downloads
+        // API. Two real problems that ruled it out: (1) many
+        // chrome.downloads.download() calls fired back-to-back from
+        // background tabs were still landing in the visible download
+        // shelf/history, which isn't wanted for records visited
+        // automatically rather than by hand; (2) before that, a plain
+        // content-script <a>.click() per record hit Chrome's automatic-
+        // download-blocking guard and silently dropped some receipts
+        // partway through a run. A server-side file write has neither
+        // failure mode. This fetch() call is exempt from any page's CORS
+        // (it runs in the service worker, not a content script).
         try {
-            await chrome.downloads.download({ url: result.dataUrl, filename: result.filename, conflictAction: "uniquify" });
+            const res = await fetch("http://localhost:3737/save-receipt", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ filename: result.filename, dataUrl: result.dataUrl })
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                return { record, captured: false, reason: `relay save failed (${res.status}): ${body.error || res.statusText}` };
+            }
         } catch (err) {
-            return { record, captured: false, reason: `chrome.downloads.download failed: ${err.message}` };
+            return { record, captured: false, reason: `could not reach relay to save receipt: ${err.message}` };
         }
 
         return { record, captured: true };
