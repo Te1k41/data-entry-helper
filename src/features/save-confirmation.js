@@ -384,8 +384,19 @@ const SaveConfirmation = {
     // privileged extension API call, not a page-triggered click, so
     // that guard doesn't apply to it.
     captureForBatchAudit() {
+        // null, not {ok:false,...} — this must stay indistinguishable
+        // from "SaveConfirmation undefined in this frame" (see the
+        // func passed to executeScript in background-relay.js), so the
+        // frame that actually has the ports is always the only one
+        // that returns a real object. Returning an object here too
+        // was a real bug: every OTHER frame (the frameset shell
+        // included) would "win" the dedup with this exact reason
+        // before ever reaching the real frame's actual result —
+        // confirmed live, a record that WAS being correctly filtered
+        // out by hasSpecialPort below reported this misleading reason
+        // instead of "no special port found".
         if (!document.querySelector('input[name^="SP"][name$="_port_name"]')) {
-            return { ok: false, reason: "no port rows in this frame" };
+            return null;
         }
         if (typeof PortHighlighting === "undefined" || !PortHighlighting.hasSpecialPort) {
             return { ok: false, reason: "no special port found — skipped" };
