@@ -79,6 +79,7 @@ const DateCalculator = {
                 <input id="tt-date-calc-result" type="text" style="flex:1; min-width:0; box-sizing:border-box; font-family:monospace; font-size:11px; font-weight:bold; padding:3px; border:1px solid #000000;">
             </div>
             <div id="tt-date-calc-result-weekday" style="color:#666666; min-height:12px;"></div>
+            <div id="tt-date-calc-copy-status" style="color:#e67e00; font-weight:bold; margin-top:4px; min-height:12px;"></div>
         `;
 
         document.body.appendChild(panel);
@@ -93,16 +94,24 @@ const DateCalculator = {
         const resultRow     = panel.querySelector("#tt-date-calc-result-row");
 
         const fields = { baseInput, offsetInput, resultInput, baseWeekday, resultWeekday };
+        const copyStatus = panel.querySelector("#tt-date-calc-copy-status");
 
         // Selecting (focusing) any of the 3 boxes copies its whole
         // current value to the clipboard — lets a value get pasted
-        // straight into the real page field without retyping it.
+        // straight into the real page field without retyping it. Shown
+        // inline in the panel itself (not the page-wide success banner)
+        // so it doesn't compete with the top-right banner stack.
+        let copyStatusTimer = null;
         const copyOnFocus = (input, label) => {
             input.addEventListener("focus", () => {
                 const value = input.value.trim();
                 if (!value) return;
                 navigator.clipboard.writeText(value)
-                    .then(() => showTemporaryBanner({ title: "📋 Copied", message: `${label}: ${value}` }))
+                    .then(() => {
+                        clearTimeout(copyStatusTimer);
+                        copyStatus.textContent = `📋 Copied ${label}: ${value}`;
+                        copyStatusTimer = setTimeout(() => { copyStatus.textContent = ""; }, 1500);
+                    })
                     .catch(() => {});
             });
         };
