@@ -140,41 +140,52 @@ const SaveConfirmation = {
     // port, rendered as extra lines on the batch-captured receipt (see
     // captureForBatchAudit()/rotation-receipt-capture-relay.js). Read
     // once, not per row — these describe the whole record, not one port.
+    // Always returns exactly 4 lines, one per field, even when blank
+    // ("—") — confirmed real confusion otherwise: a blank field used to
+    // just omit its line entirely, indistinguishable from the capture
+    // never having run at all.
     getExtraCaptureFields(formDoc) {
         const read = name => formDoc.querySelector(`input[name="${name}"]`)?.value.trim() || "";
-        const lines = [];
 
         // Each of these 3 is a CODE field (e.g. "last_foreign_port" =
         // "SIN") paired with its own separate _desc field (the city
         // name Tradetech's own validport_v2/validcity_v2 fills in) —
         // both captured together on one line, code first.
-        const addPortField = (codeName, descName, label) => {
-            const code = read(codeName);
-            const desc = read(descName);
-            if (!code && !desc) return;
-            lines.push(`${label}: ${[code, desc].filter(Boolean).join(" — ")}`);
+        const portField = (codeName, descName, label) => {
+            const combined = [read(codeName), read(descName)].filter(Boolean).join(" — ");
+            return `${label}: ${combined || "—"}`;
         };
 
-        addPortField("last_foreign_port", "last_foreign_port_desc", "Last Foreign Port");
-        addPortField("first_us_port",     "first_us_port_desc",     "First US Port");
-        addPortField("first_eu_port",     "first_eu_port_desc",     "First EU Port");
+        const lines = [
+            portField("last_foreign_port", "last_foreign_port_desc", "Last Foreign Port"),
+            portField("first_us_port",     "first_us_port_desc",     "First US Port"),
+            portField("first_eu_port",     "first_eu_port_desc",     "First EU Port"),
+        ];
 
         const highlighted = typeof PortHighlighting !== "undefined" ? PortHighlighting.currentHighlightField : null;
-        if (highlighted) {
-            const rowMatch = highlighted.name.match(/^SP(\d+)_port_name$/);
-            lines.push(`Highlighted Port: SP${rowMatch ? rowMatch[1] : "?"} ${highlighted.value.trim()}`);
-        }
+        const rowMatch = highlighted?.name.match(/^SP(\d+)_port_name$/);
+        lines.push(`Highlighted Port: ${highlighted ? `SP${rowMatch ? rowMatch[1] : "?"} ${highlighted.value.trim()}` : "—"}`);
 
         return lines;
     },
 
-    // Renders the rotation table onto a canvas and exports it as a
-    // PNG "receipt" image — a plain detached <a download> click, no
-    // need to insert anything into any document (works regardless of
-    // which frame this runs in, and sidesteps the same frameset-body
-    // quirk showOverlay() has to work around). Filename matches the
-    // {service}-{MMDDYY} convention Tradetech's own downloads already
-    // use (e.g. "MEDEX-E-091826.png"), with a "-receipt" suffix.
+    // Filename matches the {service}-{MMDDYY} convention Tradetech's own
+    // downloads already use (e.g. "MEDEX-E-091826.png"), with a
+    // "-receipt" suffix, inside a rotation-receipts/ subfolder (Chrome
+    // creates it under the default Downloads dir) — keeps it out of the
+    // relay server's download-watcher.js, which watches Downloads
+    // directly and auto-renames whatever PNGs land there for the
+    // rename-toggle feature; that was clobbering receipt filenames too.
+    receiptFilename(serviceCode) {
+        const dateStamp = DateUtils.todayMMDDYY().replace(/\//g, "");
+        return `rotation-receipts/${serviceCode || "service"}-${dateStamp}-receipt.png`;
+    },
+
+    // Renders the rotation table onto a canvas — shared by
+    // downloadRotationPng() (a real click-triggered download, for
+    // interactive use) and captureForBatchAudit() (returns a data URL
+    // instead, see that method's own comment for why a click-triggered
+    // download isn't used there).
     //
     // `extraLines` (optional) are plain text lines rendered below the
     // title, above the table — used by the batch Rotation Receipt
@@ -182,7 +193,7 @@ const SaveConfirmation = {
     // currently-highlighted port. Defaults to [] so both existing
     // callers (the Custom Rule download, the Confirm & Save button) are
     // byte-for-byte unchanged.
-    downloadRotationPng(rows, serviceCode, extraLines = []) {
+    renderRotationCanvas(rows, extraLines = []) {
         const ROW_HEIGHT      = 22;
         const HEADER_Y        = 40 + extraLines.length * ROW_HEIGHT;
         const PADDING         = 10;
@@ -265,18 +276,23 @@ const SaveConfirmation = {
             });
         }
 
+        return canvas;
+    },
+
+    // Real click-triggered download — for interactive use only (the
+    // Custom Rule auto-download on Save, the Confirm-overlay's Download
+    // button, the batch capture's own fallback if it can't reach
+    // chrome.downloads). A detached <a>, never inserted into any
+    // document, so this works regardless of which frame it runs in and
+    // sidesteps the same frameset-body quirk showOverlay() has to work
+    // around.
+    downloadRotationPng(rows, serviceCode, extraLines = []) {
+        const canvas = this.renderRotationCanvas(rows, extraLines);
         canvas.toBlob(blob => {
             const url  = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
-            const dateStamp = DateUtils.todayMMDDYY().replace(/\//g, "");
-            // A relative subfolder in the download attribute lands under
-            // the browser's default Downloads dir (Chrome creates it if
-            // missing) — keeps receipts out of the relay server's
-            // download-watcher.js, which watches Downloads directly and
-            // auto-renames whatever PNGs land there for the rename-toggle
-            // feature; this was clobbering receipt filenames too.
-            link.download = `rotation-receipts/${serviceCode || "service"}-${dateStamp}-receipt.png`;
+            link.download = this.receiptFilename(serviceCode);
             link.click();
             URL.revokeObjectURL(url);
         }, "image/png");
@@ -307,18 +323,32 @@ const SaveConfirmation = {
     // true, exactly one frame has the port rows directly; skipping the
     // sibling-frame search here means only that one frame proceeds,
     // so this never fires twice (once per frame) for the same record.
-    // Purely reads the DOM and downloads a PNG — never writes a field,
-    // never clicks anything, never saves.
+    // Purely reads the DOM — never writes a field, never clicks
+    // anything, never saves.
+    //
+    // Returns a data URL instead of doing its own click-triggered
+    // download (unlike downloadRotationPng): confirmed real bug —
+    // Chrome's automatic-download-blocking guard targets exactly this
+    // shape of traffic (many `<a>`.click() downloads fired back-to-back
+    // from background tabs with no accompanying real user gesture per
+    // tab), silently dropping downloads past some point in a run
+    // without ever surfacing an error. background-relay.js hands the
+    // returned data URL to chrome.downloads.download() instead — a
+    // privileged extension API call, not a page-triggered click, so
+    // that guard doesn't apply to it.
     captureForBatchAudit() {
         if (!document.querySelector('input[name^="SP"][name$="_port_name"]')) {
             return { ok: false, reason: "no port rows in this frame" };
         }
         try {
             const rows = this.buildRotationRows(document);
-            const serviceCode = this.getServiceCode(document);
             const extraLines = this.getExtraCaptureFields(document);
-            this.downloadRotationPng(rows, serviceCode, extraLines);
-            return { ok: true };
+            const canvas = this.renderRotationCanvas(rows, extraLines);
+            return {
+                ok: true,
+                dataUrl: canvas.toDataURL("image/png"),
+                filename: this.receiptFilename(this.getServiceCode(document))
+            };
         } catch (err) {
             console.error("❌ Batch receipt capture failed:", err);
             return { ok: false, reason: err.message };

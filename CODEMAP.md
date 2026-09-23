@@ -84,6 +84,7 @@ flowchart LR
   features_force_tab_links_js["features/force-tab-links.js"] --> utils_relay_socket_client_js["utils/relay-socket-client.js"]
   features_highlighter_js["features/highlighter.js"] --> features_live_check_relay_js["features/live-check-relay.js"]
   features_insert_port_js["features/insert-port.js"] --> features_port_name_reminder_js["features/port-name-reminder.js"]
+  features_insert_port_js["features/insert-port.js"] --> features_save_confirmation_js["features/save-confirmation.js"]
   features_insert_port_js["features/insert-port.js"] --> main_js["main.js"]
   features_keyboard_navigation_js["features/keyboard-navigation.js"] --> main_js["main.js"]
   features_last_foreign_port_check_js["features/last-foreign-port-check.js"] --> main_js["main.js"]
@@ -295,7 +296,7 @@ flowchart LR
 | features/force-tab-links.js | open | background-relay.js, features/duplicate-vessel-check.js, features/full-page-capture-inject.js, features/keyboard-navigation.js, features/rename-toggle-relay.js, features/schedule-preview-tools-relay.js, features/schedule-table-scrape-relay.js, features/service-relay-send-relay.js, features/upload-proof-relay.js, utils/relay-socket-client.js |
 | features/full-page-capture-inject.js | - | - |
 | features/highlighter.js | CONTEXT_RADIUS, storageKey, loadHighlights, wrapRange, getTextNodesInRange, unwrap, captureContext, findRange, locate | features/live-check-relay.js |
-| features/insert-port.js | portField, portDateField, readPortRow, writePortRow, blankPortRowValues, PortActionHistory, InsertPort, DeletePort | features/port-name-reminder.js, main.js |
+| features/insert-port.js | portField, portDateField, readPortRow, writePortRow, blankPortRowValues, PortActionHistory, InsertPort, DeletePort | features/port-name-reminder.js, features/save-confirmation.js, main.js |
 | features/keyboard-navigation.js | KeyboardFieldNav | main.js |
 | features/last-foreign-port-check.js | LastForeignPortCheck | main.js |
 | features/live-check-relay.js | LiveCheckRelay | - |

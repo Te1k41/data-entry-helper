@@ -539,6 +539,21 @@ async function captureOneReceipt(record, windowId) {
         if (!result?.ok) {
             return { record, captured: false, reason: result?.reason || "no port rows found in any frame" };
         }
+
+        // chrome.downloads.download() — a privileged extension API call,
+        // not a page-triggered <a>.click() — deliberately used here
+        // instead of letting the content script download its own PNG.
+        // Confirmed real bug: many click-triggered downloads fired
+        // back-to-back from background tabs with no per-tab user gesture
+        // is exactly what Chrome's automatic-download-blocking guard
+        // targets, and it was silently dropping some records' receipts
+        // partway through a run with no visible error anywhere.
+        try {
+            await chrome.downloads.download({ url: result.dataUrl, filename: result.filename, conflictAction: "uniquify" });
+        } catch (err) {
+            return { record, captured: false, reason: `chrome.downloads.download failed: ${err.message}` };
+        }
+
         return { record, captured: true };
     } finally {
         await chrome.tabs.remove(tab.id).catch(() => {});
