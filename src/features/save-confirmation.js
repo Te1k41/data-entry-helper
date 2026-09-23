@@ -136,6 +136,32 @@ const SaveConfirmation = {
         return value ? value.replace(/[^A-Za-z0-9-]/g, "_") : "service";
     },
 
+    // Page-level fields (not per-SP-row) plus the currently-highlighted
+    // port, rendered as extra lines on the batch-captured receipt (see
+    // captureForBatchAudit()/rotation-receipt-capture-relay.js). Read
+    // once, not per row — these describe the whole record, not one port.
+    getExtraCaptureFields(formDoc) {
+        const read = name => formDoc.querySelector(`input[name="${name}"]`)?.value.trim() || "";
+        const lines = [];
+
+        const lastForeignPort = read("last_foreign_port_desc");
+        if (lastForeignPort) lines.push(`Last Foreign Port: ${lastForeignPort}`);
+
+        const firstUsPort = read("first_us_port_desc");
+        if (firstUsPort) lines.push(`First US Port: ${firstUsPort}`);
+
+        const firstEuPort = read("first_eu_port_desc");
+        if (firstEuPort) lines.push(`First EU Port: ${firstEuPort}`);
+
+        const highlighted = typeof PortHighlighting !== "undefined" ? PortHighlighting.currentHighlightField : null;
+        if (highlighted) {
+            const rowMatch = highlighted.name.match(/^SP(\d+)_port_name$/);
+            lines.push(`Highlighted Port: SP${rowMatch ? rowMatch[1] : "?"} ${highlighted.value.trim()}`);
+        }
+
+        return lines;
+    },
+
     // Renders the rotation table onto a canvas and exports it as a
     // PNG "receipt" image — a plain detached <a download> click, no
     // need to insert anything into any document (works regardless of
@@ -143,14 +169,22 @@ const SaveConfirmation = {
     // quirk showOverlay() has to work around). Filename matches the
     // {service}-{MMDDYY} convention Tradetech's own downloads already
     // use (e.g. "MEDEX-E-091826.png"), with a "-receipt" suffix.
-    downloadRotationPng(rows, serviceCode) {
+    //
+    // `extraLines` (optional) are plain text lines rendered below the
+    // title, above the table — used by the batch Rotation Receipt
+    // Capture feature to stamp on last foreign port / first US-EU port /
+    // currently-highlighted port. Defaults to [] so both existing
+    // callers (the Custom Rule download, the Confirm & Save button) are
+    // byte-for-byte unchanged.
+    downloadRotationPng(rows, serviceCode, extraLines = []) {
         const ROW_HEIGHT      = 22;
-        const HEADER_Y        = 40;
+        const HEADER_Y        = 40 + extraLines.length * ROW_HEIGHT;
         const PADDING         = 10;
         const COL_GAP         = 24; // breathing room after the longest port name
         const DATE_COL_WIDTH  = 90;
         const PORT_FONT       = "12px monospace";
         const TITLE_FONT      = "bold 14px monospace";
+        const EXTRA_FONT      = "12px monospace";
         const titleText       = `Port Rotation Receipt — ${DateUtils.todayMMDDYY()}`;
 
         // Measure first — a canvas with no width/height set yet still
@@ -173,9 +207,12 @@ const SaveConfirmation = {
         measureCtx.font = TITLE_FONT;
         const titleWidth = measureCtx.measureText(titleText).width;
 
+        measureCtx.font = EXTRA_FONT;
+        const extraLinesWidth = Math.max(0, ...extraLines.map(t => measureCtx.measureText(t).width));
+
         const colWidths  = [portColWidth, DATE_COL_WIDTH, DATE_COL_WIDTH];
         const tableWidth = colWidths.reduce((a, b) => a + b, 0);
-        const width  = Math.max(tableWidth, titleWidth) + PADDING * 2;
+        const width  = Math.max(tableWidth, titleWidth, extraLinesWidth) + PADDING * 2;
         const height = HEADER_Y + 10 + ROW_HEIGHT * Math.max(rows.length, 1) + PADDING;
 
         const canvas = document.createElement("canvas");
@@ -189,6 +226,11 @@ const SaveConfirmation = {
         ctx.fillStyle = "#000000";
         ctx.font = TITLE_FONT;
         ctx.fillText(titleText, PADDING, 20);
+
+        ctx.font = EXTRA_FONT;
+        extraLines.forEach((text, i) => {
+            ctx.fillText(text, PADDING, 20 + ROW_HEIGHT * (i + 1));
+        });
 
         ctx.font = "bold 12px monospace";
         let x = PADDING;
@@ -241,6 +283,33 @@ const SaveConfirmation = {
             this.downloadRotationPng(this.buildRotationRows(formDoc), this.getServiceCode(formDoc));
         } catch (err) {
             console.error("❌ Rotation receipt download failed:", err);
+        }
+    },
+
+    // Entry point for the batch Rotation Receipt Capture feature
+    // (background-relay.js injects a call to this via
+    // chrome.scripting.executeScript({allFrames:true}), same pattern
+    // AWR Audit already uses to reach whichever frame actually has the
+    // page's content). Deliberately checks `document` directly rather
+    // than findFormDocument()'s cross-frame fallback — with allFrames
+    // true, exactly one frame has the port rows directly; skipping the
+    // sibling-frame search here means only that one frame proceeds,
+    // so this never fires twice (once per frame) for the same record.
+    // Purely reads the DOM and downloads a PNG — never writes a field,
+    // never clicks anything, never saves.
+    captureForBatchAudit() {
+        if (!document.querySelector('input[name^="SP"][name$="_port_name"]')) {
+            return { ok: false, reason: "no port rows in this frame" };
+        }
+        try {
+            const rows = this.buildRotationRows(document);
+            const serviceCode = this.getServiceCode(document);
+            const extraLines = this.getExtraCaptureFields(document);
+            this.downloadRotationPng(rows, serviceCode, extraLines);
+            return { ok: true };
+        } catch (err) {
+            console.error("❌ Batch receipt capture failed:", err);
+            return { ok: false, reason: err.message };
         }
     },
 

@@ -21,6 +21,12 @@ let pendingRenamingSend  = null;
 // wrong label for one round trip before self-correcting.
 let awaitingRenamingEcho = false;
 
+// Which background-tab batch job (if any) currently owns chrome.tabs.create
+// against real Tradetech records — AWR Audit and Rotation Receipt Capture
+// both walk records one at a time in hidden tabs; nothing before this
+// stopped them from running concurrently against the same records.
+let batchJobRunning = null; // "awr" | "receipt-capture" | null
+
 importScripts("utils/relay-socket-client.js");
 
 console.log("🛰 Background script loaded");
@@ -140,7 +146,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "RUN_AWR_AUDIT") {
-        runAwrAudit();
+        if (batchJobRunning) {
+            sendResponse({ ok: false, started: false, reason: "busy", runningJob: batchJobRunning });
+            return;
+        }
+        batchJobRunning = "awr";
+        runAwrAudit().finally(() => { batchJobRunning = null; });
+        sendResponse({ ok: true, started: true });
+        return;
+    }
+
+    if (message?.type === "RUN_ROTATION_RECEIPT_CAPTURE") {
+        if (batchJobRunning) {
+            sendResponse({ ok: false, started: false, reason: "busy", runningJob: batchJobRunning });
+            return;
+        }
+        batchJobRunning = "receipt-capture";
+        runRotationReceiptCapture(message.records || null).finally(() => { batchJobRunning = null; });
         sendResponse({ ok: true, started: true });
         return;
     }
@@ -278,9 +300,12 @@ function waitForTabComplete(tabId) {
     });
 }
 
-async function auditOneRecord(record, expectedNextUpdateDate) {
-    const url = `https://www.tradetech.net/cgi/inframe/cgi/u/schedule_detailsB.pl?record=${record}&mode=E`;
-    const tab = await chrome.tabs.create({ url, active: false });
+async function auditOneRecord(record, expectedNextUpdateDate, windowId) {
+    // ttBatchJob=1 tells service-relay-send-relay.js (and anything else
+    // that shouldn't run on a batch tab) that this isn't the user's own
+    // page — see that file's isBatchTab() for why.
+    const url = `https://www.tradetech.net/cgi/inframe/cgi/u/schedule_detailsB.pl?record=${record}&mode=E&ttBatchJob=1`;
+    const tab = await chrome.tabs.create({ url, active: false, windowId });
 
     try {
         await waitForTabComplete(tab.id);
@@ -451,18 +476,28 @@ async function runAwrAudit() {
     const records = [...recordDates.keys()];
     console.log(`🔍 AWR audit: ${records.length} record(s) to check, one at a time`);
 
+    // Every background tab this batch opens lives in ONE dedicated window,
+    // created fresh here — never whatever window happens to be focused, so
+    // it can't "follow the mouse" if the user switches windows mid-run.
+    const batchWindow = await chrome.windows.create({ focused: false, url: "about:blank" });
+    const windowId = batchWindow.id;
+
     const results = [];
-    for (const [i, record] of records.entries()) {
-        console.log(`🔍 [${i + 1}/${records.length}] checking record ${record}…`);
-        try {
-            const result = await auditOneRecord(record, recordDates.get(record));
-            results.push(result);
-            console.log(`🔍 [${i + 1}/${records.length}] record ${record}:`, result);
-        } catch (err) {
-            console.error(`❌ AWR audit: record ${record} failed:`, err);
-            results.push({ record, error: err.message });
+    try {
+        for (const [i, record] of records.entries()) {
+            console.log(`🔍 [${i + 1}/${records.length}] checking record ${record}…`);
+            try {
+                const result = await auditOneRecord(record, recordDates.get(record), windowId);
+                results.push(result);
+                console.log(`🔍 [${i + 1}/${records.length}] record ${record}:`, result);
+            } catch (err) {
+                console.error(`❌ AWR audit: record ${record} failed:`, err);
+                results.push({ record, error: err.message });
+            }
+            await sleep(AWR_AUDIT_THROTTLE_MS);
         }
-        await sleep(AWR_AUDIT_THROTTLE_MS);
+    } finally {
+        await chrome.windows.remove(windowId).catch(() => {});
     }
 
     const corrected = results.filter(r => r.corrected);
@@ -472,6 +507,88 @@ async function runAwrAudit() {
         (failed.length ? `, ⚠️ ${failed.length} save failure(s) — see above` : "")
     );
     console.log("🔍 Full AWR audit report:", results);
+}
+
+// ── Rotation Receipt Capture ─────────────────────────────────
+// Same background-tab shape as AWR Audit, but purely read-only: visits
+// a record, asks the page's own SaveConfirmation.captureForBatchAudit()
+// (via chrome.scripting.executeScript, same allFrames pattern AWR Audit
+// uses to reach whichever frame actually has the form) to download that
+// record's Rotation Receipt PNG, then closes the tab. Never clicks
+// anything, never writes a field, never saves — visit, capture, close.
+const RECEIPT_CAPTURE_SETTLE_MS   = 1500;
+const RECEIPT_CAPTURE_THROTTLE_MS = 800;
+
+async function captureOneReceipt(record, windowId) {
+    const url = `https://www.tradetech.net/cgi/inframe/cgi/u/schedule_detailsB.pl?record=${record}&mode=E&ttBatchJob=1`;
+    const tab = await chrome.tabs.create({ url, active: false, windowId });
+
+    try {
+        await waitForTabComplete(tab.id);
+        await sleep(RECEIPT_CAPTURE_SETTLE_MS); // let PortHighlighting/SaveConfirmation's own init() finish
+
+        const frames = await chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            func: () => (typeof SaveConfirmation === "undefined" ? null : SaveConfirmation.captureForBatchAudit())
+        });
+        // Exactly one frame actually has the port rows directly (see
+        // captureForBatchAudit()'s own comment) — same first-truthy-result
+        // dedup AWR Audit already relies on for its own allFrames reads.
+        const result = frames.map(f => f.result).find(r => r);
+
+        if (!result?.ok) {
+            return { record, captured: false, reason: result?.reason || "no port rows found in any frame" };
+        }
+        return { record, captured: true };
+    } finally {
+        await chrome.tabs.remove(tab.id).catch(() => {});
+    }
+}
+
+// `records`, when given, is an explicit list of record IDs (e.g. read
+// from a user-picked CSV) — skips the due-services fetch entirely and
+// runs over exactly those records instead.
+async function runRotationReceiptCapture(records) {
+    let targetRecords = records;
+
+    if (!targetRecords || targetRecords.length === 0) {
+        console.log("🧾 Receipt capture: fetching relay-tracked records…");
+        try {
+            const res = await fetch("http://localhost:3737/due-services");
+            const { services } = await res.json();
+            targetRecords = [...new Set(services.map(s => s.record).filter(Boolean))];
+        } catch (err) {
+            console.error("❌ Receipt capture: could not reach relay for the record list:", err);
+            return;
+        }
+    }
+
+    console.log(`🧾 Receipt capture: ${targetRecords.length} record(s), one at a time`);
+
+    const batchWindow = await chrome.windows.create({ focused: false, url: "about:blank" });
+    const windowId = batchWindow.id;
+
+    const results = [];
+    try {
+        for (const [i, record] of targetRecords.entries()) {
+            console.log(`🧾 [${i + 1}/${targetRecords.length}] capturing record ${record}…`);
+            try {
+                const result = await captureOneReceipt(record, windowId);
+                results.push(result);
+                console.log(`🧾 [${i + 1}/${targetRecords.length}] record ${record}:`, result);
+            } catch (err) {
+                console.error(`❌ Receipt capture: record ${record} failed:`, err);
+                results.push({ record, captured: false, error: err.message });
+            }
+            await sleep(RECEIPT_CAPTURE_THROTTLE_MS);
+        }
+    } finally {
+        await chrome.windows.remove(windowId).catch(() => {});
+    }
+
+    const captured = results.filter(r => r.captured).length;
+    console.log(`✅ Receipt capture complete — ${captured}/${results.length} downloaded`);
+    console.log("🧾 Full receipt capture report:", results);
 }
 
 // ── One-off: restore next_update_date on records the AWR audit's

@@ -77,6 +77,7 @@
             "src/features/auto-nav-schedules.js",
             "src/features/due-service-scanner-relay.js",
             "src/features/awr-audit-relay.js",
+            "src/features/rotation-receipt-capture-relay.js",
             "src/features/schedule-preview-tools-relay.js",
             "src/features/date-step-buttons.js",
             "src/features/voyage-step-buttons.js",

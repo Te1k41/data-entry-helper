@@ -151,6 +151,7 @@ const CustomRulesSettings = {
                 if (typeof renderWarnings === "function") renderWarnings();
                 if (typeof FixVesselDates !== "undefined") FixVesselDates.applyVisibility();
                 if (typeof AwrAudit !== "undefined") AwrAudit.applyVisibility();
+                if (typeof RotationReceiptCapture !== "undefined") RotationReceiptCapture.applyVisibility();
             });
 
             line.appendChild(expandBtn);

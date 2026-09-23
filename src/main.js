@@ -98,6 +98,7 @@ const FEATURES = [
     AutoNavSchedules,
     DueServiceScanner,
     AwrAudit,
+    RotationReceiptCapture,
     SchedulePreviewTools,
     DateStepButtons,
     VoyageStepButtons,

@@ -98,6 +98,12 @@ const CustomRules = {
             label:       "Enable Audit AWR",
             description: "Adds a \"🔍 Audit AWR\" Tools-panel button that re-checks AWR on every relay-tracked record in background tabs, fixing and saving only the ones that are wrong. Off by default — opt-in rather than always-on, same as Fix Vessel Dates.",
             default:     false
+        },
+        {
+            id:          "enableRotationReceiptCapture",
+            label:       "Enable Rotation Receipt Capture",
+            description: "Adds a \"🧾 Capture Receipts\" Tools-panel button that downloads a Rotation Receipt PNG (rotation + last foreign port, first US/EU port, and the currently-highlighted port) for a chosen set of records — every due-service record, or a specific list read from an uploaded CSV — one background tab at a time. Never touches or saves anything on the page it visits, purely reads and downloads. Off by default.",
+            default:     false
         }
     ],
 
