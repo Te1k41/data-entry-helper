@@ -413,9 +413,20 @@ const PortHighlighting = {
         // same-origin loop and shouldn't have its last row dropped.
         if (suffixDirectional && portNameFields.length > 1) {
             const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
-            const lastRow = Math.max(...portNameFields.map(rowOf));
-            console.log(`🔁 Directional service — excluding last port row SP${String(lastRow).padStart(3, "0")} (same as first)`);
-            portNameFields = portNameFields.filter(f => rowOf(f) !== lastRow);
+
+            // Blank spare rows further down the page (they always exist —
+            // see insert-port.js) are still in portNameFields whenever
+            // stopRow above came back null (port codes not typed yet,
+            // formatting mismatch, etc.) — Math.max over ALL of them would
+            // pick one of those blanks instead of the real last port,
+            // making this exclusion silently do nothing in exactly the
+            // case it exists for. Only ever look at rows with content.
+            const filledRows = portNameFields.filter(f => f.value.trim()).map(rowOf);
+            if (filledRows.length > 1) {
+                const lastRow = Math.max(...filledRows);
+                console.log(`🔁 Directional service — excluding last port row SP${String(lastRow).padStart(3, "0")} (same as first)`);
+                portNameFields = portNameFields.filter(f => rowOf(f) !== lastRow);
+            }
         }
 
         // Only ever ONE port highlighted. Leg 2 is superior — if it
