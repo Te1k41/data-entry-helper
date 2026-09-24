@@ -123,15 +123,36 @@ function scanReceiptFolder() {
     return [...newest.values()];
 }
 
-// Syncs items with what's in the folder: attaches each PNG to its
-// service's item, creates a PNG-only item where none exists, and drops a
+// The sanitized service code — what receipt PNG filenames carry, so the
+// join key between an item and its PNG. Older on-disk items predate the
+// serviceKey field; for them the item key IS the service code.
+const serviceKeyOf = item => item.serviceKey || item.key;
+
+// An item's identity is the SERVICE + VESSEL OPERATOR pair: the same
+// service code under two different operators is two different services,
+// while the same pair seen twice (a duplicate record, or the same record
+// captured on two days) is ONE item — newest wins. With no operator known
+// the identity is just the service code, which is also what a PNG-only
+// (imported) item is keyed by, since a PNG's filename carries no operator.
+// "~" can't appear in a sanitized code, so the pair can't collide with a
+// plain service code.
+const identityKey = (service, operator) => {
+    const s = sanitizeService(service);
+    const o = sanitizeService(operator);
+    return s && o ? `${s}~${o}` : s;
+};
+
+// Syncs items with what's in the folder: attaches each PNG to every item
+// with that service code (a PNG doesn't say which operator's record it came
+// from — the image title does, but the server can't read images), creates
+// a PNG-only item where NO item has that service code yet, and drops a
 // PNG-only item whose file disappeared (unless it already has a verdict).
 function importReceipts() {
     const files = new Map(scanReceiptFolder().map(f => [f.service, f]));
     let changed = false;
 
     for (const item of Object.values(items)) {
-        const f = files.get(item.key);
+        const f = files.get(serviceKeyOf(item));
         if (f) {
             if (item.receiptFile !== f.file) { item.receiptFile = f.file; changed = true; }
             if (item.receiptRows !== f.rows) { item.receiptRows = f.rows; changed = true; }
@@ -142,10 +163,11 @@ function importReceipts() {
         }
     }
 
+    const knownServices = new Set(Object.values(items).map(serviceKeyOf));
     for (const f of files.values()) {
-        if (items[f.service]) continue;
+        if (knownServices.has(f.service)) continue;
         items[f.service] = {
-            key: f.service, record: null, service: f.service, imported: true,
+            key: f.service, serviceKey: f.service, record: null, service: f.service, imported: true,
             capturedAt: new Date(f.mtimeMs).toISOString(),
             ports: [], receiptFile: f.file, receiptRows: f.rows,
             firstUsPort: portRef(), firstEuPort: portRef(), lastForeignPort: portRef(),
@@ -162,11 +184,34 @@ function submitCapture(data) {
     if (!/^\d+$/.test(record)) return { error: "record must be numeric" };
     if (!Array.isArray(data.ports) || data.ports.length === 0) return { error: "ports must be a non-empty array" };
 
-    const key = sanitizeService(data.service) || `rec_${record}`;
+    const serviceKey = sanitizeService(data.service);
+    const key = identityKey(data.service, data.vesselOperator) || `rec_${record}`;
     const existing = items[key];
+
+    // A PNG-only item for this service (keyed by the bare service code) is
+    // folded into the first structured item that arrives for it, so its
+    // verdict and image carry over instead of being orphaned. Once it's
+    // been folded in, a later record of the same service under ANOTHER
+    // operator starts fresh.
+    let carriedTruth = existing && existing.truth;
+    let carriedReceipt = existing && existing.receiptFile;
+    if (serviceKey && key !== serviceKey && items[serviceKey] && items[serviceKey].imported) {
+        carriedTruth = carriedTruth || items[serviceKey].truth;
+        carriedReceipt = carriedReceipt || items[serviceKey].receiptFile;
+        delete items[serviceKey];
+    }
+
+    // Same service + operator, different record = a duplicate: this newest
+    // capture replaces the older one (only one is ever shown for review),
+    // and the ones it displaced are remembered so it's visible they exist.
+    const duplicateRecords = new Set((existing && existing.duplicateRecords) || []);
+    if (existing && existing.record && existing.record !== record) duplicateRecords.add(existing.record);
+
     items[key] = {
         key,
+        serviceKey: serviceKey || key,
         record,
+        duplicateRecords: [...duplicateRecords].slice(-20),
         service: str(data.service),
         vesselOperator: str(data.vesselOperator),
         capturedAt: new Date().toISOString(),
@@ -185,8 +230,8 @@ function submitCapture(data) {
         lastForeignPort: portRef(data.lastForeignPort),
         autoRow:     data.autoRow ? str(data.autoRow) : null,
         autoSpecial: Boolean(data.autoSpecial),
-        ...(existing && existing.truth ? { truth: existing.truth } : {}),
-        ...(existing && existing.receiptFile ? { receiptFile: existing.receiptFile } : {}),
+        ...(carriedTruth ? { truth: carriedTruth } : {}),
+        ...(carriedReceipt ? { receiptFile: carriedReceipt } : {}),
     };
     persist();
     return { ok: true };
@@ -256,6 +301,7 @@ function buildExport({ all = false } = {}) {
         return {
             service: i.service,
             vesselOperator: i.vesselOperator || null,
+            ignoredDuplicateRecords: i.duplicateRecords && i.duplicateRecords.length ? i.duplicateRecords : null,
             record: i.record,
             reviewed: Boolean(i.truth),
             agree,

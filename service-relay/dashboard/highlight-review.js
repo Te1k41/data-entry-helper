@@ -141,7 +141,7 @@
         const list = $("list");
         list.replaceChildren(...filtered().map(item =>
             el("div", { class: "listItem" + (item.key === state.current ? " current" : ""), onclick: () => { state.current = item.key; renderAll(); } },
-                el("span", {}, item.service || "(no service)"),
+                el("span", {}, `${item.service || "(no service)"}${item.vesselOperator ? ` · ${item.vesselOperator}` : ""}`),
                 el("span", { class: "st" }, statusIcon(item))
             )
         ));
@@ -229,7 +229,11 @@
                     : autoPort
                         ? el("span", { class: "tag special" }, `auto: SP${auto} ${autoPort.name}`)
                         : el("span", { class: "tag" }, "auto: found nothing special (SP001 default)"),
-                truthTag(item)
+                truthTag(item),
+                item.duplicateRecords && item.duplicateRecords.length
+                    ? el("span", { class: "tag", title: "Same service + vessel operator — only the newest capture is shown for review" },
+                        `ignored ${item.duplicateRecords.length} duplicate record${item.duplicateRecords.length === 1 ? "" : "s"}: ${item.duplicateRecords.join(", ")}`)
+                    : null
             )
         );
 
