@@ -65,6 +65,14 @@ function handleFillTestPage(req, res) {
     serveFile(res, "fill-test-viewer.html", "text/html");
 }
 
+function handleHighlightReviewPage(req, res) {
+    serveFile(res, "highlight-review.html", "text/html");
+}
+
+function handleHighlightReviewJs(req, res) {
+    serveFile(res, "highlight-review.js", "application/javascript");
+}
+
 module.exports = {
     handleDashboardIndex,
     handleDashboardCss,
@@ -76,4 +84,6 @@ module.exports = {
     handleMergePage,
     handleMergeJs,
     handleFillTestPage,
+    handleHighlightReviewPage,
+    handleHighlightReviewJs,
 };

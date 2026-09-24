@@ -519,6 +519,24 @@ async function runAwrAudit() {
 const RECEIPT_CAPTURE_SETTLE_MS   = 1500;
 const RECEIPT_CAPTURE_THROTTLE_MS = 800;
 
+// POST JSON to the local relay server from this service worker (exempt
+// from any page's CORS — content scripts can't do this without an
+// allowlisted origin).
+async function postToRelay(path, body) {
+    try {
+        const res = await fetch(`http://localhost:3737${path}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+        if (res.ok) return { ok: true };
+        const data = await res.json().catch(() => ({}));
+        return { ok: false, error: `(${res.status}) ${data.error || res.statusText}` };
+    } catch (err) {
+        return { ok: false, error: `could not reach relay: ${err.message}` };
+    }
+}
+
 async function captureOneReceipt(record, windowId) {
     const url = `https://www.tradetech.net/cgi/inframe/cgi/u/schedule_detailsB.pl?record=${record}&mode=E&ttBatchJob=1`;
     const tab = await chrome.tabs.create({ url, active: false, windowId });
@@ -527,26 +545,37 @@ async function captureOneReceipt(record, windowId) {
         await waitForTabComplete(tab.id);
         await sleep(RECEIPT_CAPTURE_SETTLE_MS); // let PortHighlighting/SaveConfirmation's own init() finish
 
+        // RotationReceiptCapture.captureForBatch() (rotation-receipt-
+        // capture-relay.js) returns null from every frame without the
+        // port rows, and a real object only from the one that has them —
+        // so a plain first-truthy dedup is safe here. (Returning
+        // {ok:false,...} objects from non-matching frames was a real
+        // bug: the first frame's failure always won the dedup.)
         const frames = await chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
-            func: () => (typeof SaveConfirmation === "undefined" ? null : SaveConfirmation.captureForBatchAudit())
+            func: () => (typeof RotationReceiptCapture === "undefined" ? null : RotationReceiptCapture.captureForBatch())
         });
-        // Exactly one frame actually has the port rows directly (see
-        // captureForBatchAudit()'s own comment) — every OTHER frame
-        // (the frameset shell itself included) still returns a real
-        // {ok:false, reason:...} object, not null, so a plain
-        // `.find(r => r)` (AWR Audit's own dedup works because its func
-        // returns null for a non-matching frame, not an object) would
-        // grab the first frame's failure and stop, never reaching the
-        // one that actually succeeded — confirmed live, every single
-        // record reported "no port rows in this frame" even though the
-        // ports were right there in a child frame. Prefer the first
-        // ok:true result; only fall back to a failure if truly none.
-        const allResults = frames.map(f => f.result).filter(Boolean);
-        const result = allResults.find(r => r.ok) || allResults[0] || null;
+        const result = frames.map(f => f.result).find(Boolean) || null;
 
-        if (!result?.ok) {
-            return { record, captured: false, reason: result?.reason || "no port rows found in any frame" };
+        if (!result) {
+            return { record, captured: false, reviewed: false, reason: "no port rows found in any frame" };
+        }
+
+        // Review data for EVERY record (not just special ones) — the
+        // dashboard's Highlight Review page needs the ones where the
+        // logic found nothing too, to catch misses, not just wrong picks.
+        let reviewed = false, reviewError = null;
+        if (result.review?.ports?.length) {
+            const saved = await postToRelay("/highlight-review/submit", { record: String(record), ...result.review });
+            reviewed = saved.ok;
+            reviewError = saved.error || null;
+        }
+
+        // Receipt PNG — special-port records only (captureForBatchAudit
+        // skips the rest).
+        const png = result.png;
+        if (!png?.ok) {
+            return { record, captured: false, reviewed, reviewError, reason: png?.reason || "no receipt image produced" };
         }
 
         // POSTs straight to the local relay server, which writes the PNG
@@ -559,23 +588,13 @@ async function captureOneReceipt(record, windowId) {
         // content-script <a>.click() per record hit Chrome's automatic-
         // download-blocking guard and silently dropped some receipts
         // partway through a run. A server-side file write has neither
-        // failure mode. This fetch() call is exempt from any page's CORS
-        // (it runs in the service worker, not a content script).
-        try {
-            const res = await fetch("http://localhost:3737/save-receipt", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ filename: result.filename, dataUrl: result.dataUrl })
-            });
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                return { record, captured: false, reason: `relay save failed (${res.status}): ${body.error || res.statusText}` };
-            }
-        } catch (err) {
-            return { record, captured: false, reason: `could not reach relay to save receipt: ${err.message}` };
+        // failure mode.
+        const receipt = await postToRelay("/save-receipt", { filename: png.filename, dataUrl: png.dataUrl });
+        if (!receipt.ok) {
+            return { record, captured: false, reviewed, reviewError, reason: `relay save failed ${receipt.error}` };
         }
 
-        return { record, captured: true };
+        return { record, captured: true, reviewed, reviewError };
     } finally {
         await chrome.tabs.remove(tab.id).catch(() => {});
     }
@@ -623,7 +642,11 @@ async function runRotationReceiptCapture(records) {
     }
 
     const captured = results.filter(r => r.captured).length;
-    console.log(`✅ Receipt capture complete — ${captured}/${results.length} downloaded`);
+    const reviewed = results.filter(r => r.reviewed).length;
+    console.log(
+        `✅ Receipt capture complete — ${results.length} visited, ${reviewed} saved for Highlight Review ` +
+        `(http://localhost:3737/dashboard/highlight-review), ${captured} receipt image(s) saved`
+    );
     console.log("🧾 Full receipt capture report:", results);
 }
 

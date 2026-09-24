@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>tt-highlight-review</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+<style>
+    .reviewLayout { display: flex; gap: 16px; align-items: flex-start; max-width: 1300px; margin: 0 auto; padding: 0 16px; }
+    .listPane { width: 260px; flex-shrink: 0; max-height: 78vh; overflow-y: auto; border: 1px solid var(--border-soft); background: var(--bg); }
+    .listItem { padding: 6px 10px; border-bottom: 1px solid var(--border-soft); font-size: 12px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+    .listItem:hover { background: var(--bg-alt); }
+    .listItem.current { background: var(--blue-soft); border-left: 3px solid var(--blue); }
+    .listItem .st { flex-shrink: 0; }
+    .cardPane { flex: 1; min-width: 0; }
+
+    .statsBar { text-align: center; font-size: 13px; margin: 6px 0 10px; color: var(--muted); }
+    .statsBar b { color: var(--text-strong); }
+    .statsBar select { font-family: var(--mono); background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 4px 6px; margin-left: 10px; }
+    .hint { text-align: center; font-size: 11px; color: var(--dim); margin-bottom: 12px; }
+
+    .cardTitle { font-size: 18px; color: var(--text-strong); margin-bottom: 4px; }
+    .tags { margin-bottom: 8px; font-size: 12px; }
+    .tag { display: inline-block; padding: 1px 8px; border: 1px solid var(--border); margin-right: 6px; color: var(--muted); }
+    .tag.special { border-color: var(--amber); color: var(--amber); }
+    .tag.ok { border-color: var(--green); color: var(--green); }
+    .tag.bad { border-color: var(--red); color: var(--red); }
+    .extraInfo { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.6; }
+
+    .actions { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+    .actions button { padding: 8px 14px; font-size: 13px; }
+    .actions button.good { border-color: var(--green); color: var(--green); }
+    .actions button.none { border-color: var(--amber); color: var(--amber); }
+
+    table.portsTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.portsTable th { text-align: left; padding: 6px 10px; color: var(--blue); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; border-bottom: 2px solid var(--border); }
+    table.portsTable td { padding: 7px 10px; border-bottom: 1px solid var(--border-soft); }
+    table.portsTable tr.portRow { cursor: pointer; }
+    table.portsTable tr.portRow:hover { background: var(--bg-elevated); }
+    table.portsTable tr.autoPick { background: rgba(255, 235, 59, 0.20); }
+    table.portsTable tr.autoPick td:first-child { border-left: 4px solid #ffeb3b; }
+    table.portsTable tr.truthPick { outline: 2px solid var(--green); outline-offset: -2px; }
+    table.portsTable td.dim { color: var(--dim); }
+    .empty { color: var(--dim); font-style: italic; padding: 24px; text-align: center; }
+    #msg { text-align: center; font-size: 12px; min-height: 16px; margin-bottom: 6px; }
+    #msg.err { color: var(--red); }
+    #msg.ok { color: var(--green); }
+</style>
+</head>
+<body>
+<pre class="banner">╔══════════════════════════════════════════╗
+║  HIGHLIGHT REVIEW — RIGHT OR WRONG?       ║
+╚══════════════════════════════════════════╝</pre>
+<div style="text-align:center; margin-bottom: 12px;">
+    <button onclick="location.href='/dashboard'">← Dashboard</button>
+    <button id="refreshBtn">↻ Refresh</button>
+    <button id="exportBtn" title="Downloads the labeled set as JSON (also saved to disk next to highlight-review.json)">⬇ Export reviewed</button>
+    <button id="exportAllBtn" title="Same, but including records you haven't reviewed yet">⬇ Export all</button>
+</div>
+
+<div class="statsBar" id="stats">Loading…</div>
+<div class="hint">
+    Yellow row = what the highlight logic picked. Click the row that <b>should</b> be highlighted &nbsp;·&nbsp;
+    <b>Y / Enter</b> = pick is right &nbsp;·&nbsp; <b>N</b> = no special port &nbsp;·&nbsp; <b>←/→ or S</b> = prev / skip
+</div>
+<div id="msg"></div>
+
+<div class="reviewLayout">
+    <div class="listPane" id="list"></div>
+    <div class="cardPane" id="card"><div class="empty">Loading…</div></div>
+</div>
+
+<script src="/dashboard/highlight-review.js"></script>
+</body>
+</html>

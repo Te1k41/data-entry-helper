@@ -33,6 +33,11 @@ const CURRENT_BATCH_FILE = path.join(DATA_FOLDER, "current-batch.json");
 // filenames (see routes/receipts.js).
 const RECEIPTS_FOLDER = path.join(DATA_FOLDER, "rotation-receipts");
 
+// Highlight Review page (dashboard/highlight-review.html): captured
+// rotation data + the user's right/wrong verdicts, and a readable export.
+const HIGHLIGHT_REVIEW_FILE        = path.join(DATA_FOLDER, "highlight-review.json");
+const HIGHLIGHT_REVIEW_EXPORT_FILE = path.join(DATA_FOLDER, "highlight-review-export.json");
+
 module.exports = {
     PORT,
     WATCH_FOLDER,
@@ -43,4 +48,6 @@ module.exports = {
     ACTIVITY_LOG_FILE,
     CURRENT_BATCH_FILE,
     RECEIPTS_FOLDER,
+    HIGHLIGHT_REVIEW_FILE,
+    HIGHLIGHT_REVIEW_EXPORT_FILE,
 };

@@ -27,6 +27,8 @@ const resultRoutes = require("./routes/result");
 const vesselDictionaryRoutes = require("./routes/vessel-dictionary");
 const fillTestRoutes = require("./routes/fill-test");
 const receiptsRoutes = require("./routes/receipts");
+const highlightReviewRoutes = require("./routes/highlight-review");
+const highlightReviewStore = require("./highlight-review-store");
 
 const relaySocket     = require("./relay-socket");
 const downloadWatcher = require("./download-watcher");
@@ -41,6 +43,7 @@ scheduleGuidelineStore.loadFromDisk();
 scheduleDomScrapeStore.loadFromDisk();
 portDictionary.loadFromDisk();
 vesselDictionary.loadFromDisk();
+highlightReviewStore.loadFromDisk();
 
 // ── HTTP Server ──────────────────────────────────────────────
 // Routed through a Promise chain, not a plain try/catch -- most route
@@ -135,6 +138,12 @@ const ROUTES = [
     { method: "POST", match: exact("/vessel-dictionary/learn-batch"),   handler: vesselDictionaryRoutes.handleLearnBatch },
     { method: "POST", match: exact("/vessel-dictionary/remove"),        handler: vesselDictionaryRoutes.handleRemove },
     { method: "POST", match: exact("/save-receipt"),                    handler: receiptsRoutes.handleSaveReceipt },
+    { method: "POST", match: exact("/highlight-review/submit"),         handler: highlightReviewRoutes.handleSubmit },
+    { method: "GET",  match: exact("/highlight-review/data"),           handler: highlightReviewRoutes.handleGetData },
+    { method: "POST", match: exact("/highlight-review/verdict"),        handler: highlightReviewRoutes.handleVerdict },
+    { method: "GET",  match: prefix("/highlight-review/export"),        handler: highlightReviewRoutes.handleExport },
+    { method: "GET",  match: exact("/dashboard/highlight-review"),      handler: dashboardRoutes.handleHighlightReviewPage },
+    { method: "GET",  match: exact("/dashboard/highlight-review.js"),   handler: dashboardRoutes.handleHighlightReviewJs },
 ];
 
 function handleRequest(req, res) {

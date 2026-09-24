@@ -212,6 +212,61 @@ const RotationReceiptCapture = {
             .filter(v => /^\d+$/.test(v));
     },
 
+    // Injected into each visited record's page by background-relay.js's
+    // captureOneReceipt() (chrome.scripting.executeScript, allFrames).
+    // Returns null from every frame that doesn't have the port rows —
+    // only the one real form frame returns an object, so the caller's
+    // first-truthy dedup is safe. Purely reads — never writes, clicks or
+    // saves anything.
+    //   review: structured rotation data + what PortHighlighting picked,
+    //           for EVERY record — feeds the dashboard's Highlight Review
+    //           page (service-relay/dashboard/highlight-review.html),
+    //           where a human marks each pick right/wrong.
+    //   png:    SaveConfirmation.captureForBatchAudit()'s result (the
+    //           receipt image, special-port records only).
+    captureForBatch() {
+        if (!document.querySelector('input[name^="SP"][name$="_port_name"]')) return null;
+
+        try {
+            return { review: this.buildReviewData(), png: SaveConfirmation.captureForBatchAudit() };
+        } catch (err) {
+            console.error("❌ Batch capture failed:", err);
+            return { review: null, png: { ok: false, reason: err.message } };
+        }
+    },
+
+    // Everything needed to reproduce PortHighlighting's decision offline:
+    // per-port name/code/key (key drives full-bound pivot detection),
+    // the service field, and the first_us/eu_port codes the priority
+    // pass matches against ports[].code.
+    buildReviewData() {
+        const read = name => document.querySelector(`input[name="${name}"]`)?.value.trim() || "";
+        const portRef = (codeName, descName) => ({ code: read(codeName), desc: read(descName) });
+
+        const ports = SaveConfirmation.buildRotationRows(document).map(r => ({
+            row:      r.row,
+            name:     r.name,
+            code:     read(`SP${r.row}_port_code`),
+            key:      read(`SP${r.row}_port_key`),
+            arrival:  r.arrival,
+            depart:   r.depart,
+            category: PortHighlighting.getPortCategory(r.name),
+            fine:     PortHighlighting.getFineCategory(r.name),
+        }));
+
+        const highlighted = PortHighlighting.currentHighlightField;
+
+        return {
+            service: read("service"),
+            ports,
+            firstUsPort:     portRef("first_us_port", "first_us_port_desc"),
+            firstEuPort:     portRef("first_eu_port", "first_eu_port_desc"),
+            lastForeignPort: portRef("last_foreign_port", "last_foreign_port_desc"),
+            autoRow:     highlighted?.name.match(/^SP(\d+)_port_name$/)?.[1] || null,
+            autoSpecial: Boolean(PortHighlighting.hasSpecialPort),
+        };
+    },
+
     // `records`: null/omitted runs over every due-service record
     // (background-relay.js's existing fetch), otherwise an explicit
     // list of record IDs to visit instead.
@@ -223,8 +278,8 @@ const RotationReceiptCapture = {
                     showTemporaryBanner({
                         title:   "🧾 Receipt capture started",
                         message: records
-                            ? `Running over ${records.length} record(s) from the CSV — watch the background service worker console for progress`
-                            : "Running over every due-service record — watch the background service worker console for progress"
+                            ? `Running over ${records.length} record(s) from the CSV — results land on the Highlight Review page (localhost:3737/dashboard/highlight-review); progress in the background service worker console`
+                            : "Running over every due-service record — results land on the Highlight Review page (localhost:3737/dashboard/highlight-review); progress in the background service worker console"
                     });
                 } else if (response?.reason === "busy") {
                     showTemporaryBanner({
