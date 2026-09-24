@@ -230,7 +230,7 @@ const RotationReceiptCapture = {
     //           page (service-relay/dashboard/highlight-review.html),
     //           where a human marks each pick right/wrong.
     //   png:    SaveConfirmation.captureForBatchAudit()'s result (the
-    //           receipt image, special-port records only).
+    //           receipt image, every record — SP001 fallback highlighted).
     captureForBatch() {
         if (!document.querySelector('input[name^="SP"][name$="_port_name"]')) return null;
 

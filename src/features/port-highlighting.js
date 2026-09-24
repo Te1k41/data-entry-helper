@@ -491,9 +491,9 @@ const PortHighlighting = {
         // `isSpecialFind` tracks whether highlightField is a genuine
         // region-change/UK-Canada find, as opposed to the hard SP001
         // fallback with nothing actually notable about the route —
-        // consumers that only care about a real find (e.g. the batch
-        // Rotation Receipt Capture feature's "only special routes"
-        // filter) check hasSpecialPort below instead of just truthiness
+        // consumers that care about a real find (e.g. the batch
+        // Rotation Receipt Capture feature's review data, autoSpecial)
+        // check hasSpecialPort below instead of just truthiness
         // of currentHighlightField, which is always set either way.
         let isSpecialFind = !!highlightField;
         if (!highlightField) {
