@@ -73,9 +73,10 @@ const SaveConfirmation = {
                 const row     = match[1];
                 const arrival = formDoc.querySelector(`input[name="SP${row}_arrival_date"]`)?.value.trim() || "";
                 const depart  = formDoc.querySelector(`input[name="SP${row}_depart_date"]`)?.value.trim()  || "";
+                const key     = formDoc.querySelector(`input[name="SP${row}_port_key"]`)?.value.trim()     || "";
                 const diffMismatch = this.checkDiffMismatch(formDoc, row, arrival, depart);
 
-                return { row, name, arrival, depart, diffMismatch };
+                return { row, name, arrival, depart, key, diffMismatch };
             })
             .filter(Boolean);
     },
@@ -205,6 +206,7 @@ const SaveConfirmation = {
         const PADDING         = 14;
         const COL_GAP         = 24; // breathing room after the longest port name
         const DATE_COL_WIDTH  = 100;
+        const KEY_COL_WIDTH   = 70; // port_key is at most 4 chars (e.g. "EEWS")
         const PORT_FONT       = "13px monospace";
         const TITLE_FONT      = "bold 16px monospace";
         const EXTRA_FONT      = "13px monospace";
@@ -240,7 +242,7 @@ const SaveConfirmation = {
         measureCtx.font = EXTRA_FONT;
         const extraLinesWidth = Math.max(0, ...extraLines.map(t => measureCtx.measureText(t).width));
 
-        const colWidths   = [portColWidth, DATE_COL_WIDTH, DATE_COL_WIDTH];
+        const colWidths   = [portColWidth, DATE_COL_WIDTH, DATE_COL_WIDTH, KEY_COL_WIDTH];
         const tableWidth  = colWidths.reduce((a, b) => a + b, 0);
         const width       = Math.max(tableWidth, titleWidth, extraLinesWidth) + PADDING * 2;
         const tableLeft   = PADDING;
@@ -276,7 +278,7 @@ const SaveConfirmation = {
         ctx.fillStyle = "#000000";
         ctx.font = HEADER_FONT;
         let hx = tableLeft;
-        ["Port", "Arrival", "Depart"].forEach((label, i) => {
+        ["Port", "Arrival", "Depart", "Key"].forEach((label, i) => {
             ctx.fillText(label, hx + 6, headerTop + TEXT_BASELINE_OFFSET);
             hx += colWidths[i];
         });
@@ -299,7 +301,9 @@ const SaveConfirmation = {
 
                 ctx.fillStyle = "#000000";
                 let cx = tableLeft;
-                [`SP${r.row} ${r.name}`, r.arrival || "—", r.depart || "—"].forEach((text, ci) => {
+                // Key is blank on most rows — left empty rather than "—" so the
+                // few rows that DO carry a direction marker stand out.
+                [`SP${r.row} ${r.name}`, r.arrival || "—", r.depart || "—", r.key || ""].forEach((text, ci) => {
                     ctx.fillText(text, cx + 6, rowTop + TEXT_BASELINE_OFFSET);
                     cx += colWidths[ci];
                 });
