@@ -17,7 +17,9 @@
 
 const fs = require("fs");
 const path = require("path");
-const { JSDOM } = require("jsdom");
+// jsdom is required inside the parse function, not here: it's ~900ms and
+// thousands of files to load, and server startup shouldn't pay that (badly,
+// on a cold boot) for a proof nobody has asked to parse yet.
 
 function cellText(cell) {
     if (!cell) return "";
@@ -190,6 +192,7 @@ function detectService(doc) {
 // Ming schedule page.
 async function parseYangMingHtmlFile(filePath) {
     const html = fs.readFileSync(filePath, "utf8");
+    const { JSDOM } = require("jsdom");
     const dom = new JSDOM(html);
     const doc = dom.window.document;
 

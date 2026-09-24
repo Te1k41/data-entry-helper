@@ -40,7 +40,9 @@
 
 const fs = require("fs");
 const path = require("path");
-const { JSDOM } = require("jsdom");
+// jsdom is required inside the parse function, not here: it's ~900ms and
+// thousands of files to load, and server startup shouldn't pay that (badly,
+// on a cold boot) for a proof nobody has asked to parse yet.
 
 const HEADER_CLASS = "f09tilb1";
 
@@ -172,6 +174,7 @@ function detectSections(doc) {
 // real Evergreen ShipmentLink schedule page.
 async function parseEvergreenHtmlFile(filePath) {
     const html = fs.readFileSync(filePath, "utf8");
+    const { JSDOM } = require("jsdom");
     const dom = new JSDOM(html);
     const doc = dom.window.document;
 

@@ -10,7 +10,9 @@
 
 const fs   = require("fs");
 const path = require("path");
-const { PDFParse } = require("pdf-parse");
+// pdf-parse (pdfjs + a native canvas binding, ~100MB on disk) is required
+// inside the PDF branch below, not here — server startup shouldn't load it
+// (badly, on a cold boot) before any PDF proof has been parsed.
 
 const MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
 
@@ -98,6 +100,7 @@ function extractFromRows(rows, docYear) {
 
 async function extractPdf(filePath) {
     const buffer = fs.readFileSync(filePath);
+    const { PDFParse } = require("pdf-parse");
     const parser = new PDFParse({ data: buffer });
 
     let result;

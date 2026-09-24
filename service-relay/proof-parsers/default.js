@@ -19,7 +19,9 @@
 const fs   = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
-const { PDFParse } = require("pdf-parse");
+// pdf-parse (pdfjs + a native canvas binding, ~100MB on disk) is required
+// inside the PDF branch below, not here — server startup shouldn't load it
+// (badly, on a cold boot) before any PDF proof has been parsed.
 
 const HEADER_KEYWORDS = {
     vessel: ["vessel", "vsl"],
@@ -77,6 +79,7 @@ function extractExcel(filePath) {
 
 async function extractPdf(filePath) {
     const buffer = fs.readFileSync(filePath);
+    const { PDFParse } = require("pdf-parse");
     const parser = new PDFParse({ data: buffer });
 
     let result;

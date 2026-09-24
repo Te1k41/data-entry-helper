@@ -17,7 +17,9 @@
 
 const fs   = require("fs");
 const path = require("path");
-const { PDFParse } = require("pdf-parse");
+// pdf-parse (pdfjs + a native canvas binding, ~100MB on disk) is required
+// inside the PDF branch below, not here — server startup shouldn't load it
+// (badly, on a cold boot) before any PDF proof has been parsed.
 
 // "EVER CLEAR 0147-109A" -> { vessel: "EVER CLEAR", voyage: "109" }.
 function parseVesselVoyage(cell) {
@@ -84,6 +86,7 @@ function extractFromTable(table, docYear) {
 
 async function extractPdf(filePath) {
     const buffer = fs.readFileSync(filePath);
+    const { PDFParse } = require("pdf-parse");
     const parser = new PDFParse({ data: buffer });
 
     let result;
