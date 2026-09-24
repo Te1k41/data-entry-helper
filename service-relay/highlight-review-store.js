@@ -1,28 +1,39 @@
 // ============================================================
 //  highlight-review-store.js
 //  Ground-truth labels for the port-highlight logic
-//  (src/features/port-highlighting.js). The extension's batch Rotation
-//  Receipt Capture submits each record's port rotation + what the
-//  highlight logic picked; the dashboard's Highlight Review page lets a
-//  human mark each pick right/wrong and click the correct port row.
+//  (src/features/port-highlighting.js). Two sources feed it:
+//   1. The extension's batch Rotation Receipt Capture submits each
+//      record's structured rotation + what the logic picked
+//      (submitCapture) — reviewed by clicking the correct port row.
+//   2. Receipt PNGs already sitting in RECEIPTS_FOLDER
+//      (importReceipts) — reviewed by looking at the image (yellow row =
+//      what the logic picked) and typing the right port if it's wrong.
 //
-//  Verdicts (`truth`) are stored independently of the auto pick, and
-//  survive re-captures: after the highlight logic is fixed, re-running
-//  the capture refreshes `autoRow`/`autoSpecial` but keeps every
-//  human-labeled truth, so the export's `agree` flag always reflects the
-//  CURRENT logic against the same ground truth.
+//  Items are keyed by SANITIZED SERVICE CODE (the same string the PNG
+//  filenames use), so a PNG-only item and a later structured capture of
+//  the same service are the same item, and verdicts carry over.
+//  Verdicts (`truth`) are independent of the auto pick and survive
+//  re-captures, so after the logic is fixed the export's `agree` flags
+//  always reflect the CURRENT logic against the same human labels.
 // ============================================================
 
 const fs   = require("fs");
-const { DATA_FOLDER, HIGHLIGHT_REVIEW_FILE, HIGHLIGHT_REVIEW_EXPORT_FILE } = require("./config");
+const path = require("path");
+const { DATA_FOLDER, RECEIPTS_FOLDER, HIGHLIGHT_REVIEW_FILE, HIGHLIGHT_REVIEW_EXPORT_FILE } = require("./config");
 const { writeFileAtomicSync } = require("./atomic-write");
 
 const STR_MAX   = 200;
 const MAX_PORTS = 200;
+const RECEIPT_NAME = /^(.+)-(\d{6})-receipt\.png$/;
 
-let items = {}; // { [record]: item } — see submitCapture() for the shape
+let items = {}; // { [key]: item } — key = sanitized service code
 
 const str = v => String(v == null ? "" : v).slice(0, STR_MAX);
+
+// Same sanitization save-confirmation.js's getServiceCode() applies for
+// the PNG filename — must stay identical or PNG and structured items
+// for one service stop being the same item.
+const sanitizeService = s => String(s == null ? "" : s).trim().replace(/[^A-Za-z0-9-]/g, "_");
 
 function ensureDataFolder() {
     if (!fs.existsSync(DATA_FOLDER)) fs.mkdirSync(DATA_FOLDER, { recursive: true });
@@ -45,7 +56,7 @@ function loadFromDisk() {
     }
     try {
         items = JSON.parse(fs.readFileSync(HIGHLIGHT_REVIEW_FILE, "utf8"));
-        console.log(`📂 Loaded highlight review — ${Object.keys(items).length} record(s)`);
+        console.log(`📂 Loaded highlight review — ${Object.keys(items).length} item(s)`);
     } catch (err) {
         console.error("❌ Could not load highlight-review.json — starting empty:", err.message);
         items = {};
@@ -53,11 +64,67 @@ function loadFromDisk() {
 }
 
 const portRef = o => ({ code: str(o && o.code), desc: str(o && o.desc) });
+const hasData = item => item.ports.length > 0;
 
-// The answer the highlight logic effectively gave: its pick if it was a
-// genuine find, null ("no special port") if it just defaulted to SP001.
+// The answer the logic effectively gave for a structured item: its pick
+// if it was a genuine find, null ("no special port") if it just defaulted
+// to SP001. Unknown for a PNG-only item (the pick is only in the image).
 function effectiveAuto(item) {
     return item.autoSpecial ? item.autoRow : null;
+}
+
+// Lists RECEIPTS_FOLDER's `<service>-<MMDDYY>-receipt.png` files, newest
+// per service.
+function scanReceiptFolder() {
+    let names;
+    try {
+        names = fs.readdirSync(RECEIPTS_FOLDER);
+    } catch {
+        return []; // folder doesn't exist yet — nothing captured
+    }
+    const newest = new Map();
+    for (const file of names) {
+        const m = file.match(RECEIPT_NAME);
+        if (!m) continue;
+        let mtimeMs;
+        try { mtimeMs = fs.statSync(path.join(RECEIPTS_FOLDER, file)).mtimeMs; } catch { continue; }
+        const prev = newest.get(m[1]);
+        if (!prev || mtimeMs > prev.mtimeMs) newest.set(m[1], { service: m[1], file, mtimeMs });
+    }
+    return [...newest.values()];
+}
+
+// Syncs items with what's in the folder: attaches each PNG to its
+// service's item, creates a PNG-only item where none exists, and drops a
+// PNG-only item whose file disappeared (unless it already has a verdict).
+function importReceipts() {
+    const files = new Map(scanReceiptFolder().map(f => [f.service, f]));
+    let changed = false;
+
+    for (const item of Object.values(items)) {
+        const f = files.get(item.key);
+        if (f) {
+            if (item.receiptFile !== f.file) { item.receiptFile = f.file; changed = true; }
+        } else if (item.receiptFile) {
+            if (item.imported && !item.truth) delete items[item.key];
+            else delete item.receiptFile;
+            changed = true;
+        }
+    }
+
+    for (const f of files.values()) {
+        if (items[f.service]) continue;
+        items[f.service] = {
+            key: f.service, record: null, service: f.service, imported: true,
+            capturedAt: new Date(f.mtimeMs).toISOString(),
+            ports: [], receiptFile: f.file,
+            firstUsPort: portRef(), firstEuPort: portRef(), lastForeignPort: portRef(),
+            autoRow: null, autoSpecial: true, // a PNG only exists when the logic found a special port
+        };
+        changed = true;
+    }
+
+    if (changed) persist();
 }
 
 function submitCapture(data) {
@@ -65,8 +132,10 @@ function submitCapture(data) {
     if (!/^\d+$/.test(record)) return { error: "record must be numeric" };
     if (!Array.isArray(data.ports) || data.ports.length === 0) return { error: "ports must be a non-empty array" };
 
-    const existing = items[record];
-    items[record] = {
+    const key = sanitizeService(data.service) || `rec_${record}`;
+    const existing = items[key];
+    items[key] = {
+        key,
         record,
         service: str(data.service),
         capturedAt: new Date().toISOString(),
@@ -86,33 +155,49 @@ function submitCapture(data) {
         autoRow:     data.autoRow ? str(data.autoRow) : null,
         autoSpecial: Boolean(data.autoSpecial),
         ...(existing && existing.truth ? { truth: existing.truth } : {}),
+        ...(existing && existing.receiptFile ? { receiptFile: existing.receiptFile } : {}),
     };
     persist();
     return { ok: true };
 }
 
-// row: an SP row number string ("005"), or null meaning "no special port".
-function setTruth(record, row) {
-    const item = items[str(record)];
-    if (!item) return { error: "unknown record" };
-    if (row !== null && !item.ports.some(p => p.row === row)) return { error: "row is not one of this record's ports" };
+// Structured item: row = an SP row number string ("005"), or null meaning
+// "no special port".
+function setTruth(key, row) {
+    const item = items[str(key)];
+    if (!item) return { error: "unknown item" };
+    if (!hasData(item)) return { error: "no rotation data for this item — review it by image (verdict), not by row" };
+    if (row !== null && !item.ports.some(p => p.row === row)) return { error: "row is not one of this item's ports" };
     item.truth = { row, reviewedAt: new Date().toISOString() };
     persist();
     return { ok: true };
 }
 
-function clearTruth(record) {
-    const item = items[str(record)];
-    if (!item) return { error: "unknown record" };
+// PNG-only item: verdict is about the yellow row in the image. "right" =
+// it's correct; "wrong" = it isn't, `correct` = free text naming the right
+// port (e.g. "SP005" or a port name); "none" = there should be no special
+// port at all.
+function setImageVerdict(key, verdict, correct) {
+    const item = items[str(key)];
+    if (!item) return { error: "unknown item" };
+    if (hasData(item)) return { error: "this item has rotation data — review it by row, not by image verdict" };
+    if (!["right", "wrong", "none"].includes(verdict)) return { error: "verdict must be right, wrong or none" };
+    if (verdict === "wrong" && !str(correct).trim()) return { error: "say which port is right" };
+    item.truth = { verdict, correct: verdict === "wrong" ? str(correct).trim() : "", reviewedAt: new Date().toISOString() };
+    persist();
+    return { ok: true };
+}
+
+function clearTruth(key) {
+    const item = items[str(key)];
+    if (!item) return { error: "unknown item" };
     delete item.truth;
     persist();
     return { ok: true };
 }
 
 function getAll() {
-    return Object.values(items).sort((a, b) =>
-        a.service.localeCompare(b.service) || a.record.localeCompare(b.record, undefined, { numeric: true })
-    );
+    return Object.values(items).sort((a, b) => a.service.localeCompare(b.service));
 }
 
 // Written to disk on every export too (HIGHLIGHT_REVIEW_EXPORT_FILE) so
@@ -121,17 +206,32 @@ function getAll() {
 function buildExport({ all = false } = {}) {
     const list     = getAll();
     const reviewed = list.filter(i => i.truth);
+
     const rows = (all ? list : reviewed).map(i => {
-        const autoAnswer = effectiveAuto(i);
+        let truthRow = null, verdict = null, correctText = null, agree = null;
+        if (i.truth) {
+            if ("row" in i.truth) {
+                truthRow = i.truth.row;
+                agree = truthRow === effectiveAuto(i);
+            } else {
+                verdict = i.truth.verdict;
+                correctText = i.truth.correct || null;
+                agree = verdict === "right";
+            }
+        }
         return {
-            record: i.record,
             service: i.service,
+            record: i.record,
             reviewed: Boolean(i.truth),
-            truthRow: i.truth ? i.truth.row : null,
-            autoAnswer,
-            agree: i.truth ? i.truth.row === autoAnswer : null,
+            agree,
+            truthRow,
+            verdict,
+            correctText,
+            autoAnswer: hasData(i) ? effectiveAuto(i) : null,
             autoRow: i.autoRow,
             autoSpecial: i.autoSpecial,
+            hasRotationData: hasData(i),
+            receiptFile: i.receiptFile ? path.join(RECEIPTS_FOLDER, i.receiptFile) : null,
             ports: i.ports,
             firstUsPort: i.firstUsPort,
             firstEuPort: i.firstEuPort,
@@ -147,12 +247,13 @@ function buildExport({ all = false } = {}) {
     const out = {
         exportedAt: new Date().toISOString(),
         legend: {
-            truthRow: "SP row number (string, e.g. \"005\") of the port a human says SHOULD be highlighted; null with reviewed:true means 'no special port' (highlight logic defaulting to SP001 is correct).",
-            autoAnswer: "What the highlight logic effectively answered: autoRow when autoSpecial is true, else null (it only fell back to SP001).",
-            agree: "truthRow === autoAnswer. false = the logic is wrong for this record. null = not reviewed.",
+            agree: "true = the highlight logic's pick was judged right; false = wrong; null = not reviewed.",
+            truthRow: "Structured items (hasRotationData:true): SP row number (string, e.g. \"005\") of the port a human says SHOULD be highlighted; null with reviewed:true means 'no special port' (the logic defaulting to SP001 is correct).",
+            autoAnswer: "Structured items: what the logic effectively answered — autoRow when autoSpecial is true, else null (only fell back to SP001). null for PNG-only items (the pick is only visible in receiptFile).",
+            verdict_correctText: "PNG-only items (hasRotationData:false), or an item reviewed by image before its rotation data arrived: verdict is right | wrong | none about the YELLOW ROW in receiptFile at review time; correctText = free text naming the right port when wrong. Open receiptFile (a PNG) to see the rotation and which row was yellow.",
             ports: "Every non-blank port row in order: row, name, code (SP*_port_code), key (SP*_port_key — drives full-bound pivot detection), arrival/depart, category (coarse: USA/JAPAN/EU_UK/OTHER), fine (UK/CANADA/EU/USA or null).",
             firstUsPort_firstEuPort: "Tradetech's own first_us_port / first_eu_port fields — the priority pass matches these codes against ports[].code.",
-            service: "Raw service field. A trailing -<letter> (e.g. AE1-E) means a directional (one-bound) service, otherwise 2 bounds.",
+            service: "Service code. A trailing -<letter> (e.g. AE1-E) means a directional (one-bound) service, otherwise 2 bounds.",
         },
         summary: { total: list.length, reviewed: reviewed.length, agree, disagree, unreviewed: list.length - reviewed.length },
         items: rows,
@@ -167,4 +268,7 @@ function buildExport({ all = false } = {}) {
     return out;
 }
 
-module.exports = { loadFromDisk, submitCapture, setTruth, clearTruth, getAll, buildExport, effectiveAuto };
+module.exports = {
+    loadFromDisk, importReceipts, submitCapture, setTruth, setImageVerdict, clearTruth,
+    getAll, buildExport, effectiveAuto, RECEIPT_NAME,
+};

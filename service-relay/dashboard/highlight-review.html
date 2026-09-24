@@ -40,6 +40,11 @@
     table.portsTable tr.autoPick td:first-child { border-left: 4px solid #ffeb3b; }
     table.portsTable tr.truthPick { outline: 2px solid var(--green); outline-offset: -2px; }
     table.portsTable td.dim { color: var(--dim); }
+    .receiptImg { max-width: 100%; margin-top: 10px; border: 1px solid var(--border); background: #fff; }
+    .receiptDetails { margin-top: 14px; }
+    .receiptDetails summary { cursor: pointer; color: var(--blue); font-size: 12px; }
+    .correctInput { flex: 1; min-width: 240px; font-family: var(--mono); font-size: 13px; padding: 7px 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+    .correctInput:focus { outline: none; border-color: var(--blue); }
     .empty { color: var(--dim); font-style: italic; padding: 24px; text-align: center; }
     #msg { text-align: center; font-size: 12px; min-height: 16px; margin-bottom: 6px; }
     #msg.err { color: var(--red); }
@@ -52,14 +57,15 @@
 ╚══════════════════════════════════════════╝</pre>
 <div style="text-align:center; margin-bottom: 12px;">
     <button onclick="location.href='/dashboard'">← Dashboard</button>
-    <button id="refreshBtn">↻ Refresh</button>
+    <button id="refreshBtn" title="Re-scans the receipts folder and imports any new PNGs">↻ Refresh / re-scan folder</button>
     <button id="exportBtn" title="Downloads the labeled set as JSON (also saved to disk next to highlight-review.json)">⬇ Export reviewed</button>
     <button id="exportAllBtn" title="Same, but including records you haven't reviewed yet">⬇ Export all</button>
 </div>
 
 <div class="statsBar" id="stats">Loading…</div>
 <div class="hint">
-    Yellow row = what the highlight logic picked. Click the row that <b>should</b> be highlighted &nbsp;·&nbsp;
+    Yellow row = what the highlight logic picked. Table items: click the row that <b>should</b> be highlighted.
+    Receipt-image items: mark it right, or type the right port &nbsp;·&nbsp;
     <b>Y / Enter</b> = pick is right &nbsp;·&nbsp; <b>N</b> = no special port &nbsp;·&nbsp; <b>←/→ or S</b> = prev / skip
 </div>
 <div id="msg"></div>

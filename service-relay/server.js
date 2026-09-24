@@ -140,6 +140,7 @@ const ROUTES = [
     { method: "POST", match: exact("/save-receipt"),                    handler: receiptsRoutes.handleSaveReceipt },
     { method: "POST", match: exact("/highlight-review/submit"),         handler: highlightReviewRoutes.handleSubmit },
     { method: "GET",  match: exact("/highlight-review/data"),           handler: highlightReviewRoutes.handleGetData },
+    { method: "GET",  match: prefix("/highlight-review/image"),         handler: highlightReviewRoutes.handleImage },
     { method: "POST", match: exact("/highlight-review/verdict"),        handler: highlightReviewRoutes.handleVerdict },
     { method: "GET",  match: prefix("/highlight-review/export"),        handler: highlightReviewRoutes.handleExport },
     { method: "GET",  match: exact("/dashboard/highlight-review"),      handler: dashboardRoutes.handleHighlightReviewPage },
