@@ -182,7 +182,7 @@ const PortHighlighting = {
     isDirectionalService() {
         const serviceField = document.querySelector('input[type="text"][name="service"]');
         const serviceValue = serviceField ? serviceField.value.trim() : "";
-        const isDirectional = /-[A-Z]$/i.test(serviceValue);
+        const isDirectional = PortSyncBoundary.isDirectionalService();
         console.log(`🧭 Service: "${serviceValue}" → directional: ${isDirectional}`);
         return isDirectional;
     },
@@ -371,6 +371,48 @@ const PortHighlighting = {
         return chosen.field;
     },
 
+    // Directional services (e.g. "SVC-E") loop back to the port they
+    // started from, and that origin port can reappear MANY times mid-route
+    // before the loop finally closes (SIN, HKG, SIN, LAX, OAK, SIN). The
+    // loop closure is the LAST of those repeats, not the first — cutting
+    // the scan at the first one (PortSyncBoundary.getStopRow(), still right
+    // for non-directional services) hid every port after a mid-route stop
+    // at the origin, so a real region change like LAX above was never seen.
+    //
+    // Returns the fields minus the two rows that must not count as
+    // region-change candidates: the real last populated port row (a
+    // directional route ends by returning to its start, however that last
+    // row happens to be typed) and the last repeat of the first port.
+    // Usually the same row. Everything else — earlier mid-route repeats of
+    // the origin included — stays in the scan.
+    excludeDirectionalClosure(portNameFields) {
+        const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
+
+        // Blank spare rows always exist below the real route (see
+        // insert-port.js) — only rows with content can be the real last port.
+        const filled = portNameFields.filter(f => f.value.trim()).sort((a, b) => rowOf(a) - rowOf(b));
+        if (filled.length < 2) return portNameFields;
+
+        // Same port = same port_code when both rows have one, else same name
+        // (a closing row can be typed by name before its code is filled in).
+        const identity = f => ({
+            code: (document.querySelector(`input[name="${f.name.replace("_port_name", "_port_code")}"]`)?.value || "").trim().toUpperCase(),
+            name: f.value.trim().toUpperCase(),
+        });
+        const first = identity(filled[0]);
+        const isFirstPort = f => {
+            const p = identity(f);
+            return first.code && p.code ? first.code === p.code : first.name === p.name;
+        };
+
+        const realLast   = filled[filled.length - 1];
+        const lastRepeat = filled.slice(1).reverse().find(isFirstPort) || null;
+        const excluded   = new Set([realLast, lastRepeat].filter(Boolean));
+
+        console.log(`🔁 Directional service — excluding ${[...excluded].map(f => `SP${String(rowOf(f)).padStart(3, "0")}`).join(" + ")} (real last port${lastRepeat && lastRepeat !== realLast ? " + last repeat of the first port" : " = last repeat of the first port"})`);
+        return portNameFields.filter(f => !excluded.has(f));
+    },
+
     run() {
         let portNameFields = Array.from(document.querySelectorAll(
             'input[type="text"][name^="SP"][name$="_port_name"]'
@@ -379,8 +421,13 @@ const PortHighlighting = {
         this.clearAllHighlights(portNameFields);
 
         // Restrict the scan to rows within the sync boundary — ignores
-        // the repeated "return leg" ports on a looping route.
-        const stopRow = PortSyncBoundary.getStopRow();
+        // the repeated "return leg" ports on a looping route. Non-directional
+        // services only: the boundary is the FIRST repeat of the opening
+        // port, which is wrong for a directional service where that port
+        // can come up several times mid-route (see
+        // excludeDirectionalClosure() above).
+        const suffixDirectional = this.isDirectionalService();
+        const stopRow = suffixDirectional ? null : PortSyncBoundary.getStopRow();
         if (stopRow) {
             portNameFields = portNameFields.filter(f => {
                 const match = f.name.match(/^SP(\d+)_port_name$/);
@@ -408,36 +455,15 @@ const PortHighlighting = {
         // rank contest let leg 1's Tacoma silently outrank the correct
         // leg-2 answer (Tokyo) — they must be scanned as 2 separate,
         // ranked attempts, not one combined candidate pool.
-        const suffixDirectional = this.isDirectionalService();
         const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
         const biasFirst = suffixDirectional || !!pivotRow;
 
-        // Directional services (e.g. "SVC-E") loop back to the exact
-        // port they started from — the last populated port row is
-        // always that repeat, by definition of the service naming,
-        // regardless of whether its port_code text happens to match the
-        // first row's (might not be filled in yet, or formatted
-        // differently). Always excluded so it can never count as a fake
-        // region-change candidate. Scoped to suffixDirectional only, not
-        // the broader biasFirst — a full-bound/pivot route isn't a
-        // same-origin loop and shouldn't have its last row dropped.
-        if (suffixDirectional && portNameFields.length > 1) {
-            const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
-
-            // Blank spare rows further down the page (they always exist —
-            // see insert-port.js) are still in portNameFields whenever
-            // stopRow above came back null (port codes not typed yet,
-            // formatting mismatch, etc.) — Math.max over ALL of them would
-            // pick one of those blanks instead of the real last port,
-            // making this exclusion silently do nothing in exactly the
-            // case it exists for. Only ever look at rows with content.
-            const filledRows = portNameFields.filter(f => f.value.trim()).map(rowOf);
-            if (filledRows.length > 1) {
-                const lastRow = Math.max(...filledRows);
-                console.log(`🔁 Directional service — excluding last port row SP${String(lastRow).padStart(3, "0")} (same as first)`);
-                portNameFields = portNameFields.filter(f => rowOf(f) !== lastRow);
-            }
-        }
+        // Directional services loop back to their own start — drop the loop
+        // closure (real last port + last repeat of the first port) so it
+        // can't count as a fake region-change candidate. Scoped to
+        // suffixDirectional only, not the broader biasFirst — a
+        // full-bound/pivot route isn't a same-origin loop.
+        if (suffixDirectional) portNameFields = this.excludeDirectionalClosure(portNameFields);
 
         // Only ever ONE port highlighted. Leg 2 is superior — if it
         // has its own special port, that's the answer, full stop, even
