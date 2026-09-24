@@ -379,12 +379,11 @@ const PortHighlighting = {
     // for non-directional services) hid every port after a mid-route stop
     // at the origin, so a real region change like LAX above was never seen.
     //
-    // Returns the fields minus the two rows that must not count as
-    // region-change candidates: the real last populated port row (a
-    // directional route ends by returning to its start, however that last
-    // row happens to be typed) and the last repeat of the first port.
-    // Usually the same row. Everything else — earlier mid-route repeats of
-    // the origin included — stays in the scan.
+    // Returns the fields minus the real last populated port row, which must
+    // not count as a region-change candidate (a directional route ends by
+    // returning to its start, however that last row happens to be typed).
+    // Everything else — mid-route repeats of the origin included — stays
+    // in the scan.
     excludeDirectionalClosure(portNameFields) {
         const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
 
@@ -405,12 +404,13 @@ const PortHighlighting = {
             return first.code && p.code ? first.code === p.code : first.name === p.name;
         };
 
-        const realLast   = filled[filled.length - 1];
-        const lastRepeat = filled.slice(1).reverse().find(isFirstPort) || null;
-        const excluded   = new Set([realLast, lastRepeat].filter(Boolean));
+        // Only the real last row is dropped. An open route (LAX, HKG, LAX,
+        // HKG, OAK) doesn't close, so its mid-route LAX stays a candidate —
+        // dropping it would hide the HKG -> LAX crossing.
+        const realLast = filled[filled.length - 1];
 
-        console.log(`🔁 Directional service — excluding ${[...excluded].map(f => `SP${String(rowOf(f)).padStart(3, "0")}`).join(" + ")} (real last port${lastRepeat && lastRepeat !== realLast ? " + last repeat of the first port" : " = last repeat of the first port"})`);
-        return portNameFields.filter(f => !excluded.has(f));
+        console.log(`🔁 Directional service — excluding SP${String(rowOf(realLast)).padStart(3, "0")} (real last port${isFirstPort(realLast) ? ", closes the loop" : ", open route"})`);
+        return portNameFields.filter(f => f !== realLast);
     },
 
     run() {

@@ -76,6 +76,7 @@ flowchart LR
   features_force_tab_links_js["features/force-tab-links.js"] --> features_duplicate_vessel_check_js["features/duplicate-vessel-check.js"]
   features_force_tab_links_js["features/force-tab-links.js"] --> features_full_page_capture_inject_js["features/full-page-capture-inject.js"]
   features_force_tab_links_js["features/force-tab-links.js"] --> features_keyboard_navigation_js["features/keyboard-navigation.js"]
+  features_force_tab_links_js["features/force-tab-links.js"] --> features_port_highlighting_js["features/port-highlighting.js"]
   features_force_tab_links_js["features/force-tab-links.js"] --> features_rename_toggle_relay_js["features/rename-toggle-relay.js"]
   features_force_tab_links_js["features/force-tab-links.js"] --> features_schedule_preview_tools_relay_js["features/schedule-preview-tools-relay.js"]
   features_force_tab_links_js["features/force-tab-links.js"] --> features_schedule_table_scrape_relay_js["features/schedule-table-scrape-relay.js"]
@@ -294,7 +295,7 @@ flowchart LR
 | features/duplicate-vessel-check.js | DuplicateVesselCheck | features/custom-rules-settings.js, main.js |
 | features/duplicate-vessel.js | vesselCodeField, readVesselCode, writeVesselCode, VesselActionHistory, DuplicateVessel, DeleteVessel | features/duplicate-vessel-check.js, features/live-check.js, features/insert-port.js, main.js |
 | features/fix-vessel-dates.js | FixVesselDates | features/custom-rules-settings.js, main.js |
-| features/force-tab-links.js | open | background-relay.js, features/duplicate-vessel-check.js, features/full-page-capture-inject.js, features/keyboard-navigation.js, features/rename-toggle-relay.js, features/schedule-preview-tools-relay.js, features/schedule-table-scrape-relay.js, features/service-relay-send-relay.js, features/upload-proof-relay.js, utils/relay-socket-client.js |
+| features/force-tab-links.js | open | background-relay.js, features/duplicate-vessel-check.js, features/full-page-capture-inject.js, features/keyboard-navigation.js, features/port-highlighting.js, features/rename-toggle-relay.js, features/schedule-preview-tools-relay.js, features/schedule-table-scrape-relay.js, features/service-relay-send-relay.js, features/upload-proof-relay.js, utils/relay-socket-client.js |
 | features/full-page-capture-inject.js | - | - |
 | features/highlighter.js | CONTEXT_RADIUS, storageKey, loadHighlights, wrapRange, getTextNodesInRange, unwrap, captureContext, findRange, locate | features/live-check-relay.js |
 | features/insert-port.js | portField, portDateField, readPortRow, writePortRow, blankPortRowValues, PortActionHistory, InsertPort, DeletePort | features/port-name-reminder.js, features/save-confirmation.js, main.js |
