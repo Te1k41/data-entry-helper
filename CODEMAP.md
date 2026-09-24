@@ -378,6 +378,7 @@ flowchart LR
   fill_calc_selftest_js["fill-calc.selftest.js"] --> vessel_dictionary_js["vessel-dictionary.js"]
   highlight_review_store_js["highlight-review-store.js"] --> config_js["config.js"]
   highlight_review_store_js["highlight-review-store.js"] --> atomic_write_js["atomic-write.js"]
+  highlight_review_store_js["highlight-review-store.js"] --> highlight_replay_js["highlight-replay.js"]
   merge_cleanup_js["merge-cleanup.js"] --> config_js["config.js"]
   merge_cleanup_js["merge-cleanup.js"] --> relay_state_js["relay-state.js"]
   port_dictionary_js["port-dictionary.js"] --> config_js["config.js"]
@@ -481,7 +482,8 @@ flowchart LR
 | due-services-trim.js | due-date-utils.js | current-batch-store.js, routes/due-services.js |
 | fill-calc.js | port-dictionary.js, vessel-dictionary.js, date-translator.js | fill-calc.selftest.js, routes/fill-test.js |
 | fill-calc.selftest.js | fill-calc.js, schedule-guideline-store.js, proof-extract.js, port-dictionary.js, vessel-dictionary.js | - |
-| highlight-review-store.js | config.js, atomic-write.js | routes/highlight-review.js, server.js |
+| highlight-replay.js | - | highlight-review-store.js |
+| highlight-review-store.js | config.js, atomic-write.js, highlight-replay.js | routes/highlight-review.js, server.js |
 | merge-cleanup.js | config.js, relay-state.js | relay-socket.js |
 | port-dictionary.js | config.js | build-result.js, fill-calc.js, fill-calc.selftest.js, routes/fill-test.js, routes/result.js, server.js |
 | proof-extract.js | proof-parsers/index.js, config.js, schedule-guideline-store.js, build-result.js | download-watcher.js, fill-calc.selftest.js, routes/proof-extract.js, routes/result.js |

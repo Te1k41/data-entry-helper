@@ -7,6 +7,8 @@
 //  POST /highlight-review/verdict  — { key, row: "005"|null }          structured item: the right row
 //                                    { key, verdict, correct? }        PNG-only item: right|wrong|none
 //                                    { key, clear: true }              removes a verdict
+//  POST /highlight-review/replay   — re-runs the CURRENT extension highlight logic over every captured
+//                                    route, replacing each item's auto pick; returns what changed
 //  GET  /highlight-review/export   — labeled set as a JSON download (?all=1 includes unreviewed);
 //                                    also written to HIGHLIGHT_REVIEW_EXPORT_FILE
 // ============================================================
@@ -84,6 +86,18 @@ async function handleVerdict(req, res) {
     sendJson(res, 200, { success: true });
 }
 
+// Re-runs the current extension highlight logic over every captured route.
+function handleReplay(req, res) {
+    try {
+        const result = store.replayAuto();
+        console.log(`🔁 Highlight replay: ${result.total} route(s), ${result.changed} changed answer`);
+        sendJson(res, 200, result);
+    } catch (err) {
+        console.error("❌ Highlight replay failed:", err);
+        sendJson(res, 500, { error: err.message });
+    }
+}
+
 function handleExport(req, res) {
     store.importReceipts();
     const all = new URL(req.url, `http://localhost:${PORT}`).searchParams.get("all") === "1";
@@ -96,4 +110,4 @@ function handleExport(req, res) {
     res.end(JSON.stringify(out, null, 2));
 }
 
-module.exports = { handleSubmit, handleGetData, handleImage, handleVerdict, handleExport };
+module.exports = { handleSubmit, handleGetData, handleImage, handleVerdict, handleExport, handleReplay };

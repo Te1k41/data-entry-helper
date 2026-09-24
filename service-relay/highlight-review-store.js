@@ -274,6 +274,42 @@ function clearTruth(key) {
     return { ok: true };
 }
 
+// Re-runs the CURRENT extension highlight logic over every structured item
+// (see highlight-replay.js) and stores the result as the item's auto pick, so
+// the review page and export judge the latest logic on the routes already
+// captured. The browser's own original answer is kept once as
+// capturedAutoRow/capturedAutoSpecial. Verdicts are untouched — a structured
+// verdict is the human's right row, independent of any auto pick. The next
+// real capture of an item overwrites it with a fresh browser-made pick.
+function replayAuto() {
+    const replay = require("./highlight-replay").createReplayer();
+    const changes = [];
+    let total = 0;
+
+    for (const item of Object.values(items)) {
+        if (!hasData(item)) continue;
+        total++;
+
+        const before = effectiveAuto(item);
+        if (item.capturedAutoRow === undefined) {
+            item.capturedAutoRow = item.autoRow;
+            item.capturedAutoSpecial = item.autoSpecial;
+        }
+
+        const { row, special, directional } = replay(item);
+        item.autoRow = row;
+        item.autoSpecial = special;
+        item.directional = directional;
+        item.replayedAt = new Date().toISOString();
+
+        const after = effectiveAuto(item);
+        if (before !== after) changes.push({ service: item.service, vesselOperator: item.vesselOperator, before, after });
+    }
+
+    persist();
+    return { total, changed: changes.length, changes };
+}
+
 function getAll() {
     return Object.values(items).sort((a, b) => a.service.localeCompare(b.service));
 }
@@ -312,6 +348,8 @@ function buildExport({ all = false } = {}) {
             autoAnswer: hasData(i) ? effectiveAuto(i) : null,
             autoRow: i.autoRow,
             autoSpecial: i.autoSpecial,
+            capturedAuto: i.capturedAutoRow === undefined ? null : (i.capturedAutoSpecial ? i.capturedAutoRow : null),
+            directional: i.directional === undefined ? null : i.directional,
             hasRotationData: hasData(i),
             receiptFile: i.receiptFile ? path.join(RECEIPTS_FOLDER, i.receiptFile) : null,
             ports: i.ports,
@@ -335,7 +373,8 @@ function buildExport({ all = false } = {}) {
             verdict_correctText: "PNG-only items (hasRotationData:false), or an item reviewed by image before its rotation data arrived: verdict is right | wrong | none about the YELLOW ROW in receiptFile at review time; correctText = the right port when wrong (picked from SP buttons, e.g. \"SP005\"); correctRow = its 3-digit row (\"005\") when it was picked that way. Open receiptFile (a PNG) to see the rotation and which row was yellow.",
             ports: "Every non-blank port row in order: row, name, code (SP*_port_code), key (SP*_port_key — drives full-bound pivot detection), arrival/depart, category (coarse: USA/JAPAN/EU_UK/OTHER), fine (UK/CANADA/EU/USA or null).",
             firstUsPort_firstEuPort: "Tradetech's own first_us_port / first_eu_port fields — the priority pass matches these codes against ports[].code.",
-            service: "Service code. A trailing -<letter> (e.g. AE1-E) means a directional (one-bound) service, otherwise 2 bounds.",
+            service: "Service code. Directional (one-bound) = trailing -<letter> (e.g. AE1-E) OR SP001 key blank/non-letter; any port_key with a real bound marker (ES, EEWS, WE…) makes it full-bound (2 bounds) regardless. See the per-item `directional` flag.",
+            autoAnswer_replay: "autoRow/autoAnswer come from re-running the CURRENT extension logic over the stored ports (replayAuto). capturedAuto = what the browser answered at capture time (null when unknown or 'nothing special'); differs from autoAnswer where the logic changed since.",
         },
         summary: { total: list.length, reviewed: reviewed.length, agree, disagree, unreviewed: list.length - reviewed.length },
         items: rows,
@@ -352,5 +391,5 @@ function buildExport({ all = false } = {}) {
 
 module.exports = {
     loadFromDisk, importReceipts, submitCapture, setTruth, setImageVerdict, clearTruth,
-    getAll, buildExport, effectiveAuto, RECEIPT_NAME, rowsFromPngHeight,
+    getAll, buildExport, effectiveAuto, replayAuto, RECEIPT_NAME, rowsFromPngHeight,
 };

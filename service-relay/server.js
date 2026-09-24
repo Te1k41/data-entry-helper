@@ -142,6 +142,7 @@ const ROUTES = [
     { method: "GET",  match: exact("/highlight-review/data"),           handler: highlightReviewRoutes.handleGetData },
     { method: "GET",  match: prefix("/highlight-review/image"),         handler: highlightReviewRoutes.handleImage },
     { method: "POST", match: exact("/highlight-review/verdict"),        handler: highlightReviewRoutes.handleVerdict },
+    { method: "POST", match: exact("/highlight-review/replay"),         handler: highlightReviewRoutes.handleReplay },
     { method: "GET",  match: prefix("/highlight-review/export"),        handler: highlightReviewRoutes.handleExport },
     { method: "GET",  match: exact("/dashboard/highlight-review"),      handler: dashboardRoutes.handleHighlightReviewPage },
     { method: "GET",  match: exact("/dashboard/highlight-review.js"),   handler: dashboardRoutes.handleHighlightReviewJs },

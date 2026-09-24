@@ -218,7 +218,9 @@
         const structured = hasData(item);
         const auto = structured ? effectiveAuto(item) : null;
         const autoPort = auto && item.ports.find(p => p.row === auto);
-        const directional = /-[A-Z]$/i.test(item.service);
+        const directional = item.directional !== undefined ? item.directional : /-[A-Z]$/i.test(item.service);
+        const captured = item.capturedAutoRow === undefined ? undefined : (item.capturedAutoSpecial ? item.capturedAutoRow : null);
+        const logicChanged = structured && captured !== undefined && captured !== effectiveAuto(item);
 
         wrap.append(
             el("div", { class: "cardTitle" }, `${item.service || "(no service)"}${item.vesselOperator ? ` · ${item.vesselOperator}` : ""} · ${item.record ? `record ${item.record}` : "imported receipt"}`),
@@ -229,6 +231,10 @@
                     : autoPort
                         ? el("span", { class: "tag special" }, `auto: SP${auto} ${autoPort.name}`)
                         : el("span", { class: "tag" }, "auto: found nothing special (SP001 default)"),
+                logicChanged
+                    ? el("span", { class: "tag", title: "What the extension answered when this route was captured vs the current logic" },
+                        `logic changed: was ${captured ? "SP" + captured : "nothing special"} → now ${effectiveAuto(item) ? "SP" + effectiveAuto(item) : "nothing special"}`)
+                    : null,
                 truthTag(item),
                 item.duplicateRecords && item.duplicateRecords.length
                     ? el("span", { class: "tag", title: "Same service + vessel operator — only the newest capture is shown for review" },
@@ -299,6 +305,15 @@
     });
 
     $("refreshBtn").addEventListener("click", () => load().then(() => flash("Re-scanned the receipts folder", true)));
+    $("replayBtn").addEventListener("click", async () => {
+        try {
+            const r = await post("/highlight-review/replay", {});
+            await load();
+            flash(`Re-ran the logic on ${r.total} route(s) — ${r.changed} answer${r.changed === 1 ? "" : "s"} changed`, true);
+        } catch (err) {
+            flash(`Re-run failed: ${err.message}`, false);
+        }
+    });
     $("exportBtn").addEventListener("click", () => {
         location.href = "/highlight-review/export";
         flash(`Export also saved to ${state.files.export}`, true);
