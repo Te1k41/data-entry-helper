@@ -150,27 +150,10 @@ const PortHighlighting = {
         return candidates[candidates.length - 1];
     },
 
-    // Parses SP001_port_key into its Start/End compass directions.
-    // Each 2-character chunk is [DIRECTION][S|E] — the letter is which
-    // end of the route it marks, not the compass direction itself
-    // (that's the first character). E.g. "NEES" is chunks "NE" (North,
-    // End) + "ES" (East, Start): the route starts heading East and
-    // ends heading North. A service can carry up to 2 such chunks (one
-    // Start, one End) — a bare 2-character key names just one of them.
-    // Returns null if the string doesn't cleanly parse as one or two
-    // such chunks.
+    // Start/End compass directions of a port_key ("ES", "EEWS"…). The parser
+    // lives in PortSyncBoundary because isDirectionalService() needs it too.
     parsePortKeyDirections(portKey) {
-        const value = (portKey || "").trim().toUpperCase();
-        if (!value || value.length % 2 !== 0 || value.length > 4) return null;
-
-        const directions = {};
-        for (let i = 0; i < value.length; i += 2) {
-            const [compass, marker] = [value[i], value[i + 1]];
-            if (!"NSEW".includes(compass) || !"SE".includes(marker)) return null;
-            if (marker === "S") directions.start = compass;
-            else directions.end = compass;
-        }
-        return (directions.start || directions.end) ? directions : null;
+        return PortSyncBoundary.parsePortKeyDirections(portKey);
     },
 
     // Reads the `service` field and checks whether it ends with a

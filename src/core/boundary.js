@@ -1,12 +1,40 @@
 const PortSyncBoundary = {
+    // Parses a port_key into its Start/End compass directions.
+    // Each 2-character chunk is [DIRECTION][S|E] — the letter is which
+    // end of the route it marks, not the compass direction itself
+    // (that's the first character). E.g. "NEES" is chunks "NE" (North,
+    // End) + "ES" (East, Start): the route starts heading East and
+    // ends heading North. A service can carry up to 2 such chunks (one
+    // Start, one End) — a bare 2-character key names just one of them.
+    // Returns null if the string doesn't cleanly parse as one or two
+    // such chunks.
+    parsePortKeyDirections(portKey) {
+        const value = (portKey || "").trim().toUpperCase();
+        if (!value || value.length % 2 !== 0 || value.length > 4) return null;
+
+        const directions = {};
+        for (let i = 0; i < value.length; i += 2) {
+            const [compass, marker] = [value[i], value[i + 1]];
+            if (!"NSEW".includes(compass) || !"SE".includes(marker)) return null;
+            if (marker === "S") directions.start = compass;
+            else directions.end = compass;
+        }
+        return (directions.start || directions.end) ? directions : null;
+    },
+
     // Directional (one bound) = the route loops back to the port it started
-    // from. Either signal is enough:
+    // from. Full bound (two bound) wins outright when ANY SP*_port_key holds
+    // a real bound marker ("ES", "EEWS", "WE" — see parsePortKeyDirections),
+    // whatever the service code looks like. Otherwise either signal below
+    // is enough:
     //  - the service code ends in a single letter ("AE1-E", "ABC-A"), or
     //  - SP001_port_key is blank or has any non-letter character ("*", "E1"…).
-    //    A full-bound service carries a real compass key there ("ES", "EEWS").
-    // Anything else is a full-bound (two-bound) service. The one shared
-    // definition — port-highlighting.js reuses it.
+    // Anything else is a full-bound service. The one shared definition —
+    // port-highlighting.js reuses it.
     isDirectionalService() {
+        const keyFields = document.querySelectorAll('input[type="text"][name^="SP"][name$="_port_key"]');
+        if (Array.from(keyFields).some(f => this.parsePortKeyDirections(f.value))) return false;
+
         const serviceField = document.querySelector('input[type="text"][name="service"]');
         if (/-[A-Z]$/i.test(serviceField ? serviceField.value.trim() : "")) return true;
 
