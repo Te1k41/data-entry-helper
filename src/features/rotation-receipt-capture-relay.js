@@ -133,23 +133,30 @@ const RotationReceiptCapture = {
         const input = document.createElement("input");
         input.type = "file";
         input.accept = ".csv";
+        input.multiple = true; // several exports at once — records are merged, duplicates dropped
         input.style.display = "none";
 
-        input.addEventListener("change", () => {
-            const file = input.files?.[0];
+        input.addEventListener("change", async () => {
+            const files = Array.from(input.files || []);
             input.remove();
-            if (!file) return;
+            if (files.length === 0) return;
 
-            const reader = new FileReader();
-            reader.onload = () => {
-                const records = this.extractRecordsFromCsv(String(reader.result || ""));
-                if (records.length === 0) {
-                    showTemporaryBanner({ title: "🧾 Capture Receipts", message: `No "Record" column found (or no rows) in ${file.name}` });
-                    return;
-                }
-                this.start(records);
-            };
-            reader.readAsText(file);
+            const perFile = await Promise.all(files.map(async f => ({
+                name: f.name,
+                records: this.extractRecordsFromCsv(await f.text()),
+            })));
+
+            const empty = perFile.filter(f => f.records.length === 0).map(f => f.name);
+            const records = [...new Set(perFile.flatMap(f => f.records))];
+
+            if (records.length === 0) {
+                showTemporaryBanner({ title: "🧾 Capture Receipts", message: `No "Record" column found (or no rows) in ${empty.join(", ")}` });
+                return;
+            }
+            if (empty.length) {
+                showTemporaryBanner({ title: "🧾 Capture Receipts", message: `Skipped (no "Record" column or no rows): ${empty.join(", ")}` });
+            }
+            this.start(records);
         });
 
         document.body.appendChild(input);
