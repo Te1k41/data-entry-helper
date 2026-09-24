@@ -43,8 +43,12 @@
     .receiptImg { max-width: 100%; margin-top: 10px; border: 1px solid var(--border); background: #fff; }
     .receiptDetails { margin-top: 14px; }
     .receiptDetails summary { cursor: pointer; color: var(--blue); font-size: 12px; }
-    .correctInput { flex: 1; min-width: 240px; font-family: var(--mono); font-size: 13px; padding: 7px 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
-    .correctInput:focus { outline: none; border-color: var(--blue); }
+    .spLabel { margin: 12px 0 6px; font-size: 12px; color: var(--muted); }
+    .spLabel .dim { color: var(--dim); }
+    .spGrid { display: flex; flex-wrap: wrap; gap: 6px; }
+    .spGrid button.spBtn { padding: 6px 10px; font-size: 13px; min-width: 62px; }
+    .spGrid button.spBtn:hover { border-color: var(--red); color: var(--red); }
+    .spGrid button.spBtn.picked { border-color: var(--red); color: var(--red); background: var(--red-soft); }
     .empty { color: var(--dim); font-style: italic; padding: 24px; text-align: center; }
     #msg { text-align: center; font-size: 12px; min-height: 16px; margin-bottom: 6px; }
     #msg.err { color: var(--red); }
@@ -65,7 +69,7 @@
 <div class="statsBar" id="stats">Loading…</div>
 <div class="hint">
     Yellow row = what the highlight logic picked. Table items: click the row that <b>should</b> be highlighted.
-    Receipt-image items: mark it right, or type the right port &nbsp;·&nbsp;
+    Receipt-image items: mark it right, or click the SP number that should be highlighted &nbsp;·&nbsp;
     <b>Y / Enter</b> = pick is right &nbsp;·&nbsp; <b>N</b> = no special port &nbsp;·&nbsp; <b>←/→ or S</b> = prev / skip
 </div>
 <div id="msg"></div>

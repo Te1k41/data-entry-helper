@@ -73,6 +73,31 @@ function effectiveAuto(item) {
     return item.autoSpecial ? item.autoRow : null;
 }
 
+// A receipt PNG's height is fully determined by its port-row count (see
+// save-confirmation.js renderRotationCanvas()): PADDING 14 top + bottom,
+// 30 title area, then 26px per line for the 3 extra lines (last foreign /
+// first US / first EU), 1 header band, and one line per port row:
+// H = 84 + 26 * (3 + 1 + rows). Lets the review page offer exactly the SP
+// buttons that exist in an image it can't otherwise read. null if the
+// height doesn't fit the layout (e.g. the layout changed) — the page then
+// falls back to a generic button range.
+function rowsFromPngHeight(h) {
+    const rows = (h - 84) / 26 - 4;
+    return Number.isInteger(rows) && rows >= 1 && rows <= 100 ? rows : null;
+}
+
+function readPngHeight(filePath) {
+    try {
+        const fd = fs.openSync(filePath, "r");
+        const head = Buffer.alloc(24);
+        fs.readSync(fd, head, 0, 24, 0);
+        fs.closeSync(fd);
+        return head.toString("ascii", 1, 4) === "PNG" ? head.readUInt32BE(20) : null;
+    } catch {
+        return null;
+    }
+}
+
 // Lists RECEIPTS_FOLDER's `<service>-<MMDDYY>-receipt.png` files, newest
 // per service.
 function scanReceiptFolder() {
@@ -89,7 +114,7 @@ function scanReceiptFolder() {
         let mtimeMs;
         try { mtimeMs = fs.statSync(path.join(RECEIPTS_FOLDER, file)).mtimeMs; } catch { continue; }
         const prev = newest.get(m[1]);
-        if (!prev || mtimeMs > prev.mtimeMs) newest.set(m[1], { service: m[1], file, mtimeMs });
+        if (!prev || mtimeMs > prev.mtimeMs) newest.set(m[1], { service: m[1], file, mtimeMs, rows: rowsFromPngHeight(readPngHeight(path.join(RECEIPTS_FOLDER, file))) });
     }
     return [...newest.values()];
 }
@@ -105,6 +130,7 @@ function importReceipts() {
         const f = files.get(item.key);
         if (f) {
             if (item.receiptFile !== f.file) { item.receiptFile = f.file; changed = true; }
+            if (item.receiptRows !== f.rows) { item.receiptRows = f.rows; changed = true; }
         } else if (item.receiptFile) {
             if (item.imported && !item.truth) delete items[item.key];
             else delete item.receiptFile;
@@ -117,7 +143,7 @@ function importReceipts() {
         items[f.service] = {
             key: f.service, record: null, service: f.service, imported: true,
             capturedAt: new Date(f.mtimeMs).toISOString(),
-            ports: [], receiptFile: f.file,
+            ports: [], receiptFile: f.file, receiptRows: f.rows,
             firstUsPort: portRef(), firstEuPort: portRef(), lastForeignPort: portRef(),
             autoRow: null, autoSpecial: true, // a PNG only exists when the logic found a special port
         };
@@ -183,7 +209,9 @@ function setImageVerdict(key, verdict, correct) {
     if (hasData(item)) return { error: "this item has rotation data — review it by row, not by image verdict" };
     if (!["right", "wrong", "none"].includes(verdict)) return { error: "verdict must be right, wrong or none" };
     if (verdict === "wrong" && !str(correct).trim()) return { error: "say which port is right" };
-    item.truth = { verdict, correct: verdict === "wrong" ? str(correct).trim() : "", reviewedAt: new Date().toISOString() };
+    const text = verdict === "wrong" ? str(correct).trim() : "";
+    const rowMatch = text.match(/^SP([0-9]{3})$/i);
+    item.truth = { verdict, correct: text, ...(rowMatch ? { correctRow: rowMatch[1] } : {}), reviewedAt: new Date().toISOString() };
     persist();
     return { ok: true };
 }
@@ -208,7 +236,7 @@ function buildExport({ all = false } = {}) {
     const reviewed = list.filter(i => i.truth);
 
     const rows = (all ? list : reviewed).map(i => {
-        let truthRow = null, verdict = null, correctText = null, agree = null;
+        let truthRow = null, verdict = null, correctText = null, correctRow = null, agree = null;
         if (i.truth) {
             if ("row" in i.truth) {
                 truthRow = i.truth.row;
@@ -216,6 +244,7 @@ function buildExport({ all = false } = {}) {
             } else {
                 verdict = i.truth.verdict;
                 correctText = i.truth.correct || null;
+                correctRow = i.truth.correctRow || null;
                 agree = verdict === "right";
             }
         }
@@ -227,6 +256,7 @@ function buildExport({ all = false } = {}) {
             truthRow,
             verdict,
             correctText,
+            correctRow,
             autoAnswer: hasData(i) ? effectiveAuto(i) : null,
             autoRow: i.autoRow,
             autoSpecial: i.autoSpecial,
@@ -250,7 +280,7 @@ function buildExport({ all = false } = {}) {
             agree: "true = the highlight logic's pick was judged right; false = wrong; null = not reviewed.",
             truthRow: "Structured items (hasRotationData:true): SP row number (string, e.g. \"005\") of the port a human says SHOULD be highlighted; null with reviewed:true means 'no special port' (the logic defaulting to SP001 is correct).",
             autoAnswer: "Structured items: what the logic effectively answered — autoRow when autoSpecial is true, else null (only fell back to SP001). null for PNG-only items (the pick is only visible in receiptFile).",
-            verdict_correctText: "PNG-only items (hasRotationData:false), or an item reviewed by image before its rotation data arrived: verdict is right | wrong | none about the YELLOW ROW in receiptFile at review time; correctText = free text naming the right port when wrong. Open receiptFile (a PNG) to see the rotation and which row was yellow.",
+            verdict_correctText: "PNG-only items (hasRotationData:false), or an item reviewed by image before its rotation data arrived: verdict is right | wrong | none about the YELLOW ROW in receiptFile at review time; correctText = the right port when wrong (picked from SP buttons, e.g. \"SP005\"); correctRow = its 3-digit row (\"005\") when it was picked that way. Open receiptFile (a PNG) to see the rotation and which row was yellow.",
             ports: "Every non-blank port row in order: row, name, code (SP*_port_code), key (SP*_port_key — drives full-bound pivot detection), arrival/depart, category (coarse: USA/JAPAN/EU_UK/OTHER), fine (UK/CANADA/EU/USA or null).",
             firstUsPort_firstEuPort: "Tradetech's own first_us_port / first_eu_port fields — the priority pass matches these codes against ports[].code.",
             service: "Service code. A trailing -<letter> (e.g. AE1-E) means a directional (one-bound) service, otherwise 2 bounds.",

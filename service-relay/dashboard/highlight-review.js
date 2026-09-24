@@ -2,7 +2,8 @@
 //  • Items with rotation data (from the extension's batch capture): click the
 //    row that SHOULD be highlighted.
 //  • PNG-only items (receipts imported from the receipts folder): look at the
-//    image (yellow row = the pick) and say right / wrong (+ type the right port) / none.
+//    image (yellow row = the pick) and say right / none, or click the SP number that
+//    should have been highlighted.
 // Verdicts persist server-side (highlight-review-store.js). Refresh re-scans
 // the receipts folder, so newly captured PNGs show up.
 (function () {
@@ -90,7 +91,13 @@
     }
 
     const verdictRow   = (key, row) => submitVerdict(key, { row }, { row });
-    const verdictImage = (key, verdict, correct) => submitVerdict(key, { verdict, correct }, { verdict, correct: verdict === "wrong" ? String(correct || "").trim() : "" });
+    // Mirrors what the server stores (highlight-review-store.js setImageVerdict),
+    // including correctRow, so the picked SP button shows right away on revisit.
+    const verdictImage = (key, verdict, correct) => {
+        const text = verdict === "wrong" ? String(correct || "").trim() : "";
+        const rowMatch = text.match(/^SP([0-9]{3})$/i);
+        return submitVerdict(key, { verdict, correct }, { verdict, correct: text, ...(rowMatch ? { correctRow: rowMatch[1] } : {}) });
+    };
 
     async function clearVerdict(key) {
         try {
@@ -163,13 +170,26 @@
         );
     }
 
+    // The PNG-only item's rotation isn't readable here, so offer one button per
+    // port row that exists in the image (row count comes from the PNG's height,
+    // see highlight-review-store.js rowsFromPngHeight) — click the port that
+    // SHOULD be highlighted instead of typing it. Falls back to a generic
+    // range when the count couldn't be worked out.
+    const FALLBACK_ROWS = 30;
+
     function renderActionsForImage(item) {
-        const input = el("input", { type: "text", id: "correctText", placeholder: "Right port, e.g. SP005 or port name", class: "correctInput" });
-        const saveWrong = () => {
-            if (!input.value.trim()) { flash("Type which port is right first (or use \"No special port\")", false); input.focus(); return; }
-            verdictImage(item.key, "wrong", input.value);
-        };
-        input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); saveWrong(); } });
+        const rowCount = item.receiptRows || FALLBACK_ROWS;
+        const picked = isReviewed(item) && item.truth.verdict === "wrong" ? item.truth.correctRow : null;
+
+        const rowButtons = Array.from({ length: rowCount }, (_, i) => {
+            const row = String(i + 1).padStart(3, "0");
+            return el("button", {
+                class: "spBtn" + (picked === row ? " picked" : ""),
+                title: `SP${row} is the port that should be highlighted`,
+                onclick: () => verdictImage(item.key, "wrong", `SP${row}`)
+            }, `SP${row}`);
+        });
+
         return el("div", null,
             el("div", { class: "actions" },
                 el("button", { class: "good", onclick: () => verdictImage(item.key, "right") }, "✅ Yellow row is right (Y)"),
@@ -178,7 +198,11 @@
                 el("button", { onclick: () => step(1) }, "Skip ▶ (S)"),
                 isReviewed(item) ? el("button", { onclick: () => clearVerdict(item.key) }, "↩ Clear verdict") : null
             ),
-            el("div", { class: "actions" }, input, el("button", { onclick: saveWrong }, "❌ Wrong — save"))
+            el("div", { class: "spLabel" },
+                "Yellow row is wrong — the port that SHOULD be highlighted is:",
+                item.receiptRows ? null : el("span", { class: "dim" }, ` (couldn't read the row count from this image — showing SP001–SP${FALLBACK_ROWS})`)
+            ),
+            el("div", { class: "spGrid" }, rowButtons)
         );
     }
 
