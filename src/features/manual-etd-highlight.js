@@ -51,13 +51,16 @@ const ManualEtdHighlight = {
         this.run();
     },
 
-    // Re-run whenever a port code changes (the boundary itself can shift)
-    // or any depart/arrival date changes.
+    // Re-run whenever a port code changes (the boundary itself can shift),
+    // the service code / SP001 key changes (they decide directional vs not,
+    // which moves the boundary) or any depart/arrival date changes.
     handle(event) {
         const { name } = event.target;
         if (!name) return;
 
         const relevant =
+            name === "service" ||
+            name === "SP001_port_key" ||
             /^SP\d+_port_code$/.test(name) ||
             /^SP\d+_depart_date$/.test(name) ||
             /^SP\d+_arrival_date$/.test(name);

@@ -1,11 +1,17 @@
 const PortSyncBoundary = {
-    // A service whose code ends in a single letter (e.g. "AE1-E", "ABC-A")
-    // is directional (one bound): it loops back to the port it started
-    // from. Anything else is a full-bound (two-bound) service. The one
-    // shared definition — port-highlighting.js reuses it.
+    // Directional (one bound) = the route loops back to the port it started
+    // from. Either signal is enough:
+    //  - the service code ends in a single letter ("AE1-E", "ABC-A"), or
+    //  - SP001_port_key is blank or has any non-letter character ("*", "E1"…).
+    //    A full-bound service carries a real compass key there ("ES", "EEWS").
+    // Anything else is a full-bound (two-bound) service. The one shared
+    // definition — port-highlighting.js reuses it.
     isDirectionalService() {
         const serviceField = document.querySelector('input[type="text"][name="service"]');
-        return /-[A-Z]$/i.test(serviceField ? serviceField.value.trim() : "");
+        if (/-[A-Z]$/i.test(serviceField ? serviceField.value.trim() : "")) return true;
+
+        const keyField = document.querySelector('input[type="text"][name="SP001_port_key"]');
+        return !!keyField && !/^[A-Za-z]+$/.test(keyField.value.trim());
     },
 
     // Scans SP*_port_code fields top-to-bottom for repeats of the opening
