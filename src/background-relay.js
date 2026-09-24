@@ -571,8 +571,8 @@ async function captureOneReceipt(record, windowId) {
             reviewError = saved.error || null;
         }
 
-        // Receipt PNG — special-port records only (captureForBatchAudit
-        // skips the rest).
+        // Receipt PNG — every record; one with no special port shows the
+        // SP001 fallback row highlighted.
         const png = result.png;
         if (!png?.ok) {
             return { record, captured: false, reviewed, reviewError, reason: png?.reason || "no receipt image produced" };
