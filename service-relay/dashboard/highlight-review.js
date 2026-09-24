@@ -265,6 +265,8 @@
                 el("tbody", {}, item.ports.map(p => {
                     const cls = ["portRow"];
                     if (p.row === auto) cls.push("autoPick");
+                    // No special port found: the page still flags the SP001 fallback row — show it, dashed, so it reads as a fallback and not a find
+                    else if (!auto && p.row === item.autoRow) cls.push("autoPick", "fallbackPick");
                     if (byRow(item) && item.truth.row === p.row) cls.push("truthPick");
                     return el("tr", { class: cls.join(" "), title: "Click = this is the port that should be highlighted", onclick: () => verdictRow(item.key, p.row) },
                         el("td", {}, `SP${p.row}`),
