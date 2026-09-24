@@ -171,7 +171,7 @@ function importReceipts() {
             capturedAt: new Date(f.mtimeMs).toISOString(),
             ports: [], receiptFile: f.file, receiptRows: f.rows,
             firstUsPort: portRef(), firstEuPort: portRef(), lastForeignPort: portRef(),
-            autoRow: null, autoSpecial: true, // a PNG only exists when the logic found a special port
+            autoRow: null, autoSpecial: true, // unknown for a PNG-only item — the pick is only visible in the image (which may show the SP001 fallback)
         };
         changed = true;
     }

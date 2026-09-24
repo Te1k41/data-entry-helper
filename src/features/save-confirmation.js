@@ -390,11 +390,10 @@ const SaveConfirmation = {
     // Purely reads the DOM — never writes a field, never clicks
     // anything, never saves.
     //
-    // Skips (no capture at all) unless PortHighlighting found a genuine
-    // special port — routes that fell all the way through to the hard
-    // SP001 default have nothing worth a receipt for. Confirmed request:
-    // a 300+-record run over EVERY due-service record is mostly noise;
-    // this cuts it down to only the ones with something to actually flag.
+    // Captures every route, including ones where PortHighlighting found no
+    // special port — those get the hard SP001 fallback row highlighted,
+    // exactly what the live page shows. (This used to skip them; changed on
+    // request so the Highlight Review can also judge the fallback.)
     //
     // Returns a data URL instead of doing its own click-triggered
     // download (unlike downloadRotationPng): confirmed real bug —
@@ -421,8 +420,8 @@ const SaveConfirmation = {
         if (!document.querySelector('input[name^="SP"][name$="_port_name"]')) {
             return null;
         }
-        if (typeof PortHighlighting === "undefined" || !PortHighlighting.hasSpecialPort) {
-            return { ok: false, reason: "no special port found — skipped" };
+        if (typeof PortHighlighting === "undefined") {
+            return { ok: false, reason: "PortHighlighting not loaded in this frame" };
         }
         try {
             const rows = this.buildRotationRows(document);
