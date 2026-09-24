@@ -258,6 +258,7 @@ const RotationReceiptCapture = {
 
         return {
             service: read("service"),
+            vesselOperator: read("vessel_operator"),
             ports,
             firstUsPort:     portRef("first_us_port", "first_us_port_desc"),
             firstEuPort:     portRef("first_eu_port", "first_eu_port_desc"),

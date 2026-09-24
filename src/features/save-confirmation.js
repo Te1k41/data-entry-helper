@@ -175,6 +175,19 @@ const SaveConfirmation = {
         return field?.name.match(/^SP(\d+)_port_name$/)?.[1] || null;
     },
 
+    // "<service> · <vessel operator>" (e.g. "WDKU · SOM") for the
+    // receipt's title line — whichever of the two is filled in.
+    getReceiptHeadline(formDoc) {
+        const read = name => formDoc.querySelector(`input[name="${name}"]`)?.value.trim() || "";
+        return [read("service"), read("vessel_operator")].filter(Boolean).join(" · ");
+    },
+
+    // Everything renderRotationCanvas() takes beyond the rows themselves,
+    // for the interactive paths (batch capture adds its own extraLines).
+    getReceiptOptions(formDoc) {
+        return { highlightedRow: this.getHighlightedRow(), headline: this.getReceiptHeadline(formDoc) };
+    },
+
     // Filename matches the {service}-{MMDDYY} convention Tradetech's own
     // downloads already use (e.g. "MEDEX-E-091826.png"), with a
     // "-receipt" suffix, inside a rotation-receipts/ subfolder (Chrome
@@ -201,7 +214,13 @@ const SaveConfirmation = {
     // table, mirroring the live page's own orange region-change
     // highlight. Both default to [] / null so the 2 existing interactive
     // callers keep working unchanged if they don't pass them.
-    renderRotationCanvas(rows, extraLines = [], highlightedRow = null) {
+    // `headline` (optional) is "<service> · <vessel operator>" (see
+    // getReceiptHeadline()) — prepended to the title line rather than
+    // added as extra lines, so the receipt's HEIGHT stays a pure function
+    // of its port-row count (the Highlight Review page reads that count
+    // back out of every receipt PNG's height; see highlight-review-
+    // store.js rowsFromPngHeight()).
+    renderRotationCanvas(rows, { extraLines = [], highlightedRow = null, headline = "" } = {}) {
         const ROW_HEIGHT      = 26;
         const PADDING         = 14;
         const COL_GAP         = 24; // breathing room after the longest port name
@@ -217,7 +236,7 @@ const SaveConfirmation = {
         const HEADER_BG       = "#e4e4e4";
         const HIGHLIGHT_COLOR = "#fff176"; // clear yellow, dark text stays legible on it
         const BORDER_COLOR    = "#999999";
-        const titleText       = `Port Rotation Receipt — ${DateUtils.todayMMDDYY()}`;
+        const titleText       = `${headline ? `${headline} — ` : ""}Port Rotation Receipt — ${DateUtils.todayMMDDYY()}`;
 
         // Measure first — a canvas with no width/height set yet still
         // measures text correctly (measureText only needs the font),
@@ -331,8 +350,8 @@ const SaveConfirmation = {
     // document, so this works regardless of which frame it runs in and
     // sidesteps the same frameset-body quirk showOverlay() has to work
     // around.
-    downloadRotationPng(rows, serviceCode, extraLines = [], highlightedRow = null) {
-        const canvas = this.renderRotationCanvas(rows, extraLines, highlightedRow);
+    downloadRotationPng(rows, serviceCode, options = {}) {
+        const canvas = this.renderRotationCanvas(rows, options);
         canvas.toBlob(blob => {
             const url  = URL.createObjectURL(blob);
             const link = document.createElement("a");
@@ -353,7 +372,7 @@ const SaveConfirmation = {
     maybeDownloadReceipt(formDoc) {
         if (!CustomRules.isEnabled("downloadRotationReceipt")) return;
         try {
-            this.downloadRotationPng(this.buildRotationRows(formDoc), this.getServiceCode(formDoc), [], this.getHighlightedRow());
+            this.downloadRotationPng(this.buildRotationRows(formDoc), this.getServiceCode(formDoc), this.getReceiptOptions(formDoc));
         } catch (err) {
             console.error("❌ Rotation receipt download failed:", err);
         }
@@ -408,8 +427,7 @@ const SaveConfirmation = {
         try {
             const rows = this.buildRotationRows(document);
             const extraLines = this.getExtraCaptureFields(document);
-            const highlightedRow = this.getHighlightedRow();
-            const canvas = this.renderRotationCanvas(rows, extraLines, highlightedRow);
+            const canvas = this.renderRotationCanvas(rows, { ...this.getReceiptOptions(document), extraLines });
             return {
                 ok: true,
                 dataUrl: canvas.toDataURL("image/png"),
@@ -423,7 +441,7 @@ const SaveConfirmation = {
 
     // Injected into window.top so the overlay covers the whole page
     // regardless of which small frame the Save button itself sits in.
-    showOverlay(rows, serviceCode, highlightedRow, onConfirm) {
+    showOverlay(rows, serviceCode, receiptOptions, onConfirm) {
         let topDoc;
         try {
             topDoc = window.top.document;
@@ -568,7 +586,7 @@ const SaveConfirmation = {
             border: 1px solid #000000 !important;
             cursor: pointer !important;
         `;
-        downloadBtn.addEventListener("click", () => this.downloadRotationPng(rows, serviceCode, [], highlightedRow));
+        downloadBtn.addEventListener("click", () => this.downloadRotationPng(rows, serviceCode, receiptOptions));
 
         const actionGroup = topDoc.createElement("div");
         actionGroup.style.cssText = "display: flex !important; gap: 8px !important;";
@@ -703,9 +721,9 @@ const SaveConfirmation = {
             try {
                 const rows = this.buildRotationRows(formDoc);
                 const serviceCode = this.getServiceCode(formDoc);
-                const highlightedRow = this.getHighlightedRow();
+                const receiptOptions = this.getReceiptOptions(formDoc);
                 console.log(`💾 Built ${rows.length} rotation row(s) — showing overlay`);
-                this.showOverlay(rows, serviceCode, highlightedRow, () => {
+                this.showOverlay(rows, serviceCode, receiptOptions, () => {
                     console.log("💾 Confirmed — re-clicking Save for real");
                     this.maybeDownloadReceipt(formDoc); // only on an actual confirm, not Back
                     // A real button.click() — NOT calling button.onclick()

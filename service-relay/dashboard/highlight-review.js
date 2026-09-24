@@ -221,7 +221,7 @@
         const directional = /-[A-Z]$/i.test(item.service);
 
         wrap.append(
-            el("div", { class: "cardTitle" }, `${item.service || "(no service)"} · ${item.record ? `record ${item.record}` : "imported receipt"}`),
+            el("div", { class: "cardTitle" }, `${item.service || "(no service)"}${item.vesselOperator ? ` · ${item.vesselOperator}` : ""} · ${item.record ? `record ${item.record}` : "imported receipt"}`),
             el("div", { class: "tags" },
                 el("span", { class: "tag" }, directional ? "directional (1 bound)" : "2 bounds"),
                 !structured

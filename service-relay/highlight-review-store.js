@@ -77,12 +77,16 @@ function effectiveAuto(item) {
 // save-confirmation.js renderRotationCanvas()): PADDING 14 top + bottom,
 // 30 title area, then 26px per line for the 3 extra lines (last foreign /
 // first US / first EU), 1 header band, and one line per port row:
-// H = 84 + 26 * (3 + 1 + rows). Lets the review page offer exactly the SP
-// buttons that exist in an image it can't otherwise read. null if the
-// height doesn't fit the layout (e.g. the layout changed) — the page then
-// falls back to a generic button range.
+// H = (14 + 30 + 14) + 26 * (3 + 1 + rows) = 162 + 26 * rows. Lets the
+// review page offer exactly the SP buttons that exist in an image it
+// can't otherwise read. null if the height doesn't fit the layout (e.g.
+// the layout changed) — the page then falls back to a generic button
+// range. (An earlier version of this used 84 instead of 58 for the fixed
+// part — off by exactly one row, which an "is it a whole number of
+// lines" check can't detect — so every image was offered one SP button
+// too few. Verified against a real receipt: 344px tall, 7 port rows.)
 function rowsFromPngHeight(h) {
-    const rows = (h - 84) / 26 - 4;
+    const rows = (h - 162) / 26;
     return Number.isInteger(rows) && rows >= 1 && rows <= 100 ? rows : null;
 }
 
@@ -164,6 +168,7 @@ function submitCapture(data) {
         key,
         record,
         service: str(data.service),
+        vesselOperator: str(data.vesselOperator),
         capturedAt: new Date().toISOString(),
         ports: data.ports.slice(0, MAX_PORTS).map(p => ({
             row:      str(p.row),
@@ -250,6 +255,7 @@ function buildExport({ all = false } = {}) {
         }
         return {
             service: i.service,
+            vesselOperator: i.vesselOperator || null,
             record: i.record,
             reviewed: Boolean(i.truth),
             agree,
@@ -300,5 +306,5 @@ function buildExport({ all = false } = {}) {
 
 module.exports = {
     loadFromDisk, importReceipts, submitCapture, setTruth, setImageVerdict, clearTruth,
-    getAll, buildExport, effectiveAuto, RECEIPT_NAME,
+    getAll, buildExport, effectiveAuto, RECEIPT_NAME, rowsFromPngHeight,
 };
