@@ -20,14 +20,13 @@
         unreviewed: i => !isReviewed(i),
         all:        () => true,
         special:    i => i.autoSpecial,
-        fallback:   i => hasData(i) && !i.autoSpecial,
         imported:   i => !hasData(i),
         disagree:   i => isReviewed(i) && !agrees(i),
         reviewed:   isReviewed,
     };
     const FILTER_LABELS = {
         unreviewed: "Unreviewed", all: "All", special: "Auto found a special port",
-        fallback: "Auto found nothing (SP001 default)", imported: "PNG only (no rotation data)",
+        imported: "PNG only (no rotation data)",
         disagree: "Marked wrong", reviewed: "Reviewed",
     };
 
@@ -66,7 +65,9 @@
     async function load() {
         const res  = await fetch("/highlight-review/data");
         const data = await res.json();
-        state.items = data.items;
+        // Only routes where the logic found a special port are worth reviewing; a route that just fell back to SP001 is hidden.
+        // (A PNG-only item has no rotation data, so its pick is unknown — it stays.)
+        state.items = data.items.filter(i => !hasData(i) || i.autoSpecial);
         state.files = { folder: data.receiptsFolder, data: data.dataFile, export: data.exportFile };
         if (!filtered().some(i => i.key === state.current)) state.current = filtered()[0]?.key || null;
         renderAll();
