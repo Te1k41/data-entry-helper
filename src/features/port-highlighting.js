@@ -28,6 +28,29 @@ const PortHighlighting = {
         "SPAIN", "SWEDEN"
     ]),
 
+    // Every way a port name can END its country, per region — English
+    // variants and common abbreviations included ("HOLLAND", "CZECHIA",
+    // "UNITED STATES", "GREAT BRITAIN", "U.S.A."…). A country not listed
+    // here (French Polynesia, New Caledonia, Norway, Turkey…) is "OTHER" —
+    // notably "PAPEETE, FRENCH POLYNESIA" does NOT end in "FRANCE".
+    // UK is checked first so "BELFAST, NORTHERN IRELAND" isn't read as
+    // IRELAND (EU). See matchCountry().
+    COUNTRY_ALIASES: {
+        UK:     ["UNITED KINGDOM", "GREAT BRITAIN", "NORTHERN IRELAND", "ENGLAND", "SCOTLAND", "WALES", "UK", "U.K."],
+        CANADA: ["CANADA"],
+        USA:    ["USA", "U.S.A.", "U.S.A", "UNITED STATES OF AMERICA", "UNITED STATES", "US", "U.S."],
+        JAPAN:  ["JAPAN", "JAP", "JPN"],
+        // EU = EU_COUNTRIES + EU_EXTRA_NAMES (read in matchCountry())
+    },
+    EU_EXTRA_NAMES: ["CZECHIA", "SLOVAK REPUBLIC", "HOLLAND"],
+
+    // Endings that look like a country but are a region of another one.
+    NOT_A_COUNTRY: ["NEW SOUTH WALES", "NEW ENGLAND", "NEW HOLLAND"],
+
+    // Aliases this short are only a country when they're a whole word —
+    // "PORT LOUIS, MAURITIUS" must not end in "US".
+    WHOLE_WORD_ONLY: new Set(["US", "UK", "JPN"]),
+
     // Category rank — lower = higher priority. Used when multiple
     // valid category-change candidates exist on the same route.
     // Add or reorder entries here to change priority.
@@ -64,19 +87,32 @@ const PortHighlighting = {
     // second highlight.
     getPortCategory(portName) {
         if (!portName) return null;
-        const name = portName.trim().toUpperCase();
 
-        if (name.endsWith("USA"))            return "USA";
-        if (name.endsWith("CANADA"))         return "USA"; // merged w/ USA — see note above
-        if (name.endsWith("JAPAN"))          return "JAPAN";
-        if (name.endsWith("JAP"))            return "JAPAN";
-        if (name.endsWith("UNITED KINGDOM")) return "EU_UK";
-
-        for (const country of this.EU_COUNTRIES) {
-            if (name.endsWith(country)) return "EU_UK";
+        switch (this.matchCountry(portName)) {
+            case "USA":
+            case "CANADA": return "USA"; // Canada merged w/ USA — see note above
+            case "JAPAN":  return "JAPAN";
+            case "UK":
+            case "EU":     return "EU_UK";
+            default:       return "OTHER";
         }
+    },
 
-        return "OTHER";
+    // Which country group a port name ends in: "UK" | "CANADA" | "USA" |
+    // "JAPAN" | "EU", or null. The one place COUNTRY_ALIASES is read.
+    matchCountry(portName) {
+        const name = String(portName || "").trim().toUpperCase();
+        if (this.NOT_A_COUNTRY.some(x => name.endsWith(x))) return null;
+
+        for (const region of ["UK", "CANADA", "USA", "JAPAN", "EU"]) {
+            const aliases = region === "EU" ? [...this.EU_COUNTRIES, ...this.EU_EXTRA_NAMES] : this.COUNTRY_ALIASES[region];
+            for (const alias of aliases) {
+                if (!name.endsWith(alias)) continue;
+                const before = name[name.length - alias.length - 1];
+                if (!this.WHOLE_WORD_ONLY.has(alias) || !before || !/[A-Z0-9]/.test(before)) return region;
+            }
+        }
+        return null;
     },
 
     // Finer split than getPortCategory() — used ONLY as a fallback (see
@@ -89,15 +125,13 @@ const PortHighlighting = {
     // same as before this existed.
     getFineCategory(portName) {
         if (!portName) return null;
-        const name = portName.trim().toUpperCase();
-
-        if (name.endsWith("UNITED KINGDOM")) return "UK";
-        if (name.endsWith("CANADA"))         return "CANADA";
-
-        const coarse = this.getPortCategory(portName);
-        if (coarse === "EU_UK") return "EU";
-        if (coarse === "USA")   return "USA";
-        return null;
+        switch (this.matchCountry(portName)) {
+            case "UK":     return "UK";
+            case "CANADA": return "CANADA";
+            case "EU":     return "EU";
+            case "USA":    return "USA";
+            default:       return null; // Japan / other: no finer split
+        }
     },
 
     // Same consecutive-pair scan shape as the generic pass inside

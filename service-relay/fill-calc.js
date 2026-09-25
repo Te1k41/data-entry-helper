@@ -11,7 +11,20 @@ const EU_COUNTRIES = new Set([
     "IRELAND", "ITALY", "LATVIA", "LITHUANIA", "LUXEMBOURG", "MALTA",
     "NETHERLANDS", "POLAND", "PORTUGAL", "ROMANIA", "SLOVAKIA", "SLOVENIA",
     "SPAIN", "SWEDEN",
+    "CZECHIA", "SLOVAK REPUBLIC", "HOLLAND",
 ]);
+// Mirrors PortHighlighting.COUNTRY_ALIASES / matchCountry() in src/features/port-highlighting.js
+// (the extension's copy) — keep the two in sync.
+const UK_NAMES = ["UNITED KINGDOM", "GREAT BRITAIN", "NORTHERN IRELAND", "ENGLAND", "SCOTLAND", "WALES", "UK", "U.K."];
+const USA_NAMES = ["USA", "U.S.A.", "U.S.A", "UNITED STATES OF AMERICA", "UNITED STATES", "US", "U.S.", "CANADA"];
+const JAPAN_NAMES = ["JAPAN", "JAP", "JPN"];
+const NOT_A_COUNTRY = ["NEW SOUTH WALES", "NEW ENGLAND", "NEW HOLLAND"];
+const WHOLE_WORD_ONLY = new Set(["US", "UK", "JPN"]);
+const endsWithCountry = (name, aliases) => aliases.some(alias => {
+    if (!name.endsWith(alias)) return false;
+    const before = name[name.length - alias.length - 1];
+    return !WHOLE_WORD_ONLY.has(alias) || !before || !/[A-Z0-9]/.test(before);
+});
 const CATEGORY_RANK = { USA: 1, JAPAN: 2, EU_UK: 2 };
 const WINDOW_DAYS = 7;
 const DAY_MS = 86400000;
@@ -115,10 +128,11 @@ function proofGroupKey(proof, vesselCode, proofIndex) {
 function getPortCategory(portName) {
     if (!portName) return null;
     const name = String(portName).trim().toUpperCase();
-    if (name.endsWith("USA") || name.endsWith("CANADA")) return "USA";
-    if (name.endsWith("JAPAN") || name.endsWith("JAP")) return "JAPAN";
-    if (name.endsWith("UNITED KINGDOM")) return "EU_UK";
-    for (const country of EU_COUNTRIES) if (name.endsWith(country)) return "EU_UK";
+    if (NOT_A_COUNTRY.some(x => name.endsWith(x))) return "OTHER";
+    if (endsWithCountry(name, UK_NAMES)) return "EU_UK";
+    if (endsWithCountry(name, USA_NAMES)) return "USA";
+    if (endsWithCountry(name, JAPAN_NAMES)) return "JAPAN";
+    if (endsWithCountry(name, [...EU_COUNTRIES])) return "EU_UK";
     return "OTHER";
 }
 
