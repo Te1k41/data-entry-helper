@@ -194,8 +194,7 @@ const PortHighlighting = {
     // trailing letter suffix (-A through -Z, case-insensitive — not just
     // compass N/S/E/W, since services also use plain string letters like
     // "-A"/"-B" for the same "loops back to its own start" naming). This
-    // flag decides whether the scan below biases toward the FIRST
-    // category-change candidate or the LAST one.
+    // flag decides how the route's window is cut (see run()).
     isDirectionalService() {
         const serviceField = document.querySelector('input[type="text"][name="service"]');
         const serviceValue = serviceField ? serviceField.value.trim() : "";
@@ -473,7 +472,11 @@ const PortHighlighting = {
         // leg-2 answer (Tokyo) — they must be scanned as 2 separate,
         // ranked attempts, not one combined candidate pool.
         const pivotRow = suffixDirectional ? null : this.findFullBoundPivotRow();
-        const biasFirst = suffixDirectional || !!pivotRow;
+        // Ties between same-rank candidates: the FIRST wins inside a full-bound
+        // leg, the LAST everywhere else (one-bound and no-pivot routes). Confirmed
+        // on AL5-W: EU->Miami and Panama->Los Angeles are both USA entries, and the
+        // later one (Los Angeles) is the right pick.
+        const biasFirst = !!pivotRow;
 
         // Directional services loop back to their own start — drop the loop
         // closure (real last port + last repeat of the first port) so it
