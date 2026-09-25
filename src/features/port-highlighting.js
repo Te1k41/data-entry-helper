@@ -2,10 +2,11 @@
 //  FEATURE: Port Category Highlighting
 //  Highlights the port row where the shipment's "region"
 //  changes (e.g. leaving Asia and entering the USA).
-//  Checks a priority list of Tradetech's own
-//  first_us_port / first_eu_port fields first; falls back
-//  to a generic scan of every port-to-port transition if
-//  no priority match is found.
+//  Scans every port-to-port transition and picks the one that
+//  enters the best-ranked special region. (Tradetech's own
+//  first_us_port / first_eu_port fields are deliberately NOT
+//  used: on confirmed routes AL5-W and GEX1 they point at the
+//  wrong port. That "priority pass" was also silently dead code.)
 //
 //  A "full bound" service (no -N/-S/-E/-W suffix on the service
 //  code) is really 2 legs run back-to-back. Tradetech marks the
@@ -63,12 +64,6 @@ const PortHighlighting = {
         USA: 1,
         JAPAN: 2, EU_UK: 2
     },
-
-    // Priority port keys checked BEFORE the generic scan. Each key
-    // corresponds to a Tradetech field named first_{key}_port.
-    // Add more entries (e.g. "jp") if Tradetech adds new
-    // first_xx_port fields.
-    PRIORITY_PORT_KEYS: ["us", "eu"],
 
     // Highlight style — edit here to change appearance.
     HIGHLIGHT_STYLE: {
@@ -276,10 +271,8 @@ const PortHighlighting = {
     // Finds the highlight target within one ordered slice of
     // SP*_port_name fields — shared by run() for both the whole-route
     // scan (no pivot) and each leg's own scan (full-bound, pivot
-    // found). Tries the first_us_port/first_eu_port priority fields
-    // first (bounded to rows actually inside this window), then falls
-    // back to a generic category-change scan. Returns the chosen
-    // field, or null if nothing in this window qualifies (caller
+    // found). Scans for the best category-change entry.
+    // Returns the chosen field, or null if nothing in this window qualifies (caller
     // decides what "nothing found" means — a 2nd leg to check, or the
     // SP001 fallback).
     //
@@ -295,64 +288,6 @@ const PortHighlighting = {
     // way back to true SP001 (Singapore) — the wrong port entirely.
     findHighlightInWindow(fields, biasFirst, precedingField = null) {
         if (fields.length === 0) return null;
-
-        const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
-        const rows = fields.map(rowOf);
-        const minRow = Math.min(...rows);
-        const maxRow = Math.max(...rows);
-
-        // ── Priority pass ──
-        for (const key of this.PRIORITY_PORT_KEYS) {
-            const codeField = document.querySelector(`input[name="first_${key}_port"]`);
-            if (!codeField) continue;
-
-            const code = codeField.value.trim().toUpperCase();
-            if (!code) continue;
-
-            const matchingCodeField = Array.from(
-                document.querySelectorAll('input[name^="SP"][name$="_port_code"]:not([name^="PV_"])')
-            ).find(f => {
-                const match = f.name.match(/^SP(\d+)_port_code$/);
-                if (!match) return false;
-                const row = parseInt(match[1], 10);
-                if (row < minRow || row > maxRow) return false;
-                return f.value.trim().toUpperCase() === code;
-            });
-
-            if (!matchingCodeField) {
-                console.log(`  ⚠ no match for first_${key}_port code "${code}" in this window`);
-                continue;
-            }
-
-            const rowMatch  = matchingCodeField.name.match(/^SP(\d+)_port_code$/);
-            const rowNum    = parseInt(rowMatch[1], 10);
-            const targetField = document.querySelector(`input[name="SP${rowNum}_port_name"]`);
-            if (!targetField) continue;
-
-            // "Above" means previous in THIS window's own order, not
-            // previous row number — a leg's window can start mid-route.
-            // Falls back to precedingField when the match IS fields[0].
-            const targetIndex = fields.indexOf(targetField);
-            const aboveField  = targetIndex > 0 ? fields[targetIndex - 1] : precedingField;
-
-            if (!aboveField || !aboveField.value.trim()) {
-                console.log(`  ⚠ no port above SP${rowNum} in this window — skipping priority highlight`);
-                continue;
-            }
-
-            const currentCat = this.getPortCategory(targetField.value);
-            const aboveCat   = this.getPortCategory(aboveField.value);
-
-            console.log(`  first_${key}_port: SP${rowNum} is ${currentCat}, above is ${aboveCat}`);
-
-            if (currentCat === "OTHER" || currentCat === aboveCat) {
-                console.log(`  ⚠ not a valid entry transition — skipping`);
-                continue;
-            }
-
-            console.log(`🟡 Priority match: SP${rowNum}_port_name via first_${key}_port`);
-            return targetField;
-        }
 
         // ── Generic scan: collect every valid category-change candidate ──
         // Because Canada and USA share one category, this loop naturally
@@ -554,7 +489,7 @@ const PortHighlighting = {
     },
 
     // Re-run the whole scan whenever a port name, port code, the
-    // service field, or a first_us_port/first_eu_port field changes.
+    // service field or a port key changes.
     //
     // Port CODE changes get a follow-up: Tradetech's own page
     // auto-fills the matching port NAME field via an async lookup
@@ -571,8 +506,7 @@ const PortHighlighting = {
             /^SP\d+_port_name$/.test(name) ||
             /^SP\d+_port_code$/.test(name) ||
             name === "service"             ||
-            /^SP\d+_port_key$/.test(name)  || // drives findFullBoundPivotRow() for full-bound services
-            /^first_(us|eu)_port(_desc)?$/.test(name);
+            /^SP\d+_port_key$/.test(name);   // drives findFullBoundPivotRow() for full-bound services
 
         if (!relevant) return;
 

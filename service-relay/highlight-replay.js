@@ -3,8 +3,7 @@
 //  Re-runs the extension's REAL port-highlighting logic (../src/core/boundary.js +
 //  ../src/features/port-highlighting.js) against a stored Highlight Review item, so a
 //  logic change can be judged on every captured route without re-capturing them.
-//  A stored item holds everything the logic reads: service, each port's name/code/key,
-//  and the first_us_port / first_eu_port codes.
+//  A stored item holds everything the logic reads: service and each port's name/code/key.
 //
 //  One jsdom window is built per createReplayer() and its body is swapped per item;
 //  jsdom is required lazily (same cold-boot reasoning as the proof parsers).
@@ -32,8 +31,6 @@ function createReplayer() {
     return function replay(item) {
         dom.window.document.body.innerHTML = [
             input("service", item.service),
-            input("first_us_port", item.firstUsPort && item.firstUsPort.code),
-            input("first_eu_port", item.firstEuPort && item.firstEuPort.code),
             ...item.ports.map(p => [
                 input(`SP${p.row}_port_name`, p.name),
                 input(`SP${p.row}_port_code`, p.code),
