@@ -121,8 +121,14 @@ const Toolbar = {
         const savedPos = localStorage.getItem("tt-toolbar-pos");
         if (savedPos) {
             const { top, left } = JSON.parse(savedPos);
-            panel.style.top  = top;
-            panel.style.left = left;
+            // Clamp against the CURRENT viewport, not just where it was last
+            // saved — confirmed real bug: dragging the panel past the edge
+            // (or a saved position from a wider window/monitor) leaves it
+            // permanently off-screen with no way to reach the header to drag
+            // it back, since the header IS the panel that's now unreachable.
+            const clamped = this._clampToViewport(parseInt(left, 10), parseInt(top, 10));
+            panel.style.left = `${clamped.left}px`;
+            panel.style.top  = `${clamped.top}px`;
         } else {
             panel.style.top  = "20px";
             panel.style.left = "20px";
@@ -160,6 +166,19 @@ const Toolbar = {
         this._wireDragAndCollapse(panel, header, list);
     },
 
+    // Keeps at least a 40px corner of the panel reachable on-screen — not
+    // its exact size (offsetWidth/Height aren't reliable before the panel
+    // is in the DOM, which is exactly when this also needs to run, on
+    // initial restore).
+    _clampToViewport(left, top) {
+        const maxLeft = Math.max(0, window.innerWidth  - 40);
+        const maxTop  = Math.max(0, window.innerHeight - 40);
+        return {
+            left: Math.min(Math.max(left, 0), maxLeft),
+            top:  Math.min(Math.max(top,  0), maxTop),
+        };
+    },
+
     _wireDragAndCollapse(panel, header, list) {
         let isDragging = false, didDrag = false, startX, startY, startLeft, startTop;
 
@@ -179,8 +198,9 @@ const Toolbar = {
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
             if (Math.abs(dx) > 4 || Math.abs(dy) > 4) didDrag = true;
-            panel.style.left = `${startLeft + dx}px`;
-            panel.style.top  = `${startTop  + dy}px`;
+            const clamped = this._clampToViewport(startLeft + dx, startTop + dy);
+            panel.style.left = `${clamped.left}px`;
+            panel.style.top  = `${clamped.top}px`;
         });
 
         document.addEventListener("mouseup", () => {
