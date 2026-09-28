@@ -429,8 +429,15 @@ const PortHighlighting = {
 
         if (pivotRow) {
             const rowOf = f => parseInt(f.name.match(/^SP(\d+)_port_name$/)[1], 10);
+
+            // The pivot row's own key marks it as BOTH legs' business — the
+            // End half says leg 1 closes here, the Start half (when present,
+            // e.g. "EEWS") says leg 2 opens here. So it's a genuine member of
+            // both: leg 1's own scan can win with it (falls out naturally
+            // when leg 2 finds nothing), and leg 2's scan checks it as an
+            // entry using the real port before it as its neighbor.
             let leg2Fields = portNameFields.filter(f => rowOf(f) >= pivotRow);
-            const leg1Fields = portNameFields.filter(f => rowOf(f) <  pivotRow);
+            const leg1Fields = portNameFields.filter(f => rowOf(f) <= pivotRow);
 
             // Leg 2 has its own End marker too (e.g. pivot SP004="EEWS"
             // starts the West leg; SP008="WE" ends it) — stop leg 2's
@@ -446,10 +453,11 @@ const PortHighlighting = {
                 }
             }
 
-            // The pivot row itself (leg2Fields[0]) needs to be checked
-            // against the real port right before it — leg1's last row
-            // — not left uncheckable just because it's window-first.
-            const precedingField = leg1Fields[leg1Fields.length - 1] || null;
+            // The pivot row (leg2Fields[0]) needs to be checked against the
+            // real port right before it, not against itself — computed
+            // separately from leg1Fields (which now includes the pivot) so
+            // this always names the TRUE preceding row.
+            const precedingField = portNameFields.filter(f => rowOf(f) < pivotRow).pop() || null;
 
             highlightField = this.findHighlightInWindow(leg2Fields, true, precedingField)
                 || this.findHighlightInWindow(leg1Fields, true);
