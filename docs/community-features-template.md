@@ -70,8 +70,14 @@ The following features from the full extension all depend on the local relay ser
 - Live Check's proof/DOM-scrape comparison (the local duplicate-IMO check above is still included)
 - Rename toggle (server-side downloaded-file renaming)
 - Schedule preview tools (Open Proof File / Mark Done)
-- Update Extension button (needs shell access to run `git pull` — update this build the normal way: `git pull` in your clone, then reload it in `chrome://extensions`)
 - A few quiet background integrations with no visible UI of their own: schedule-snapshot sharing, service-code sharing, merge-download cleanup, and Yang Ming schedule-table capture
+
+## Update Extension button
+
+This build has its own one-click updater, separate from the full extension's
+relay-based one (which needs a local server this build doesn't run). It needs
+a one-time setup — see `updater/README.md` in this repo. Without that setup,
+the button shows a "run setup first" message instead of updating.
 
 ## Supporting behavior
 

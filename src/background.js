@@ -7,7 +7,7 @@ importScripts("background-relay.js");
 // The imported companion may already have registered a side-capture.
 var fpcExtraCaptures = globalThis.fpcExtraCaptures || [];
 
-chrome.runtime.onMessage.addListener((message, sender) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // window.close() from a content script only works if the tab has a
     // live window.opener reference (opened via a script/target="_blank"
     // link) — Tradetech's own Preview link doesn't reliably preserve
@@ -18,6 +18,32 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     if (message?.type === "CLOSE_TAB") {
         if (sender.tab?.id) chrome.tabs.remove(sender.tab.id);
         return;
+    }
+
+    // Update Extension (native, no relay server needed — update-extension-
+    // native.js's toolbar button). The native host (updater/update.bat,
+    // registered once via updater/register.bat) does the actual download +
+    // file overwrite outside the browser sandbox; this just asks it to run
+    // and, once real new code is on disk, reloads it in. A response only
+    // ever comes back when nothing changed or the host failed — a real
+    // update reloads the tab + this extension before ever getting the
+    // chance to reply, so the click's own tab never ends up stuck on
+    // stale code waiting for a manual refresh.
+    if (message?.type === "CHECK_FOR_UPDATE_NATIVE") {
+        chrome.runtime.sendNativeMessage("com.tthelper.updater", { action: "update" }, (result) => {
+            if (chrome.runtime.lastError) {
+                sendResponse({ ok: false, reason: chrome.runtime.lastError.message });
+                return;
+            }
+            if (result?.ok && result.updated) {
+                console.log("🔄 Extension updated via native host — reloading");
+                if (sender.tab?.id) chrome.tabs.reload(sender.tab.id);
+                chrome.runtime.reload();
+                return; // reload() tears this context down — no sendResponse after it
+            }
+            sendResponse(result || { ok: false, reason: "no response from the updater" });
+        });
+        return true; // async sendResponse — keep the channel open
     }
 
 });

@@ -16,6 +16,7 @@ const OUTPUT_SRC = path.join(OUT_DIR, "src");
 const MANIFEST_SRC = path.join(REPO_ROOT, "manifest.json");
 const README_TEMPLATE = path.join(REPO_ROOT, "docs", "community-readme-template.md");
 const FEATURES_TEMPLATE = path.join(REPO_ROOT, "docs", "community-features-template.md");
+const UPDATER_DIR = path.join(REPO_ROOT, "updater");
 
 const RELAY_FILE_PATTERN = /-relay\.js$/;
 const LEGACY_RELAY_FILES = new Set([
@@ -72,7 +73,11 @@ function copyDistribution() {
     fs.copyFileSync(MANIFEST_SRC, path.join(OUT_DIR, "manifest.json"));
     fs.copyFileSync(README_TEMPLATE, path.join(OUT_DIR, "README.md"));
     fs.copyFileSync(FEATURES_TEMPLATE, path.join(OUT_DIR, "FEATURES.md"));
-    ok("Copied manifest.json, src/, README.md, FEATURES.md");
+    // Update Extension's native-messaging helper (update-extension-native.js's
+    // companion) — community-only, no relay-file naming convention applies
+    // since it isn't excluded from anywhere, it's copied fresh each build.
+    fs.cpSync(UPDATER_DIR, path.join(OUT_DIR, "updater"), { recursive: true });
+    ok("Copied manifest.json, src/, README.md, FEATURES.md, updater/");
 }
 
 function removeExcludedFiles() {
@@ -85,6 +90,15 @@ function removeExcludedFiles() {
     ok(`Removed ${removed} excluded source file(s) (relay convention, legacy helpers, personal exclusions)`);
 }
 
+// Fixed "Load unpacked" identity for the community build ONLY — never
+// added to the private manifest.json, which already has its own working
+// (relay-based) Update Extension button and real chrome.storage.local
+// state that a changed extension ID would silently reset. This key lets
+// every coworker's unpacked copy compute the SAME extension ID, which
+// the community-only Native Messaging updater needs to whitelist once
+// and have it work on every machine — see updater/README.md.
+const COMMUNITY_EXTENSION_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4MleOdGoIGRg8ccVFpNAPcM+Rg9kl9+BnKq4U+tZ2HkjI6Bddm2c82j67P5CURjDb/mMvH9b8QSmNaLiZNG6ds01ozduN6iOTNOqdvh1WP/knEZ8NKikIzVNPbfY0ALDl1uZyD41RKfA+hbnLDt6e2XrP1CaBcVh2I4E3f4X7rzxqhjIDlHeaXeGKl4ppZIaW8BnQBpj/AMaNwDTyO38+ctqFUGt0n2iXtie4Q38z7QAB+jQaMe9p+RAtdqpTzFEQtnIPmQexXZeWtqUcu9koa+hn+II3tlBGjaB707dwIenSn6054euIHTfg+jVP+/sAxZQcMbmK4HZQKsqiLvVNQIDAQAB";
+
 function derivedManifest(source) {
     const manifest = JSON.parse(source);
     manifest.content_scripts = (manifest.content_scripts || []).map(block => ({
@@ -92,6 +106,19 @@ function derivedManifest(source) {
         js: (block.js || []).filter(p => !isExcludedSrcPath(p.replace(/^src\//, ""))),
     })).filter(block => block.js.length > 0);
     manifest.name = "TTHelper-SC — Community Edition";
+    manifest.key = COMMUNITY_EXTENSION_KEY;
+    manifest.permissions = [...new Set([...(manifest.permissions || []), "nativeMessaging"])];
+
+    // Community-only Update Extension button (update-extension-native.js) —
+    // deliberately NOT referenced by the private manifest.json at all (it'd
+    // duplicate the private build's own relay-based Update Extension
+    // button). The file still ships via the plain src/ copy; this is what
+    // actually wires it into the page for community only. Added to the
+    // same block live-check-relay.js loads into.
+    const tradetechBlock = manifest.content_scripts.find(b => (b.matches || []).includes("https://www.tradetech.net/*"));
+    if (!tradetechBlock) throw new Error("Could not find the tradetech.net content_scripts block to add update-extension-native.js to");
+    tradetechBlock.js.push("src/features/update-extension-native.js");
+
     return manifest;
 }
 
