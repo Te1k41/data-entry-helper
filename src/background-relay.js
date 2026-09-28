@@ -145,6 +145,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
     }
 
+    // Update Extension button (update-extension-relay.js). Relay does the
+    // actual git pull (shell access this context doesn't have) — on a real
+    // update, reload the Tradetech tab that asked for it (so its content
+    // scripts pick up the new code) and this extension's own background
+    // context, rather than leaving the click's tab stuck on stale code
+    // until the next manual refresh. sendResponse only fires when nothing
+    // changed or the pull failed — a real update reloads before ever
+    // getting the chance to reply, same as the button's own comment notes.
+    if (message?.type === "CHECK_FOR_UPDATE") {
+        (async () => {
+            let result;
+            try {
+                const res = await fetch("http://localhost:3737/update-extension", { method: "POST" });
+                result = await res.json();
+            } catch (err) {
+                sendResponse({ ok: false, reason: `could not reach relay: ${err.message}` });
+                return;
+            }
+            if (result.ok && result.updated) {
+                console.log(`🔄 Extension updated to ${result.commit} — reloading`);
+                if (sender.tab?.id) chrome.tabs.reload(sender.tab.id);
+                chrome.runtime.reload();
+                return; // reload() tears this context down — no sendResponse after it
+            }
+            sendResponse(result);
+        })();
+        return true; // async sendResponse — keep the channel open
+    }
+
     if (message?.type === "RUN_AWR_AUDIT") {
         if (batchJobRunning) {
             sendResponse({ ok: false, started: false, reason: "busy", runningJob: batchJobRunning });

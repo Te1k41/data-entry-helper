@@ -84,6 +84,7 @@
             "src/features/date-calculator.js",
             "src/features/live-check.js",
             "src/features/live-check-relay.js",
+            "src/features/update-extension-relay.js",
             "src/main.js"
         ],
         "all_frames": true,

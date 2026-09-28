@@ -29,6 +29,7 @@ const fillTestRoutes = require("./routes/fill-test");
 const receiptsRoutes = require("./routes/receipts");
 const highlightReviewRoutes = require("./routes/highlight-review");
 const highlightReviewStore = require("./highlight-review-store");
+const updateExtensionRoutes = require("./routes/update-extension");
 
 const relaySocket     = require("./relay-socket");
 const downloadWatcher = require("./download-watcher");
@@ -143,6 +144,7 @@ const ROUTES = [
     { method: "GET",  match: prefix("/highlight-review/image"),         handler: highlightReviewRoutes.handleImage },
     { method: "POST", match: exact("/highlight-review/verdict"),        handler: highlightReviewRoutes.handleVerdict },
     { method: "POST", match: exact("/highlight-review/replay"),         handler: highlightReviewRoutes.handleReplay },
+    { method: "POST", match: exact("/update-extension"),                handler: updateExtensionRoutes.handlePull },
     { method: "GET",  match: prefix("/highlight-review/export"),        handler: highlightReviewRoutes.handleExport },
     { method: "GET",  match: exact("/dashboard/highlight-review"),      handler: dashboardRoutes.handleHighlightReviewPage },
     { method: "GET",  match: exact("/dashboard/highlight-review.js"),   handler: dashboardRoutes.handleHighlightReviewJs },
