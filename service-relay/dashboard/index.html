@@ -10,10 +10,12 @@
 <div id="starfield"></div>
 <button id="bgOnlyToggle" onclick="toggleBgOnly()">🌌 Background only</button>
 <pre id="banner" class="banner"></pre>
-<div id="workArea">
-<div id="asOf">loading…</div>
-<div id="batchDayIndicator"></div>
-<div id="dayTabs"></div>
+<!-- True top-level overlay, NOT nested inside #workArea: #workArea has
+     backdrop-filter (for the frosted-glass look), and any filter/
+     backdrop-filter/transform on an ancestor makes position:fixed
+     descendants position relative to THAT ancestor instead of the
+     real viewport — breaks both "stays put on screen" and the drag
+     math (which assumes viewport-relative coordinates). -->
 <div id="speedrunPanel">
     <div id="speedrunSetup">
         <span>⏱ Speedrun from</span>
@@ -34,6 +36,10 @@
         <div id="speedrunSplits" class="speedrunSplits"></div>
     </div>
 </div>
+<div id="workArea">
+<div id="asOf">loading…</div>
+<div id="batchDayIndicator"></div>
+<div id="dayTabs"></div>
 <main>
     <div id="stats"></div>
     <div id="charts"></div>

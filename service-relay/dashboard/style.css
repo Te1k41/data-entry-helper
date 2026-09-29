@@ -89,6 +89,7 @@
     #bgOnlyToggle:hover { opacity: 1; }
     body.bgOnlyMode #banner,
     body.bgOnlyMode #workArea,
+    body.bgOnlyMode #speedrunPanel,
     body.bgOnlyMode #remainingTodayBadge,
     body.bgOnlyMode #wellnessBanner {
         display: none;
