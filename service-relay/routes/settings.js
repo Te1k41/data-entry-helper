@@ -26,6 +26,7 @@ async function handlePostSettings(req, res) {
         if (typeof body.watchFolder === "string")    allowed.watchFolder    = body.watchFolder.trim();
         if (typeof body.dataFolder === "string")     allowed.dataFolder     = body.dataFolder.trim();
         if (typeof body.assignedToName === "string") allowed.assignedToName = body.assignedToName.trim();
+        if (Array.isArray(body.workDays))            allowed.workDays       = body.workDays;
 
         const saved = settingsStore.save(allowed);
 
@@ -33,7 +34,7 @@ async function handlePostSettings(req, res) {
         res.end(JSON.stringify({
             success: true,
             settings: saved,
-            note: "Folder path changes need a server restart to take effect. Your name updates immediately."
+            note: "Folder path changes need a server restart to take effect. Your name and work days update immediately."
         }));
     } catch (err) {
         console.error("❌ Bad /settings body:", err);

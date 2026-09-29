@@ -608,14 +608,18 @@ function renderWeeklyPlanChart() {
     }
 
     const max = Math.max(1, ...weeklyPlan.breakdown.map(b => b.count));
-    const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
-    const bars = weeklyPlan.breakdown.map((b, i) =>
-        `<div class="histBar ${b.mandatory ? 'hasOverdue' : 'activityBar'}" style="height:${Math.round((b.count / max) * 100) || 2}%" title="${DAY_NAMES[i]} (${b.date}): ${b.count}${b.mandatory ? ' -- mandatory' : ' -- balanced'}"></div>`
+    // shortDay comes from the server (due-services-trim.js) — it knows
+    // which real weekday each slot actually is, since the configured
+    // work days (settings) aren't necessarily Mon-Fri in order starting
+    // from Monday. A hardcoded ['Mon','Tue',...] positional array here
+    // would mislabel any work week that doesn't start on Monday.
+    const bars = weeklyPlan.breakdown.map((b) =>
+        `<div class="histBar ${b.mandatory ? 'hasOverdue' : 'activityBar'}" style="height:${Math.round((b.count / max) * 100) || 2}%" title="${b.shortDay} (${b.date}): ${b.count}${b.mandatory ? ' -- mandatory' : ' -- balanced'}"></div>`
     ).join('');
 
-    const labels = weeklyPlan.breakdown.map((b, i) =>
-        `<span>${DAY_NAMES[i]}<br>${b.count}</span>`
+    const labels = weeklyPlan.breakdown.map((b) =>
+        `<span>${b.shortDay}<br>${b.count}</span>`
     ).join('');
 
     const backlogNote = weeklyPlan.backlogCount > 0
@@ -650,12 +654,16 @@ function render() {
         }
     }
 
+    // Tab count/labels come from weeklyPlan.breakdown (real, per-slot
+    // weekday names for whatever work days are configured — see the
+    // matching comment on the histogram above) — it's the one place
+    // that actually knows how many work-day slots exist and what each
+    // one really is; batchInfo only ever describes the CURRENT slot.
     const dayTabsEl = document.getElementById('dayTabs');
-    if (dayTabsEl && batchInfo) {
-        const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-        dayTabsEl.innerHTML = DAY_NAMES.map((name, i) => {
+    if (dayTabsEl && batchInfo && weeklyPlan && weeklyPlan.breakdown) {
+        dayTabsEl.innerHTML = weeklyPlan.breakdown.map((b, i) => {
             const active = !batchInfo.weekComplete && batchInfo.dayIndex === i;
-            return `<button class="dayTab ${active ? 'activeDayTab' : ''}" onclick="goToDay(${i})">${name}</button>`;
+            return `<button class="dayTab ${active ? 'activeDayTab' : ''}" onclick="goToDay(${i})">${b.shortDay}</button>`;
         }).join('');
     }
 

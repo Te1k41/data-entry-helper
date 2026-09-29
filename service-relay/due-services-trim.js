@@ -35,6 +35,16 @@
 // ============================================================
 
 const { parseTTDate, formatTTDate } = require("./due-date-utils");
+const settingsStore = require("./settings-store");
+
+const SHORT_DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+
+// Sorted, deduped 0=Monday..4=Friday indices — which weekdays actually
+// get assigned work. Read fresh each call (not cached) so a settings
+// change takes effect on the very next computation, no restart needed.
+function getWorkDays() {
+    return settingsStore.load().workDays;
+}
 
 function startOfDay(date) {
     const d = new Date(date);
@@ -135,6 +145,9 @@ function balanceEqually(dayGroups) {
 // either way — that's "what's actually overdue right now", not
 // something a hypothetical anchor day should change.
 function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
+    const workDays = getWorkDays(); // e.g. [0,1,2] for a Mon-Wed work week, rest left free
+    const firstWorkDay = workDays[0];
+
     const realToday = startOfDay(new Date());
     const isPreview  = weekOffset !== 0;
     const monday  = getMonday(isPreview ? addDays(realToday, weekOffset * 7) : realToday);
@@ -144,7 +157,11 @@ function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
     const today = isPreview
         ? monday
         : (hasAnchorOverride ? addDays(monday, asOfDayIndex) : realToday);
-    const isMondayToday = isPreview ? true : (hasAnchorOverride ? asOfDayIndex === 0 : today.getDay() === 1);
+    // "Whole week balanced fresh" triggers on the FIRST configured work
+    // day, not necessarily calendar-Monday — a Tue-Thu work week starts
+    // its fresh balance on Tuesday, same idea as Monday always did before
+    // work days were configurable.
+    const isMondayToday = isPreview ? true : (hasAnchorOverride ? asOfDayIndex === firstWorkDay : today.getDay() === firstWorkDay + 1);
 
     // Always capped to this calendar week's Mon-Sun span, real week or
     // preview alike. due-service-scanner.js deliberately leaves
@@ -164,40 +181,40 @@ function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
 
     let groups = groupByDay(thisWeek);
 
-    // All 5 weekday date strings this week, guaranteed to exist as
-    // pool slots even when a day has ZERO services — without this, a
+    // This week's configured work-day date strings, guaranteed to exist
+    // as pool slots even when a day has ZERO services — without this, a
     // day with no data simply never gets a group at all (groupByDay
     // only creates entries for dates that actually appear), silently
     // shrinking the divisor used for balancing. E.g. Mon=0, Tue=20,
-    // Wed=30, Thu=10, Fri=40 should divide by 5 (→ target 20), not by
-    // 4 real groups (→ target 25) just because Monday had nothing.
-    const weekdayDateStrs = [0, 1, 2, 3, 4].map(i => formatTTDate(addDays(monday, i)));
+    // Wed=30 should divide by 3 (→ target 17), not by 2 real groups
+    // (→ target 25) just because Monday had nothing.
+    const weekdayDateStrs = workDays.map(i => formatTTDate(addDays(monday, i)));
     const weekdaySet = new Set(weekdayDateStrs);
 
-    // The breakdown/batch system only has 5 weekday slots (Mon-Fri) —
-    // any service due on a Saturday/Sunday of this week has no slot to
-    // land in and would otherwise silently never appear in any batch,
-    // even though it's correctly counted in "this week"'s totals. Fold
-    // all such Sat/Sun items into Friday's group (the last working day)
+    // The breakdown/batch system only has slots for the configured work
+    // days — a service due on a day with no slot (a weekend, or a Mon-Fri
+    // day you've opted out of) would otherwise silently never appear in
+    // any batch, even though it's correctly counted in "this week"'s
+    // totals. Fold all such items into the LAST configured work day
     // instead of losing them.
-    const fridayDateStr = weekdayDateStrs[4];
+    const lastWorkDateStr = weekdayDateStrs[weekdayDateStrs.length - 1];
     const extraGroups = groups.filter(g => !weekdaySet.has(g.date));
 
     if (extraGroups.length > 0) {
         const extraItems = extraGroups.flatMap(g => g.items);
-        const fridayGroup = groups.find(g => g.date === fridayDateStr);
+        const lastWorkGroup = groups.find(g => g.date === lastWorkDateStr);
 
-        if (fridayGroup) {
-            fridayGroup.items.push(...extraItems);
+        if (lastWorkGroup) {
+            lastWorkGroup.items.push(...extraItems);
         } else {
-            groups.push({ date: fridayDateStr, items: extraItems });
+            groups.push({ date: lastWorkDateStr, items: extraItems });
         }
 
         groups = groups
             .filter(g => !extraGroups.includes(g))
             .sort((a, b) => parseTTDate(a.date) - parseTTDate(b.date));
 
-        console.log(`📅 Folded ${extraItems.length} out-of-slot-dated service(s) into Friday (${fridayDateStr})`);
+        console.log(`📅 Folded ${extraItems.length} out-of-slot-dated service(s) into the last work day (${lastWorkDateStr})`);
     }
 
     const groupsByDate = new Map(groups.map(g => [g.date, g]));
@@ -212,26 +229,44 @@ function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
         poolGroups = weekdayDateStrs.map(dateStr => groupsByDate.get(dateStr) || emptySlot(dateStr));
     } else {
         // Any OTHER day: still balance the WHOLE week's remaining work
-        // domino-style, exactly like Monday does — just scoped to the
-        // days that are actually still available (today onward; you
-        // can't redistribute onto a day that's already passed). Any
-        // earlier-this-week day's real items (e.g. Monday's, if today
-        // is Tuesday) are folded into TODAY's pool input rather than
-        // force-dumped onto today uncapped — they join the same
-        // nearest-first cascade as everything else.
-        const todayStr  = formatTTDate(today);
-        const todayIdx  = weekdayDateStrs.indexOf(todayStr);
-        const priorDateStrs     = weekdayDateStrs.slice(0, todayIdx); // strictly BEFORE today
-        const remainingDateStrs = weekdayDateStrs.slice(todayIdx);    // today + everything still ahead
+        // domino-style, exactly like the first work day does — just
+        // scoped to the days that are actually still available (today
+        // onward; you can't redistribute onto a day that's already
+        // passed). Any earlier-this-week day's real items (e.g.
+        // Monday's, if today is Tuesday) are folded into TODAY's pool
+        // input rather than force-dumped onto today uncapped — they
+        // join the same nearest-first cascade as everything else.
+        //
+        // todayIdx is found by DATE, not by exact match — today itself
+        // might not be a configured work day at all (a free day between
+        // or before this week's work days), in which case it correctly
+        // rolls into the next real work-day slot instead of vanishing.
+        const todayStr = formatTTDate(today);
+        const todayIdx = weekdayDateStrs.findIndex(dateStr => parseTTDate(dateStr) >= today);
 
-        const priorItems    = priorDateStrs.flatMap(dateStr => (groupsByDate.get(dateStr)?.items) || []);
-        const todayOwnItems = groupsByDate.get(todayStr)?.items || [];
+        if (todayIdx === -1) {
+            // Today is past every configured work day this week (e.g. a
+            // free day after the week's last one) — everything not yet
+            // assigned folds onto the last work day rather than being
+            // silently dropped from the plan.
+            const allRemainingItems = weekdayDateStrs.flatMap(dateStr => groupsByDate.get(dateStr)?.items || []);
+            poolGroups = [{ date: lastWorkDateStr, items: allRemainingItems }];
+        } else {
+            const priorDateStrs     = weekdayDateStrs.slice(0, todayIdx); // strictly BEFORE today
+            const remainingDateStrs = weekdayDateStrs.slice(todayIdx);    // today (or the next work day) onward
 
-        poolGroups = remainingDateStrs.map((dateStr, i) =>
-            i === 0
-                ? { date: dateStr, items: [...priorItems, ...todayOwnItems] } // today's slot carries prior days' leftovers too
-                : (groupsByDate.get(dateStr) || emptySlot(dateStr))
-        );
+            const priorItems    = priorDateStrs.flatMap(dateStr => (groupsByDate.get(dateStr)?.items) || []);
+            // Empty when today isn't itself a work-day slot (its real
+            // items, if any, get picked up by the weekend/opted-out
+            // fold above instead) — nothing double-counted either way.
+            const todayOwnItems = groupsByDate.get(todayStr)?.items || [];
+
+            poolGroups = remainingDateStrs.map((dateStr, i) =>
+                i === 0
+                    ? { date: dateStr, items: [...priorItems, ...todayOwnItems] } // first remaining slot carries prior leftovers too
+                    : (groupsByDate.get(dateStr) || emptySlot(dateStr))
+            );
+        }
     }
 
     // Backlog from before this week always lands on today, on top of
@@ -242,30 +277,42 @@ function computeWeeklyPlan(services, weekOffset = 0, asOfDayIndex = null) {
 
     const balanced = balanceEqually(poolGroups);
 
-    // Day-by-day breakdown, Mon..Fri, for the dashboard's workload chart
-    // AND for the sequential day-batch system (current-batch-store.js) —
-    // each entry now carries the actual ITEMS assigned to that day-slot,
-    // not just a count. Both the Monday case and any other day now share
-    // the same shape: `balanced` covers today-through-Friday (or all of
-    // Mon-Fri on an actual Monday), and today additionally gets backlog
-    // appended on top.
-    const weekdayDates = [0, 1, 2, 3, 4].map(i => addDays(monday, i));
-    const breakdown = weekdayDates.map(d => {
-        const dateStr  = formatTTDate(d);
-        const isToday  = d.getTime() === today.getTime();
+    // Day-by-day breakdown, one entry per configured work day, for the
+    // dashboard's workload chart AND for the sequential day-batch system
+    // (current-batch-store.js) — each entry now carries the actual ITEMS
+    // assigned to that day-slot, not just a count. Both the fresh-week
+    // case and any other day now share the same shape: `balanced` covers
+    // today-through-the-last-work-day (or the whole week on the first
+    // work day), and whichever slot backlog belongs on additionally
+    // gets it appended on top.
+    //
+    // "Today's" slot is normally an exact date match — but today might
+    // not be a configured work day at all (a free day), so this falls
+    // back to the next work day still ahead, or the last one if today is
+    // past all of them, so backlog/mandatory always lands SOMEWHERE
+    // rather than silently landing on no slot at all.
+    const weekdayDates = workDays.map(i => addDays(monday, i));
+    const mandatoryDate = weekdayDates.find(d => d.getTime() === today.getTime())
+        || weekdayDates.find(d => d >= today)
+        || weekdayDates[weekdayDates.length - 1];
 
-        if (d < today) {
+    const breakdown = weekdayDates.map((d, idx) => {
+        const dateStr  = formatTTDate(d);
+        const isToday  = d.getTime() === mandatoryDate.getTime();
+        const shortDay = SHORT_DAY_NAMES[workDays[idx]];
+
+        if (d < today && !isToday) {
             // Already folded into today's pool input above — empty
             // here so nothing is double-counted or double-batched,
             // even though these services are still genuinely included
             // in allItems (via today's slot).
-            return { date: dateStr, count: 0, items: [], mandatory: true, rolledIntoToday: true };
+            return { date: dateStr, shortDay, count: 0, items: [], mandatory: true, rolledIntoToday: true };
         }
 
         const match = balanced.find(b => b.date === dateStr);
         let items = match ? match.items : [];
         if (isToday) items = [...items, ...oldBacklog];
-        return { date: dateStr, count: items.length, items, mandatory: isToday };
+        return { date: dateStr, shortDay, count: items.length, items, mandatory: isToday };
     });
 
     const allItems = [...mandatoryItems, ...balanced.flatMap(b => b.items)];

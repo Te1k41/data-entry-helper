@@ -365,6 +365,7 @@ flowchart LR
   current_batch_store_js["current-batch-store.js"] --> due_services_trim_js["due-services-trim.js"]
   current_batch_store_js["current-batch-store.js"] --> due_date_utils_js["due-date-utils.js"]
   current_batch_store_js["current-batch-store.js"] --> atomic_write_js["atomic-write.js"]
+  current_batch_store_js["current-batch-store.js"] --> settings_store_js["settings-store.js"]
   download_watcher_js["download-watcher.js"] --> config_js["config.js"]
   download_watcher_js["download-watcher.js"] --> relay_state_js["relay-state.js"]
   download_watcher_js["download-watcher.js"] --> proof_extract_js["proof-extract.js"]
@@ -374,6 +375,7 @@ flowchart LR
   due_services_store_js["due-services-store.js"] --> config_js["config.js"]
   due_services_store_js["due-services-store.js"] --> atomic_write_js["atomic-write.js"]
   due_services_trim_js["due-services-trim.js"] --> due_date_utils_js["due-date-utils.js"]
+  due_services_trim_js["due-services-trim.js"] --> settings_store_js["settings-store.js"]
   fill_calc_js["fill-calc.js"] --> port_dictionary_js["port-dictionary.js"]
   fill_calc_js["fill-calc.js"] --> vessel_dictionary_js["vessel-dictionary.js"]
   fill_calc_js["fill-calc.js"] --> date_translator_js["date-translator.js"]
@@ -476,7 +478,7 @@ flowchart LR
 | build-result.js | config.js, schedule-guideline-store.js, port-dictionary.js | proof-extract.js, routes/result.js |
 | carrier-links.js | - | routes/due-services.js |
 | config.js | settings-store.js | activity-log-store.js, build-result.js, current-batch-store.js, download-watcher.js, due-services-store.js, highlight-review-store.js, merge-cleanup.js, port-dictionary.js, proof-extract.js, relay-socket.js, relay-state.js, routes/due-services.js, routes/files.js, routes/highlight-review.js, routes/proof-extract.js, routes/receipts.js, schedule-dom-scrape-store.js, schedule-guideline-store.js, server.js, vessel-dictionary.js |
-| current-batch-store.js | config.js, due-services-trim.js, due-date-utils.js, atomic-write.js | routes/due-services.js |
+| current-batch-store.js | config.js, due-services-trim.js, due-date-utils.js, atomic-write.js, settings-store.js | routes/due-services.js |
 | dashboard/dashboard.js | - | - |
 | dashboard/highlight-review.js | - | - |
 | dashboard/merge.js | - | - |
@@ -486,7 +488,7 @@ flowchart LR
 | download-watcher.js | config.js, relay-state.js, proof-extract.js, proof-parsers/yangming-html.js, proof-parsers/evergreen-html.js, schedule-dom-scrape-store.js | server.js |
 | due-date-utils.js | - | current-batch-store.js, due-services-trim.js, routes/due-services.js |
 | due-services-store.js | config.js, atomic-write.js | routes/due-services.js, server.js |
-| due-services-trim.js | due-date-utils.js | current-batch-store.js, routes/due-services.js |
+| due-services-trim.js | due-date-utils.js, settings-store.js | current-batch-store.js, routes/due-services.js |
 | fill-calc.js | port-dictionary.js, vessel-dictionary.js, date-translator.js | fill-calc.selftest.js, routes/fill-test.js |
 | fill-calc.selftest.js | fill-calc.js, schedule-guideline-store.js, proof-extract.js, port-dictionary.js, vessel-dictionary.js | - |
 | highlight-replay.js | - | highlight-review-store.js |
@@ -520,6 +522,6 @@ flowchart LR
 | schedule-dom-scrape-store.js | config.js, atomic-write.js | download-watcher.js, relay-socket.js, routes/fill-test.js, server.js |
 | schedule-guideline-store.js | config.js, atomic-write.js | build-result.js, fill-calc.selftest.js, proof-extract.js, relay-socket.js, routes/fill-test.js, routes/proof-extract.js, routes/schedule-guideline.js, server.js |
 | server.js | config.js, routes/relay.js, routes/files.js, routes/due-services.js, routes/dashboard.js, routes/settings.js, routes/proof-extract.js, routes/schedule-guideline.js, routes/result.js, routes/vessel-dictionary.js, routes/fill-test.js, routes/receipts.js, routes/highlight-review.js, highlight-review-store.js, routes/update-extension.js, relay-socket.js, download-watcher.js, due-services-store.js, schedule-guideline-store.js, schedule-dom-scrape-store.js, port-dictionary.js, vessel-dictionary.js | - |
-| settings-store.js | atomic-write.js | config.js, routes/settings.js |
+| settings-store.js | atomic-write.js | config.js, current-batch-store.js, due-services-trim.js, routes/settings.js |
 | vessel-dictionary.js | config.js | fill-calc.js, fill-calc.selftest.js, routes/fill-test.js, routes/vessel-dictionary.js, server.js |
 

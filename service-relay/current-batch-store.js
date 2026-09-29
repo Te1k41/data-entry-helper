@@ -33,8 +33,18 @@ const { CURRENT_BATCH_FILE, DATA_FOLDER } = require("./config");
 const { computeWeeklyPlan } = require("./due-services-trim");
 const { parseTTDate, formatTTDate } = require("./due-date-utils");
 const { writeFileAtomicSync } = require("./atomic-write");
+const settingsStore = require("./settings-store");
 
-const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const ALL_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+// Real weekday names for whichever days are actually configured as work
+// days (settings.json's workDays) — e.g. ["Monday","Tuesday","Wednesday"]
+// for a Mon-Wed work week. dayRecordLists has exactly one entry per
+// configured work day, so this always lines up with it 1:1. Read fresh
+// each call, not cached, so a settings change takes effect immediately.
+function getDayNames() {
+    return settingsStore.load().workDays.map(i => ALL_DAY_NAMES[i]);
+}
 
 function ensureDataFolder() {
     if (!fs.existsSync(DATA_FOLDER)) fs.mkdirSync(DATA_FOLDER, { recursive: true });
@@ -72,7 +82,7 @@ function saveState(state) {
     writeFileAtomicSync(CURRENT_BATCH_FILE, JSON.stringify(state, null, 2));
     console.log(
         `📦 Weekly batch state saved — week of ${state.weekStart}, ` +
-        `day ${state.dayIndex} (${DAY_NAMES[state.dayIndex] || "week complete"})`
+        `day ${state.dayIndex} (${getDayNames()[state.dayIndex] || "week complete"})`
     );
 }
 
@@ -178,7 +188,7 @@ function buildBatchForDay(state, dayIndex, byRecord) {
     return {
         items: [...leftovers, ...ownItems],
         dayIndex,
-        dayName: DAY_NAMES[dayIndex],
+        dayName: getDayNames()[dayIndex],
         weekStart: state.weekStart,
         weekComplete: false,
         leftoverCount: leftovers.length
@@ -315,5 +325,5 @@ module.exports = {
     goToDay,
     recalculateWeek,
     getStoredWeeklyBreakdown,
-    DAY_NAMES
+    getDayNames
 };

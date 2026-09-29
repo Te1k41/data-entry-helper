@@ -32,10 +32,22 @@ function defaultPathsForPlatform() {
     };
 }
 
+// 0=Monday .. 4=Friday — which weekdays the weekly workload plan
+// (due-services-trim.js) actually assigns work to. Default is every
+// weekday, unchanged behavior for anyone who's never touched this.
+const DEFAULT_WORK_DAYS = [0, 1, 2, 3, 4];
+
+function isValidWorkDays(value) {
+    return Array.isArray(value) && value.length > 0 &&
+        value.every(n => Number.isInteger(n) && n >= 0 && n <= 4) &&
+        new Set(value).size === value.length;
+}
+
 function defaultSettings() {
     return {
         ...defaultPathsForPlatform(),
         assignedToName: "",
+        workDays: DEFAULT_WORK_DAYS,
     };
 }
 
@@ -67,6 +79,7 @@ function load() {
     const defaults = defaultSettings();
     const resolved = {
         assignedToName: typeof raw.assignedToName === "string" ? raw.assignedToName : defaults.assignedToName,
+        workDays: isValidWorkDays(raw.workDays) ? [...raw.workDays].sort((a, b) => a - b) : defaults.workDays,
     };
 
     for (const key of PLATFORM_KEYS) {
@@ -91,6 +104,14 @@ function save(partialSettings) {
         merged.assignedToName = partialSettings.assignedToName;
     } else if (typeof raw.assignedToName === "string") {
         merged.assignedToName = raw.assignedToName;
+    }
+
+    if (isValidWorkDays(partialSettings.workDays)) {
+        merged.workDays = [...partialSettings.workDays].sort((a, b) => a - b);
+    } else if (isValidWorkDays(raw.workDays)) {
+        merged.workDays = raw.workDays;
+    } else {
+        merged.workDays = DEFAULT_WORK_DAYS;
     }
 
     for (const key of PLATFORM_KEYS) {

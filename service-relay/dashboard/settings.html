@@ -11,6 +11,9 @@
     .field input { width: 100%; font-family: var(--mono); font-size: 13px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
     .field input:focus { outline: none; border-color: var(--blue); }
     .field .hint { color: var(--dim); font-size: 11px; margin-top: 4px; }
+    .dayRange { display: flex; align-items: center; gap: 10px; }
+    .dayRange select { font-family: var(--mono); font-size: 13px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+    .dayRange select:focus { outline: none; border-color: var(--blue); }
     #saveMsg { margin-top: 14px; font-size: 12px; }
     #saveMsg.ok { color: var(--green); }
     #saveMsg.err { color: var(--red); }
@@ -30,6 +33,20 @@
             <label>Tradetech Username</label>
             <input type="text" id="assignedToName" placeholder="e.g. tienduongTTI">
             <div class="hint">Used to auto-fill "Assigned To" and search for your services.</div>
+        </div>
+    </div>
+
+    <div class="chartPanel wide settingsForm" style="margin-top:16px;">
+        <h2>work week</h2>
+        <div class="field">
+            <label>Work days</label>
+            <div class="dayRange">
+                <span>From</span>
+                <select id="workDayStart"></select>
+                <span>to</span>
+                <select id="workDayEnd"></select>
+            </div>
+            <div class="hint">The weekly workload plan only assigns services to these days — e.g. Monday to Wednesday leaves Thursday and Friday free. Anything due on a day outside this range gets folded into the last work day instead of disappearing.</div>
         </div>
     </div>
 
