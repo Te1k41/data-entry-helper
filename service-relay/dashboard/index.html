@@ -14,6 +14,19 @@
 <div id="asOf">loading…</div>
 <div id="batchDayIndicator"></div>
 <div id="dayTabs"></div>
+<div id="speedrunPanel">
+    <div id="speedrunSetup">
+        <span>⏱ Speedrun until</span>
+        <input type="time" id="speedrunEnd">
+        <button onclick="startSpeedrun()">Start</button>
+        <span id="speedrunError" class="speedrunError"></span>
+    </div>
+    <div id="speedrunRunning" style="display:none">
+        <span id="speedrunClock" class="speedrunClock"></span>
+        <span id="speedrunPace" class="speedrunPace"></span>
+        <button onclick="stopSpeedrun()">Stop</button>
+    </div>
+</div>
 <main>
     <div id="stats"></div>
     <div id="charts"></div>

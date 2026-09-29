@@ -240,6 +240,48 @@
     .dayTab:hover { color: var(--text); border-color: var(--muted); }
     .dayTab.activeDayTab { color: var(--blue); border-color: var(--blue); background: var(--blue-soft); }
 
+    #speedrunPanel {
+        padding: 8px 24px 14px;
+        border-bottom: 1px solid var(--border-soft);
+        margin-bottom: 16px;
+        font-family: var(--mono);
+        font-size: 13px;
+    }
+    #speedrunSetup, #speedrunRunning {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    #speedrunSetup input[type="time"] {
+        font-family: var(--mono);
+        font-size: 13px;
+        padding: 4px 8px;
+        background: var(--bg-alt);
+        border: 1px solid var(--border);
+        color: var(--text);
+    }
+    #speedrunPanel button {
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: 5px 14px;
+        cursor: pointer;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg-alt);
+        color: var(--text);
+    }
+    #speedrunPanel button:hover { border-color: var(--blue); color: var(--blue); }
+    .speedrunError { color: var(--red); font-size: 12px; }
+    .speedrunClock {
+        font-size: 20px;
+        font-weight: bold;
+        color: var(--blue);
+        text-shadow: 0 0 6px var(--blue-soft);
+        min-width: 8ch;
+    }
+    .speedrunClock.speedrunOvertime { color: var(--red); text-shadow: 0 0 6px var(--red-soft); }
+    .speedrunPace { color: var(--muted); }
+
     main { max-width: 1200px; margin: 0 auto; padding: 0 24px 40px; }
 
     #stats { margin: 0 0 20px; }
@@ -400,6 +442,7 @@
     }
     thead th:hover { color: var(--blue); }
     th .arrow { color: var(--muted); margin-left: 4px; }
+    .speedrunBudgetCell { color: var(--blue); white-space: nowrap; font-size: 12px; }
 
     .filterRow th {
         position: sticky;

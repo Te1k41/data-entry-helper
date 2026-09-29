@@ -22,7 +22,8 @@ const COLUMNS = [
     { key: 'schedule',       label: 'Schedule',   sortable: false },
     { key: 'routeMap',       label: 'Route Map',  sortable: false },
     { key: 'nextUpdateDate', label: 'Next Update' },
-    { key: 'actions',        label: '',           sortable: false }
+    { key: 'actions',        label: '',           sortable: false },
+    { key: 'speedrunBudget', label: '⏱',          sortable: false }
 ];
 
 // ── ASCII box-drawing helpers ──────────────────────────────────
@@ -775,7 +776,7 @@ function render() {
     html += `<th><input value="${escapeHtml(filters.carrier)}" onkeydown="if(event.key==='Enter'){filters.carrier=this.value; render();}" placeholder="filter... (enter)"></th>`;
     html += '<th></th><th></th>';
     html += `<th><input value="${escapeHtml(filters.nextUpdateDate)}" onkeydown="if(event.key==='Enter'){filters.nextUpdateDate=this.value; render();}" placeholder="filter... (enter)"></th>`;
-    html += '<th></th></tr></thead><tbody>';
+    html += '<th></th><th></th></tr></thead><tbody>';
 
     // Record/service values are untrusted (see escapeHtml above) --
     // escaped for HTML text/attribute context, and NEVER string-
@@ -806,11 +807,17 @@ function render() {
             <td>${linksHtml(s.links.routeMap, 'map')}</td>
             <td class="dateCell">${escapeHtml(s.nextUpdateDate)}${dayNote ? '<span class="dayNote">('+escapeHtml(dayNote)+')</span>' : ''}</td>
             <td>${actionBtn}</td>
+            <td class="speedrunBudgetCell" data-done="${status === 'done' ? '1' : '0'}"></td>
         </tr>`;
     }
 
     html += '</tbody></table>';
     content.innerHTML = html;
+
+    // Fresh rows just went in with empty budget cells — fill them in
+    // immediately instead of leaving a blank column for up to a second
+    // until the next tick.
+    if (speedrunEndAt) updateSpeedrunDisplay();
 }
 
 // ============================================================
@@ -1077,6 +1084,159 @@ function snoozeWellnessBanner() {
     }, WELLNESS_SNOOZE_MS);
 }
 
+// ============================================================
+//  Speedrun timer
+//  Pick an end-of-run clock time (e.g. 12:00) and Start — a big
+//  countdown ticks down to it, plus "time remaining ÷ services still
+//  undone in today's batch" as a live per-service pace, shown both
+//  as one summary line and repeated on every undone row (the same
+//  shared number on each — it's an even split, not a unique value
+//  per row, but seeing it next to the row you're working on is the
+//  point). Recomputes every second AND every time the batch changes
+//  (Mark Done, Next Day, etc.), so falling behind visibly shrinks the
+//  per-service budget in real time instead of staying a fixed
+//  original estimate. State only lives in this browser tab
+//  (localStorage), same as the Wellness toggle above — no server
+//  round-trip, nothing else needs to know about it.
+// ============================================================
+
+let speedrunEndAt = null; // timestamp (ms) the run counts down to, or null when not running
+let speedrunTickId = null;
+
+function loadSpeedrunState() {
+    try {
+        const raw = localStorage.getItem('speedrunEndAt');
+        speedrunEndAt = raw ? parseInt(raw, 10) : null;
+    } catch (e) {
+        speedrunEndAt = null;
+    }
+    // A leftover end time from yesterday (tab left open overnight, or
+    // just never stopped) shouldn't silently resume as a giant
+    // negative countdown — treat anything already passed as not running.
+    if (speedrunEndAt !== null && (isNaN(speedrunEndAt) || speedrunEndAt <= Date.now())) {
+        speedrunEndAt = null;
+        try { localStorage.removeItem('speedrunEndAt'); } catch (e) { /* ignore */ }
+    }
+    if (speedrunEndAt) startSpeedrunTicking();
+    updateSpeedrunUI();
+}
+
+// "HH:MM" (today, or tomorrow if that time has already passed today).
+function clockTimeStringToDate(hhmm) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '');
+    if (!m) return null;
+    const d = new Date();
+    d.setHours(parseInt(m[1], 10), parseInt(m[2], 10), 0, 0);
+    if (d <= new Date()) d.setDate(d.getDate() + 1);
+    return d;
+}
+
+function startSpeedrun() {
+    const errEl = document.getElementById('speedrunError');
+    if (errEl) errEl.textContent = '';
+
+    const endVal = document.getElementById('speedrunEnd').value;
+    const end = clockTimeStringToDate(endVal);
+    if (!end) {
+        if (errEl) errEl.textContent = 'Pick an end time first.';
+        return;
+    }
+
+    speedrunEndAt = end.getTime();
+    try { localStorage.setItem('speedrunEndAt', String(speedrunEndAt)); } catch (e) { /* fine, just won't survive a reload */ }
+    startSpeedrunTicking();
+    updateSpeedrunUI();
+}
+
+function stopSpeedrun() {
+    speedrunEndAt = null;
+    try { localStorage.removeItem('speedrunEndAt'); } catch (e) { /* ignore */ }
+    stopSpeedrunTicking();
+    updateSpeedrunUI();
+}
+
+function startSpeedrunTicking() {
+    stopSpeedrunTicking();
+    updateSpeedrunDisplay();
+    speedrunTickId = setInterval(updateSpeedrunDisplay, 1000);
+}
+
+function stopSpeedrunTicking() {
+    if (speedrunTickId) clearInterval(speedrunTickId);
+    speedrunTickId = null;
+}
+
+function updateSpeedrunUI() {
+    const setup   = document.getElementById('speedrunSetup');
+    const running = document.getElementById('speedrunRunning');
+    if (!setup || !running) return;
+
+    if (speedrunEndAt) {
+        setup.style.display   = 'none';
+        running.style.display = '';
+    } else {
+        setup.style.display   = '';
+        running.style.display = 'none';
+        const clock = document.getElementById('speedrunClock');
+        if (clock) { clock.textContent = ''; clock.classList.remove('speedrunOvertime'); }
+        const pace = document.getElementById('speedrunPace');
+        if (pace) pace.textContent = '';
+        clearSpeedrunBudgetCells();
+    }
+}
+
+// H:MM:SS, or +H:MM:SS once past the end time (overtime, not clamped
+// to zero — you should be able to see exactly how far over you are).
+function formatHMS(ms) {
+    const over = ms < 0;
+    const totalSeconds = Math.floor(Math.abs(ms) / 1000);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    return (over ? '+' : '') + `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function undoneBatchCount() {
+    return currentBatch.filter(s => !s.done).length;
+}
+
+function updateSpeedrunDisplay() {
+    if (!speedrunEndAt) return;
+
+    const remaining = speedrunEndAt - Date.now();
+    const remainingItems = undoneBatchCount();
+
+    const clock = document.getElementById('speedrunClock');
+    if (clock) {
+        clock.textContent = formatHMS(remaining);
+        clock.classList.toggle('speedrunOvertime', remaining < 0);
+    }
+
+    const pace = document.getElementById('speedrunPace');
+    if (pace) {
+        if (remainingItems === 0) {
+            pace.textContent = remaining >= 0 ? '🎉 all done, with time to spare' : '🎉 all done';
+        } else if (remaining <= 0) {
+            pace.textContent = `${remainingItems} left — time's up`;
+        } else {
+            pace.textContent = `${remainingItems} left · ${formatCountdownRough(remaining / remainingItems)} each`;
+        }
+    }
+
+    updateSpeedrunBudgetCells(remaining, remainingItems);
+}
+
+function updateSpeedrunBudgetCells(remaining, remainingItems) {
+    const text = (remainingItems > 0 && remaining > 0) ? formatCountdownRough(remaining / remainingItems) : '';
+    document.querySelectorAll('.speedrunBudgetCell').forEach(cell => {
+        cell.textContent = cell.dataset.done === '1' ? '' : text;
+    });
+}
+
+function clearSpeedrunBudgetCells() {
+    document.querySelectorAll('.speedrunBudgetCell').forEach(cell => { cell.textContent = ''; });
+}
+
 // Live-refresh when the extension posts a fresh scan from the
 // Tradetech tab — that POST lands on the server, not on this page,
 // so without this the dashboard would just sit there showing stale
@@ -1104,6 +1264,7 @@ initStarfieldParallax();
 initClickBurst();
 renderBanner();
 loadWellnessPreference();
+loadSpeedrunState();
 document.getElementById('content').addEventListener('click', handleContentClick);
 load();
 connectLiveUpdates();
