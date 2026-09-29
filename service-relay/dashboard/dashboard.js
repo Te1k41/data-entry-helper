@@ -1237,8 +1237,9 @@ function recordSpeedrunSplit(record) {
     const actualRemaining   = speedrunEndAt - Date.now();
     const deltaMs = actualRemaining - expectedRemaining;
 
+    const perItemBudgetMs = (speedrunEndAt - speedrunStartAt) / speedrunTotalItems;
     const svc = allServices.find(s => s.record === record) || currentBatch.find(s => s.record === record);
-    speedrunSplits.unshift({ service: svc ? svc.service : record, deltaMs });
+    speedrunSplits.unshift({ service: svc ? svc.service : record, deltaMs, perItemBudgetMs });
     if (speedrunSplits.length > 8) speedrunSplits.length = 8; // most recent handful — this is a live feel, not a full log
 
     renderSpeedrunSplits();
@@ -1265,7 +1266,13 @@ function renderSpeedrunSplits() {
     el.innerHTML = speedrunSplits.map(s => {
         const ahead = s.deltaMs >= 0;
         const isGold = s.deltaMs === bestDelta;
-        const cls = isGold ? 'speedrunSplitGold' : (ahead ? 'speedrunSplitGood' : 'speedrunSplitBad');
+        // Green: saved time. Orange: lost some, but less than one
+        // item's worth of slack — still recoverable. Red: lost more
+        // than a full item's budget on this one.
+        const cls = isGold ? 'speedrunSplitGold'
+            : ahead ? 'speedrunSplitGood'
+            : Math.abs(s.deltaMs) <= s.perItemBudgetMs ? 'speedrunSplitWarn'
+            : 'speedrunSplitBad';
         const sign = ahead ? '+' : '-';
         return `<div class="speedrunSplitRow ${cls}"><span class="speedrunSplitName">${escapeHtml(s.service)}</span><span class="speedrunSplitDelta">${sign}${formatDeltaPrecise(Math.abs(s.deltaMs))}</span></div>`;
     }).join('');

@@ -300,6 +300,7 @@
     .speedrunSplitName { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .speedrunSplitDelta { font-weight: bold; white-space: nowrap; }
     .speedrunSplitGood .speedrunSplitDelta { color: var(--green); }
+    .speedrunSplitWarn .speedrunSplitDelta { color: var(--amber); }
     .speedrunSplitBad  .speedrunSplitDelta { color: var(--red); }
     .speedrunSplitGold { background: rgba(212, 175, 55, 0.12); }
     .speedrunSplitGold .speedrunSplitDelta { color: #d4af37; }
