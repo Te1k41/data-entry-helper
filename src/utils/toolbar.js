@@ -100,28 +100,24 @@ const Toolbar = {
         if (broadcast) this._broadcastHooks.forEach(hook => hook(collapsed));
     },
 
-    // Tradetech's schedule page is a real frameset, and this whole
-    // content-script bundle runs in every frame — the one with the form
-    // (isOnScheduleForm(), which decides whether THIS frame builds a
-    // panel at all) is not necessarily large. Confirmed real bug: the
-    // panel used to build itself into that frame's own small document,
-    // so position:fixed and window.innerWidth/innerHeight were relative
-    // to that cramped frame, not the actual visible page — dragging it
-    // could still push it past THAT frame's edge and get clipped by the
-    // page around it, "in bounds" by the frame's own math but not by eye.
-    // Same window.top fallback pattern save-confirmation.js's overlay
-    // already uses for the identical reason.
+    // REVERTED: building the panel in window.top instead of this frame's
+    // own document made it disappear on the real page. Most likely cause,
+    // NOT yet confirmed live: this bundle runs in every frame
+    // (all_frames:true), and every frame's own independent Toolbar
+    // instance was appending its OWN "#tt-toolbar" into the SAME shared
+    // window.top.document — several frames register at least the misc-
+    // group buttons (Update Extension, Reset Layout have no
+    // isOnScheduleForm() gate), so multiple competing panels with the
+    // same id likely piled up there, not one correct clipped-but-visible
+    // panel. A real fix needs exactly one frame to own the rendered
+    // panel and the others to relay their actions into it (postMessage,
+    // not direct cross-frame DOM access) — not done here; back to
+    // resolving locally so the toolbar is visible again in the meantime.
     _topDoc: null,
     _topWin: null,
     _resolveTop() {
-        if (this._topDoc) return;
-        try {
-            this._topWin = window.top;
-            this._topDoc = window.top.document;
-        } catch {
-            this._topWin = window;
-            this._topDoc = document;
-        }
+        this._topWin = window;
+        this._topDoc = document;
     },
 
     _ensurePanel() {
@@ -223,11 +219,6 @@ const Toolbar = {
             e.preventDefault();
         });
 
-        // Listens on the top document, not this frame's own — the panel
-        // now lives there (see _resolveTop()'s comment), and a drag that
-        // carries the mouse outside this frame's own small bounds would
-        // otherwise never fire mousemove/mouseup here at all, leaving the
-        // panel stuck mid-drag the moment the pointer left the frame.
         topDoc.addEventListener("mousemove", (e) => {
             if (!isDragging) return;
             const dx = e.clientX - startX;
