@@ -282,6 +282,27 @@
     .speedrunClock.speedrunOvertime { color: var(--red); text-shadow: 0 0 6px var(--red-soft); }
     .speedrunPace { color: var(--muted); }
     .speedrunWindow { color: var(--muted); }
+    .speedrunTop { display: flex; align-items: center; gap: 10px; }
+
+    /* Splits list — LiveSplit's own idiom: each completed item this run,
+       colored by whether it beat ("good", green) or missed ("bad", red)
+       a straight-line pace, with the single best one picked out in gold. */
+    .speedrunSplits { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; max-width: 420px; }
+    .speedrunSplitRow {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 3px 8px;
+        border-radius: 3px;
+        background: var(--bg-alt);
+        font-size: 12px;
+    }
+    .speedrunSplitName { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .speedrunSplitDelta { font-weight: bold; white-space: nowrap; }
+    .speedrunSplitGood .speedrunSplitDelta { color: var(--green); }
+    .speedrunSplitBad  .speedrunSplitDelta { color: var(--red); }
+    .speedrunSplitGold { background: rgba(212, 175, 55, 0.12); }
+    .speedrunSplitGold .speedrunSplitDelta { color: #d4af37; }
 
     main { max-width: 1200px; margin: 0 auto; padding: 0 24px 40px; }
 

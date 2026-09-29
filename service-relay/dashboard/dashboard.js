@@ -334,6 +334,7 @@ function setSort(key) {
 }
 
 async function markDone(record) {
+    if (speedrunEndAt) recordSpeedrunSplit(record); // before load() overwrites currentBatch/allServices
     await fetch('/due-services/mark-done', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1104,6 +1105,22 @@ let speedrunStartAt = null; // timestamp (ms) the chosen window opens — inform
 let speedrunEndAt   = null; // timestamp (ms) the run counts down to, or null when not running
 let speedrunTickId  = null;
 
+// Splits list — LiveSplit's own idiom (an overall clock + a list of
+// completed checkpoints, each colored by whether it beat or missed
+// pace), adapted for a REBALANCING timer instead of LiveSplit's fixed
+// pre-planned segment times: there's no fixed "this service gets N
+// minutes" plan to compare against (the whole point of this timer is
+// that the per-service budget keeps adjusting live), so "ahead/behind"
+// here means "more/less time left than there'd be if you were exactly
+// on a straight-line pace through today's batch" — the honest
+// equivalent metric for a plan that rebalances instead of one that's
+// fixed upfront. This run's list only (cleared on Start/Stop, not
+// persisted) — it's a during-the-run feel-good/feel-behind signal,
+// not a saved record.
+let speedrunTotalItems     = 0;  // undone count captured the moment Start was clicked
+let speedrunCompletedCount = 0;  // how many marked done so far THIS run
+let speedrunSplits         = []; // [{ service, deltaMs }], most recent first
+
 function loadSpeedrunState() {
     try {
         const rawEnd   = localStorage.getItem('speedrunEndAt');
@@ -1142,7 +1159,14 @@ function clockTimeStringToDate(hhmm) {
     if (!m) return null;
     const d = new Date();
     d.setHours(parseInt(m[1], 10), parseInt(m[2], 10), 0, 0);
-    if (d <= new Date()) d.setDate(d.getDate() + 1);
+    // Compared against "now" truncated to the same minute — confirmed
+    // real bug otherwise: "now"'s own seconds/ms are always >= d's
+    // (zeroed), so picking literally the CURRENT clock time (exactly
+    // what the "from" field defaults to) always looked already-passed
+    // by a few seconds and got bumped a full day forward.
+    const nowMinute = new Date();
+    nowMinute.setSeconds(0, 0);
+    if (d < nowMinute) d.setDate(d.getDate() + 1);
     return d;
 }
 
@@ -1180,6 +1204,9 @@ function startSpeedrun() {
 
     speedrunStartAt = start.getTime();
     speedrunEndAt   = end.getTime();
+    speedrunTotalItems     = undoneBatchCount();
+    speedrunCompletedCount = 0;
+    speedrunSplits         = [];
     try {
         localStorage.setItem('speedrunStartAt', String(speedrunStartAt));
         localStorage.setItem('speedrunEndAt', String(speedrunEndAt));
@@ -1191,9 +1218,61 @@ function startSpeedrun() {
 function stopSpeedrun() {
     speedrunEndAt = null;
     speedrunStartAt = null;
+    speedrunTotalItems     = 0;
+    speedrunCompletedCount = 0;
+    speedrunSplits         = [];
     try { localStorage.removeItem('speedrunEndAt'); localStorage.removeItem('speedrunStartAt'); } catch (e) { /* ignore */ }
     stopSpeedrunTicking();
     updateSpeedrunUI();
+}
+
+// Records one "split" — called from markDone() right as a service gets
+// marked done while a run is active, BEFORE currentBatch/allServices
+// refresh, so this is genuinely "the n-th item finished" in order.
+// deltaMs > 0 = ahead of a straight-line pace (more time left than
+// there'd be if exactly on pace), < 0 = behind. A done→undo→redo cycle
+// can record the same service twice — not corrected for, this is a
+// during-the-run feel-good signal, not an audited log.
+function recordSpeedrunSplit(record) {
+    if (!speedrunTotalItems) return; // no items were undone when Start was clicked — nothing to pace against
+
+    speedrunCompletedCount++;
+    const expectedRemaining = (speedrunEndAt - speedrunStartAt) * (speedrunTotalItems - speedrunCompletedCount) / speedrunTotalItems;
+    const actualRemaining   = speedrunEndAt - Date.now();
+    const deltaMs = actualRemaining - expectedRemaining;
+
+    const svc = allServices.find(s => s.record === record) || currentBatch.find(s => s.record === record);
+    speedrunSplits.unshift({ service: svc ? svc.service : record, deltaMs });
+    if (speedrunSplits.length > 8) speedrunSplits.length = 8; // most recent handful — this is a live feel, not a full log
+
+    renderSpeedrunSplits();
+}
+
+// M:SS — split deltas are usually well under an hour and are exactly
+// the "did this one thing help or hurt" number people actually look
+// at, so this gets second-level precision instead of
+// formatCountdownRough's whole-minutes-only granularity (a delta of
+// 58 seconds showing as "+0m" reads as broken, not "barely ahead").
+function formatDeltaPrecise(ms) {
+    const totalSeconds = Math.round(ms / 1000);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function renderSpeedrunSplits() {
+    const el = document.getElementById('speedrunSplits');
+    if (!el) return;
+    if (speedrunSplits.length === 0) { el.innerHTML = ''; return; }
+
+    const bestDelta = Math.max(...speedrunSplits.map(s => s.deltaMs));
+    el.innerHTML = speedrunSplits.map(s => {
+        const ahead = s.deltaMs >= 0;
+        const isGold = s.deltaMs === bestDelta;
+        const cls = isGold ? 'speedrunSplitGold' : (ahead ? 'speedrunSplitGood' : 'speedrunSplitBad');
+        const sign = ahead ? '+' : '-';
+        return `<div class="speedrunSplitRow ${cls}"><span class="speedrunSplitName">${escapeHtml(s.service)}</span><span class="speedrunSplitDelta">${sign}${formatDeltaPrecise(Math.abs(s.deltaMs))}</span></div>`;
+    }).join('');
 }
 
 function startSpeedrunTicking() {
@@ -1229,6 +1308,8 @@ function updateSpeedrunUI() {
         if (clock) { clock.textContent = ''; clock.classList.remove('speedrunOvertime'); }
         const pace = document.getElementById('speedrunPace');
         if (pace) pace.textContent = '';
+        const splits = document.getElementById('speedrunSplits');
+        if (splits) splits.innerHTML = '';
         clearSpeedrunBudgetCells();
     }
 }

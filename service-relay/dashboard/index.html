@@ -24,10 +24,13 @@
         <span id="speedrunError" class="speedrunError"></span>
     </div>
     <div id="speedrunRunning" style="display:none">
-        <span id="speedrunWindow" class="speedrunWindow"></span>
-        <span id="speedrunClock" class="speedrunClock"></span>
-        <span id="speedrunPace" class="speedrunPace"></span>
-        <button onclick="stopSpeedrun()">Stop</button>
+        <div class="speedrunTop">
+            <span id="speedrunWindow" class="speedrunWindow"></span>
+            <span id="speedrunClock" class="speedrunClock"></span>
+            <span id="speedrunPace" class="speedrunPace"></span>
+            <button onclick="stopSpeedrun()">Stop</button>
+        </div>
+        <div id="speedrunSplits" class="speedrunSplits"></div>
     </div>
 </div>
 <main>
