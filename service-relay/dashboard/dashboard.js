@@ -1100,25 +1100,40 @@ function snoozeWellnessBanner() {
 //  round-trip, nothing else needs to know about it.
 // ============================================================
 
-let speedrunEndAt = null; // timestamp (ms) the run counts down to, or null when not running
-let speedrunTickId = null;
+let speedrunStartAt = null; // timestamp (ms) the chosen window opens — informational only, the countdown itself always counts down to speedrunEndAt from right now
+let speedrunEndAt   = null; // timestamp (ms) the run counts down to, or null when not running
+let speedrunTickId  = null;
 
 function loadSpeedrunState() {
     try {
-        const raw = localStorage.getItem('speedrunEndAt');
-        speedrunEndAt = raw ? parseInt(raw, 10) : null;
+        const rawEnd   = localStorage.getItem('speedrunEndAt');
+        const rawStart = localStorage.getItem('speedrunStartAt');
+        speedrunEndAt   = rawEnd   ? parseInt(rawEnd, 10)   : null;
+        speedrunStartAt = rawStart ? parseInt(rawStart, 10) : null;
     } catch (e) {
         speedrunEndAt = null;
+        speedrunStartAt = null;
     }
     // A leftover end time from yesterday (tab left open overnight, or
     // just never stopped) shouldn't silently resume as a giant
     // negative countdown — treat anything already passed as not running.
     if (speedrunEndAt !== null && (isNaN(speedrunEndAt) || speedrunEndAt <= Date.now())) {
         speedrunEndAt = null;
-        try { localStorage.removeItem('speedrunEndAt'); } catch (e) { /* ignore */ }
+        speedrunStartAt = null;
+        try { localStorage.removeItem('speedrunEndAt'); localStorage.removeItem('speedrunStartAt'); } catch (e) { /* ignore */ }
     }
     if (speedrunEndAt) startSpeedrunTicking();
     updateSpeedrunUI();
+
+    // Convenience default for a fresh (not-running) setup form: "from"
+    // pre-filled with right now, so you usually only need to set "to".
+    if (!speedrunEndAt) {
+        const startInput = document.getElementById('speedrunStart');
+        if (startInput && !startInput.value) {
+            const now = new Date();
+            startInput.value = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+        }
+    }
 }
 
 // "HH:MM" (today, or tomorrow if that time has already passed today).
@@ -1135,22 +1150,48 @@ function startSpeedrun() {
     const errEl = document.getElementById('speedrunError');
     if (errEl) errEl.textContent = '';
 
-    const endVal = document.getElementById('speedrunEnd').value;
-    const end = clockTimeStringToDate(endVal);
-    if (!end) {
-        if (errEl) errEl.textContent = 'Pick an end time first.';
+    const startVal = document.getElementById('speedrunStart').value;
+    const endVal   = document.getElementById('speedrunEnd').value;
+    const start = clockTimeStringToDate(startVal);
+    if (!start) {
+        if (errEl) errEl.textContent = 'Pick both a start and an end time.';
         return;
     }
 
-    speedrunEndAt = end.getTime();
-    try { localStorage.setItem('speedrunEndAt', String(speedrunEndAt)); } catch (e) { /* fine, just won't survive a reload */ }
+    // Resolved AGAINST start, not independently against "now" — two
+    // clock times each pushed to tomorrow separately if already passed
+    // today can silently end up in a technically-chronological but
+    // backwards order depending on what time it is right now (e.g.
+    // start "12:00", end "08:00", asked for at 10am: start stays today,
+    // end rolls to tomorrow — tomorrow 8am is AFTER today noon, so a
+    // same-vs-now check alone would wrongly accept this inverted pair).
+    // Anchoring end to the day start landed on (rolling forward one day
+    // only if end's clock time is <= start's) makes a same-day window
+    // always resolve as same-day, and still allows a genuine overnight
+    // window (e.g. 22:00 to 06:00) to resolve correctly too.
+    const m = /^(\d{1,2}):(\d{2})$/.exec(endVal || '');
+    if (!m) {
+        if (errEl) errEl.textContent = 'Pick both a start and an end time.';
+        return;
+    }
+    const end = new Date(start);
+    end.setHours(parseInt(m[1], 10), parseInt(m[2], 10), 0, 0);
+    if (end <= start) end.setDate(end.getDate() + 1);
+
+    speedrunStartAt = start.getTime();
+    speedrunEndAt   = end.getTime();
+    try {
+        localStorage.setItem('speedrunStartAt', String(speedrunStartAt));
+        localStorage.setItem('speedrunEndAt', String(speedrunEndAt));
+    } catch (e) { /* fine, just won't survive a reload */ }
     startSpeedrunTicking();
     updateSpeedrunUI();
 }
 
 function stopSpeedrun() {
     speedrunEndAt = null;
-    try { localStorage.removeItem('speedrunEndAt'); } catch (e) { /* ignore */ }
+    speedrunStartAt = null;
+    try { localStorage.removeItem('speedrunEndAt'); localStorage.removeItem('speedrunStartAt'); } catch (e) { /* ignore */ }
     stopSpeedrunTicking();
     updateSpeedrunUI();
 }
@@ -1174,9 +1215,16 @@ function updateSpeedrunUI() {
     if (speedrunEndAt) {
         setup.style.display   = 'none';
         running.style.display = '';
+        const win = document.getElementById('speedrunWindow');
+        if (win) {
+            const fmt = (ms) => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+            win.textContent = speedrunStartAt ? `${fmt(speedrunStartAt)} → ${fmt(speedrunEndAt)}` : '';
+        }
     } else {
         setup.style.display   = '';
         running.style.display = 'none';
+        const win = document.getElementById('speedrunWindow');
+        if (win) win.textContent = '';
         const clock = document.getElementById('speedrunClock');
         if (clock) { clock.textContent = ''; clock.classList.remove('speedrunOvertime'); }
         const pace = document.getElementById('speedrunPace');

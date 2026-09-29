@@ -16,12 +16,15 @@
 <div id="dayTabs"></div>
 <div id="speedrunPanel">
     <div id="speedrunSetup">
-        <span>⏱ Speedrun until</span>
+        <span>⏱ Speedrun from</span>
+        <input type="time" id="speedrunStart">
+        <span>to</span>
         <input type="time" id="speedrunEnd">
         <button onclick="startSpeedrun()">Start</button>
         <span id="speedrunError" class="speedrunError"></span>
     </div>
     <div id="speedrunRunning" style="display:none">
+        <span id="speedrunWindow" class="speedrunWindow"></span>
         <span id="speedrunClock" class="speedrunClock"></span>
         <span id="speedrunPace" class="speedrunPace"></span>
         <button onclick="stopSpeedrun()">Stop</button>

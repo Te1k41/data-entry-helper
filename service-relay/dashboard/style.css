@@ -281,6 +281,7 @@
     }
     .speedrunClock.speedrunOvertime { color: var(--red); text-shadow: 0 0 6px var(--red-soft); }
     .speedrunPace { color: var(--muted); }
+    .speedrunWindow { color: var(--muted); }
 
     main { max-width: 1200px; margin: 0 auto; padding: 0 24px 40px; }
 
