@@ -90,8 +90,9 @@ const Toolbar = {
         localStorage.setItem("tt-toolbar-collapsed", collapsed ? "1" : "0");
 
         if (this._panel) {
-            const list = document.getElementById("tt-toolbar-list");
-            const arrow = document.getElementById("tt-toolbar-arrow");
+            const topDoc = this._topDoc || document;
+            const list = topDoc.getElementById("tt-toolbar-list");
+            const arrow = topDoc.getElementById("tt-toolbar-arrow");
             if (list)  list.style.display = collapsed ? "none" : "flex";
             if (arrow) arrow.textContent  = collapsed ? "▸" : "▾";
         }
@@ -99,13 +100,40 @@ const Toolbar = {
         if (broadcast) this._broadcastHooks.forEach(hook => hook(collapsed));
     },
 
+    // Tradetech's schedule page is a real frameset, and this whole
+    // content-script bundle runs in every frame — the one with the form
+    // (isOnScheduleForm(), which decides whether THIS frame builds a
+    // panel at all) is not necessarily large. Confirmed real bug: the
+    // panel used to build itself into that frame's own small document,
+    // so position:fixed and window.innerWidth/innerHeight were relative
+    // to that cramped frame, not the actual visible page — dragging it
+    // could still push it past THAT frame's edge and get clipped by the
+    // page around it, "in bounds" by the frame's own math but not by eye.
+    // Same window.top fallback pattern save-confirmation.js's overlay
+    // already uses for the identical reason.
+    _topDoc: null,
+    _topWin: null,
+    _resolveTop() {
+        if (this._topDoc) return;
+        try {
+            this._topWin = window.top;
+            this._topDoc = window.top.document;
+        } catch {
+            this._topWin = window;
+            this._topDoc = document;
+        }
+    },
+
     _ensurePanel() {
         this._ensureHooks.forEach(hook => hook());
         if (this._panel) return;
 
+        this._resolveTop();
+        const topDoc = this._topDoc;
+
         this._collapsed = localStorage.getItem("tt-toolbar-collapsed") === "1";
 
-        const panel = document.createElement("div");
+        const panel = topDoc.createElement("div");
         panel.id = "tt-toolbar";
         panel.style.cssText = `
             position: fixed !important;
@@ -134,7 +162,7 @@ const Toolbar = {
             panel.style.left = "20px";
         }
 
-        const header = document.createElement("div");
+        const header = topDoc.createElement("div");
         header.id = "tt-toolbar-header";
         header.style.cssText = `
             padding: 6px 10px !important;
@@ -149,7 +177,7 @@ const Toolbar = {
         `;
         header.innerHTML = `<span>🧰 Tools</span><span id="tt-toolbar-arrow">${this._collapsed ? "▸" : "▾"}</span>`;
 
-        const list = document.createElement("div");
+        const list = topDoc.createElement("div");
         list.id = "tt-toolbar-list";
         list.style.cssText = `
             display: ${this._collapsed ? "none" : "flex"} !important;
@@ -158,7 +186,7 @@ const Toolbar = {
 
         panel.appendChild(header);
         panel.appendChild(list);
-        document.body.appendChild(panel);
+        topDoc.body.appendChild(panel);
 
         this._panel         = panel;
         this._listContainer = list;
@@ -171,8 +199,9 @@ const Toolbar = {
     // is in the DOM, which is exactly when this also needs to run, on
     // initial restore).
     _clampToViewport(left, top) {
-        const maxLeft = Math.max(0, window.innerWidth  - 40);
-        const maxTop  = Math.max(0, window.innerHeight - 40);
+        const topWin = this._topWin || window;
+        const maxLeft = Math.max(0, topWin.innerWidth  - 40);
+        const maxTop  = Math.max(0, topWin.innerHeight - 40);
         return {
             left: Math.min(Math.max(left, 0), maxLeft),
             top:  Math.min(Math.max(top,  0), maxTop),
@@ -181,6 +210,7 @@ const Toolbar = {
 
     _wireDragAndCollapse(panel, header, list) {
         let isDragging = false, didDrag = false, startX, startY, startLeft, startTop;
+        const topDoc = this._topDoc || document;
 
         header.addEventListener("mousedown", (e) => {
             isDragging = true;
@@ -193,7 +223,12 @@ const Toolbar = {
             e.preventDefault();
         });
 
-        document.addEventListener("mousemove", (e) => {
+        // Listens on the top document, not this frame's own — the panel
+        // now lives there (see _resolveTop()'s comment), and a drag that
+        // carries the mouse outside this frame's own small bounds would
+        // otherwise never fire mousemove/mouseup here at all, leaving the
+        // panel stuck mid-drag the moment the pointer left the frame.
+        topDoc.addEventListener("mousemove", (e) => {
             if (!isDragging) return;
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
@@ -203,7 +238,7 @@ const Toolbar = {
             panel.style.top  = `${clamped.top}px`;
         });
 
-        document.addEventListener("mouseup", () => {
+        topDoc.addEventListener("mouseup", () => {
             if (!isDragging) return;
             isDragging = false;
             header.style.cursor = "grab";
@@ -275,13 +310,14 @@ const Toolbar = {
 
     _render() {
         this._ensurePanel();
+        const topDoc = this._topDoc;
         this._listContainer.innerHTML = "";
 
         let renderedGroup = null;
         this._orderedActions().forEach(action => {
             const group = action.group || "misc";
             if (group !== renderedGroup) {
-                const heading = document.createElement("div");
+                const heading = topDoc.createElement("div");
                 heading.textContent = this._groupLabels[group] || group.toUpperCase();
                 heading.style.cssText = `
                     padding: 6px 10px 3px !important;
@@ -297,7 +333,7 @@ const Toolbar = {
                 renderedGroup = group;
             }
 
-            const btn = document.createElement("button");
+            const btn = topDoc.createElement("button");
             btn.type        = "button";
             btn.textContent = action.label;
             const relayUnavailable = action.requiresRelay && this._relayStatus !== "connected";
