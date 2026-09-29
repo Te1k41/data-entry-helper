@@ -62,11 +62,25 @@ function createButton(options) {
 
     document.body.appendChild(btn);
 
+    // Keeps at least a 40px corner reachable on-screen — same bug and
+    // same fix as toolbar.js's own Toolbar._clampToViewport(): an
+    // unclamped drag (or a saved position from a wider window/monitor)
+    // could push the button past the edge with no way to reach it again.
+    const clampToViewport = (left, top) => {
+        const maxLeft = Math.max(0, window.innerWidth  - 40);
+        const maxTop  = Math.max(0, window.innerHeight - 40);
+        return {
+            left: Math.min(Math.max(left, 0), maxLeft),
+            top:  Math.min(Math.max(top,  0), maxTop),
+        };
+    };
+
     const savedPos = localStorage.getItem(`btn-pos-${options.id}`);
     if (savedPos) {
         const { top, left } = JSON.parse(savedPos);
-        btn.style.top  = top;
-        btn.style.left = left;
+        const clamped = clampToViewport(parseInt(left, 10), parseInt(top, 10));
+        btn.style.top  = `${clamped.top}px`;
+        btn.style.left = `${clamped.left}px`;
     }
 
 // ── Drag to reposition ──────────────────────────────
@@ -90,8 +104,9 @@ document.addEventListener("mousemove", (e) => {
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) didDrag = true;
-    btn.style.left = `${startLeft + dx}px`;
-    btn.style.top  = `${startTop  + dy}px`;
+    const clamped = clampToViewport(startLeft + dx, startTop + dy);
+    btn.style.left = `${clamped.left}px`;
+    btn.style.top  = `${clamped.top}px`;
 });
 
 document.addEventListener("mouseup", () => {
