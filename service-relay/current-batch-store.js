@@ -260,16 +260,24 @@ function getStoredWeeklyBreakdown(allServices) {
     const byRecord = new Map(allServices.map(s => [s.record, s]));
     const state = ensureCurrentWeekState(allServices);
     const monday = parseTTDate(state.weekStart);
+    // dayRecordLists[i] is the i-th CONFIGURED work day, not "Monday + i
+    // days" — those only coincide for a Monday-starting range. Confirmed
+    // real bug: every label came back "undefined" because this read
+    // workDays fresh but never existed here at all before; a Tue-Thu
+    // work week would additionally have gotten the wrong DATE per slot
+    // (i=0 -> Monday, not Tuesday) had it used a plain +i offset instead.
+    const workDays = settingsStore.load().workDays;
 
     const breakdown = state.dayRecordLists.map((records, i) => {
-        const dateStr = formatTTDate(addDays(monday, i));
+        const dateStr  = formatTTDate(addDays(monday, workDays[i]));
+        const shortDay = ALL_DAY_NAMES[workDays[i]].slice(0, 3);
         const items = records.map(r => byRecord.get(r)).filter(Boolean);
 
         if (i < state.dayIndex) {
             // Whatever's still undone here already tags along into the
             // current day's bar below — same "rolled into today, don't
             // double-count" convention computeWeeklyPlan itself uses.
-            return { date: dateStr, count: 0, items: [], mandatory: false, rolledIntoToday: true };
+            return { date: dateStr, shortDay, count: 0, items: [], mandatory: false, rolledIntoToday: true };
         }
 
         if (i === state.dayIndex) {
@@ -281,10 +289,10 @@ function getStoredWeeklyBreakdown(allServices) {
                 leftovers.push(...itemsForDay(state, j, byRecord).filter(s => !s.done));
             }
             const combined = [...leftovers, ...items];
-            return { date: dateStr, count: combined.length, items: combined, mandatory: true };
+            return { date: dateStr, shortDay, count: combined.length, items: combined, mandatory: true };
         }
 
-        return { date: dateStr, count: items.length, items, mandatory: false };
+        return { date: dateStr, shortDay, count: items.length, items, mandatory: false };
     });
 
     const total = breakdown.reduce((sum, b) => sum + b.count, 0);
