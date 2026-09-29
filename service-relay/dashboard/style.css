@@ -240,18 +240,35 @@
     .dayTab:hover { color: var(--text); border-color: var(--muted); }
     .dayTab.activeDayTab { color: var(--blue); border-color: var(--blue); background: var(--blue-soft); }
 
+    /* Floating overlay card, not part of the normal page flow — stays
+       on screen while you scroll/work the table underneath. Position
+       is draggable (via #speedrunDragHandle) and remembered per
+       browser in localStorage; defaults to the top-right corner. */
     #speedrunPanel {
-        padding: 8px 24px 14px;
-        border-bottom: 1px solid var(--border-soft);
-        margin-bottom: 16px;
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 500;
+        padding: 10px 16px 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
         font-family: var(--mono);
         font-size: 13px;
+        max-width: 320px;
+        max-height: 80vh;
+        overflow-y: auto;
     }
     #speedrunSetup, #speedrunRunning {
         display: flex;
-        align-items: center;
+        flex-direction: column;
+        align-items: stretch;
         gap: 10px;
     }
+    #speedrunSetup { flex-direction: row; align-items: center; flex-wrap: wrap; }
+    #speedrunDragHandle { cursor: move; user-select: none; }
+    #speedrunDragHandle:active { cursor: grabbing; }
     #speedrunSetup input[type="time"] {
         font-family: var(--mono);
         font-size: 13px;
@@ -282,7 +299,22 @@
     .speedrunClock.speedrunOvertime { color: var(--red); text-shadow: 0 0 6px var(--red-soft); }
     .speedrunPace { color: var(--muted); }
     .speedrunWindow { color: var(--muted); }
-    .speedrunTop { display: flex; align-items: center; gap: 10px; }
+    .speedrunTop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    /* Remaining (not-yet-done) tasks this run, nearest-first, each with
+       its live per-item time budget — the "task list" half of the
+       overlay, separate from the splits list below it (completed). */
+    .speedrunTasks { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+    .speedrunTaskRow {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 2px 8px;
+        font-size: 12px;
+        color: var(--muted);
+    }
+    .speedrunTaskBudget { white-space: nowrap; }
+    .speedrunTasksMore { font-size: 11px; color: var(--dim); padding: 2px 8px; }
 
     /* Splits list — LiveSplit's own idiom: each completed item this run,
        colored by whether it beat ("good", green) or missed ("bad", red)

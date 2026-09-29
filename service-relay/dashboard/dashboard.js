@@ -1153,6 +1153,56 @@ function loadSpeedrunState() {
     }
 }
 
+// Drag the floating overlay by its header, clamp it fully on-screen,
+// remember the position across reloads. Plain mouse events are enough
+// here — this is a single-page dashboard, not a multi-frame content
+// script, so there's no cross-frame collision risk to design around.
+function initSpeedrunDrag() {
+    const panel  = document.getElementById('speedrunPanel');
+    const handle = document.getElementById('speedrunDragHandle');
+    if (!panel || !handle) return;
+
+    try {
+        const raw = localStorage.getItem('speedrunPanelPos');
+        if (raw) {
+            const pos = JSON.parse(raw);
+            panel.style.left = pos.left + 'px';
+            panel.style.top = pos.top + 'px';
+            panel.style.right = 'auto';
+        }
+    } catch (e) { /* keep CSS default (top-right) */ }
+
+    let dragging = false, offsetX = 0, offsetY = 0;
+    handle.addEventListener('mousedown', (e) => {
+        if (e.target.closest('button')) return; // let the Stop button click through
+        dragging = true;
+        const rect = panel.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const maxLeft = window.innerWidth - panel.offsetWidth;
+        const maxTop  = window.innerHeight - panel.offsetHeight;
+        const left = Math.min(Math.max(0, e.clientX - offsetX), Math.max(0, maxLeft));
+        const top  = Math.min(Math.max(0, e.clientY - offsetY), Math.max(0, maxTop));
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.right = 'auto';
+    });
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        try {
+            localStorage.setItem('speedrunPanelPos', JSON.stringify({
+                left: parseInt(panel.style.left, 10),
+                top: parseInt(panel.style.top, 10),
+            }));
+        } catch (e) { /* fine, just won't survive a reload */ }
+    });
+}
+
 // "HH:MM" (today, or tomorrow if that time has already passed today).
 function clockTimeStringToDate(hhmm) {
     const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '');
@@ -1313,6 +1363,8 @@ function updateSpeedrunUI() {
         if (pace) pace.textContent = '';
         const splits = document.getElementById('speedrunSplits');
         if (splits) splits.innerHTML = '';
+        const tasks = document.getElementById('speedrunTasks');
+        if (tasks) tasks.innerHTML = '';
         clearSpeedrunBudgetCells();
     }
 }
@@ -1356,6 +1408,7 @@ function updateSpeedrunDisplay() {
     }
 
     updateSpeedrunBudgetCells(remaining, remainingItems);
+    renderSpeedrunTasks(remaining, remainingItems);
 }
 
 function updateSpeedrunBudgetCells(remaining, remainingItems) {
@@ -1367,6 +1420,29 @@ function updateSpeedrunBudgetCells(remaining, remainingItems) {
 
 function clearSpeedrunBudgetCells() {
     document.querySelectorAll('.speedrunBudgetCell').forEach(cell => { cell.textContent = ''; });
+}
+
+// Remaining-tasks list on the floating overlay itself — same per-item
+// budget as the table's own budget column, just visible without
+// having to see the table (the point of an overlay). Capped so a big
+// batch doesn't turn the card into a second full table.
+const SPEEDRUN_TASKS_SHOWN = 6;
+function renderSpeedrunTasks(remaining, remainingItems) {
+    const el = document.getElementById('speedrunTasks');
+    if (!el) return;
+    const undone = currentBatch.filter(s => !s.done);
+    if (undone.length === 0) { el.innerHTML = ''; return; }
+
+    const budgetText = (remainingItems > 0 && remaining > 0) ? formatCountdownRough(remaining / remainingItems) : '';
+    const shown = undone.slice(0, SPEEDRUN_TASKS_SHOWN);
+    const rows = shown.map(row => {
+        const svc = allServices.find(s => s.record === row.record);
+        const name = svc ? svc.service : row.record;
+        return `<div class="speedrunTaskRow"><span class="speedrunTaskName">${escapeHtml(name)}</span><span class="speedrunTaskBudget">${budgetText}</span></div>`;
+    }).join('');
+    const more = undone.length > SPEEDRUN_TASKS_SHOWN
+        ? `<div class="speedrunTasksMore">+${undone.length - SPEEDRUN_TASKS_SHOWN} more</div>` : '';
+    el.innerHTML = rows + more;
 }
 
 // Live-refresh when the extension posts a fresh scan from the
@@ -1397,6 +1473,7 @@ initClickBurst();
 renderBanner();
 loadWellnessPreference();
 loadSpeedrunState();
+initSpeedrunDrag();
 document.getElementById('content').addEventListener('click', handleContentClick);
 load();
 connectLiveUpdates();
