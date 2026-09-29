@@ -1159,14 +1159,10 @@ function clockTimeStringToDate(hhmm) {
     if (!m) return null;
     const d = new Date();
     d.setHours(parseInt(m[1], 10), parseInt(m[2], 10), 0, 0);
-    // Compared against "now" truncated to the same minute — confirmed
-    // real bug otherwise: "now"'s own seconds/ms are always >= d's
-    // (zeroed), so picking literally the CURRENT clock time (exactly
-    // what the "from" field defaults to) always looked already-passed
-    // by a few seconds and got bumped a full day forward.
-    const nowMinute = new Date();
-    nowMinute.setSeconds(0, 0);
-    if (d < nowMinute) d.setDate(d.getDate() + 1);
+    // Always today, never rolled to tomorrow: a Start time already
+    // passed today (e.g. typing "13:06" as the nominal start while
+    // clicking Start a bit later) is the normal case, not a request
+    // to wait a full day. Only End rolls forward, relative to Start.
     return d;
 }
 
