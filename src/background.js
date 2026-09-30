@@ -162,20 +162,54 @@ function computeCaptureGeometry(topFrame, target, rect) {
     const staticRight = isTopFrame ? 0 : topFrame.result.clientWidth  - rect.left - rect.width;
     const staticBelow = isTopFrame ? 0 : topFrame.result.clientHeight - rect.top  - rect.height;
 
+    // Every device-px quantity a tile's position is BUILT FROM gets rounded
+    // exactly once, here, and every tile then reuses these same integers —
+    // never re-deriving a position by rounding col*contentWidth*dpr fresh
+    // per tile. Independent per-tile rounding drifts apart from the fixed
+    // crop width as col/row grows (dpr=1.25, contentWidth=983 → tile 1
+    // lands at round(983*1.25)=1229 but the crop is only round(983*1.25)
+    // =1229 wide too... the SAME number computed twice can still diverge
+    // once you're 2+ tiles in, e.g. round(2*983*1.25)=2458 vs
+    // 2*round(983*1.25)=2458 — fine there, but off in general for other
+    // step/dpr combinations) — a real, live-reported bug ("misaligned/
+    // seams between tiles"), worst on non-integer display scaling
+    // (125%/150% Windows scaling is dpr 1.25/1.5) and confirmed the root
+    // cause by hand-tracing the arithmetic.
+    const originLeftPx    = Math.round(originLeft * dpr);
+    const originTopPx     = Math.round(originTop  * dpr);
+    const stepX           = Math.round(t.contentWidth  * dpr);
+    const stepY           = Math.round(t.contentHeight * dpr);
+    const contentWidthPx  = Math.round(t.scrollWidth  * dpr);
+    const contentHeightPx = Math.round(t.scrollHeight * dpr);
+
     return {
-        canvasWidth:  Math.round((originLeft + t.scrollWidth  + staticRight) * dpr),
-        canvasHeight: Math.round((originTop  + t.scrollHeight + staticBelow) * dpr),
+        canvasWidth:  originLeftPx + contentWidthPx  + Math.round(staticRight * dpr),
+        canvasHeight: originTopPx  + contentHeightPx + Math.round(staticBelow * dpr),
         colStep: t.contentWidth,
         rowStep: t.contentHeight,
         backgroundRect: isTopFrame ? null : {
             width:  Math.round(topFrame.result.clientWidth  * dpr),
             height: Math.round(topFrame.result.clientHeight * dpr),
         },
-        cropRectFor: (col, row) => ({
-            cropRect: { x: originLeft * dpr, y: originTop * dpr, width: t.contentWidth * dpr, height: t.contentHeight * dpr },
-            pasteX: Math.round((originLeft + col * t.contentWidth)  * dpr),
-            pasteY: Math.round((originTop  + row * t.contentHeight) * dpr),
-        }),
+        // The last tile in a row/column doesn't sit at a clean col*step
+        // multiple — background.js's own scroll clamp (Math.min(col*step,
+        // total-step)) pulls it back to align flush with the TRUE content
+        // edge instead, exactly like this same clamp does here for where
+        // it gets pasted. Getting this wrong (pasting every tile at a
+        // plain col*step regardless of clamping) is the OTHER half of the
+        // reported seam bug: whenever content isn't an exact multiple of
+        // the tile size — the common case — the last tile in each
+        // direction would land short of or past where it actually was
+        // captured from.
+        cropRectFor: (col, row) => {
+            const pasteXOffset = Math.min(col * stepX, Math.max(0, contentWidthPx  - stepX));
+            const pasteYOffset = Math.min(row * stepY, Math.max(0, contentHeightPx - stepY));
+            return {
+                cropRect: { x: originLeftPx, y: originTopPx, width: stepX, height: stepY },
+                pasteX: originLeftPx + pasteXOffset,
+                pasteY: originTopPx  + pasteYOffset,
+            };
+        },
     };
 }
 
