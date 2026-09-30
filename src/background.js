@@ -77,6 +77,70 @@ chrome.action.onClicked.addListener((tab) => {
     });
 });
 
+// Picks whichever frame actually needs scrolling: the one with the most
+// overflow (scrollHeight beyond its own clientHeight). On an ordinary
+// (non-frameset) page there's only one frame, so this always resolves to
+// the top frame — identical to the old top-frame-only behavior. Exposed
+// as a pure function (no chrome.* calls) so it's unit-testable directly.
+function pickTargetFrame(frameResults) {
+    const topFrame = frameResults.find(f => f.frameId === 0);
+    return frameResults.reduce((best, f) => {
+        const bestOverflow = best.result.scrollHeight - best.result.clientHeight;
+        const overflow     = f.result.scrollHeight - f.result.clientHeight;
+        return overflow > bestOverflow ? f : best;
+    }, topFrame);
+}
+
+// canvasWidth/canvasHeight in device px, plus per-slice crop/paste info
+// when the target is a child frame (needs its on-screen rect within the
+// top frame's viewport; null rect means "just use the top frame instead,
+// full-viewport slices" — same shape chosen either way so callers don't
+// branch on it). Pure function, unit-testable without chrome.* mocking.
+function computeCaptureGeometry(topFrame, target, rect) {
+    const dpr = topFrame.result.dpr;
+    const canvasWidth = Math.round(topFrame.result.clientWidth * dpr);
+
+    if (target.frameId === topFrame.frameId || !rect) {
+        return {
+            canvasWidth,
+            canvasHeight: Math.round(target.result.scrollHeight * dpr),
+            sliceViewportHeight: target.result.clientHeight,
+            cropRectFor: () => null, // top-frame path never crops — plain full-slice draw
+        };
+    }
+
+    const staticBelow = topFrame.result.clientHeight - rect.top - rect.height;
+    const canvasHeight = Math.round((rect.top + target.result.scrollHeight + staticBelow) * dpr);
+    return {
+        canvasWidth,
+        canvasHeight,
+        sliceViewportHeight: target.result.clientHeight,
+        cropRectFor: (sliceIndex) => sliceIndex === 0 ? null : {
+            cropRect: { x: rect.left * dpr, y: rect.top * dpr, width: rect.width * dpr, height: rect.height * dpr },
+            pasteY: Math.round((rect.top + sliceIndex * target.result.clientHeight) * dpr),
+        },
+    };
+}
+
+async function findChildFrameRect(tabId, frameName) {
+    const [{ result: rect }] = await chrome.scripting.executeScript({
+        target: { tabId, frameIds: [0] },
+        func: (name) => {
+            for (const el of document.querySelectorAll("frame,iframe")) {
+                try {
+                    if (el.contentWindow && el.contentWindow.name === name) {
+                        const r = el.getBoundingClientRect();
+                        return { left: r.left, top: r.top, width: r.width, height: r.height };
+                    }
+                } catch (e) { /* cross-origin, skip */ }
+            }
+            return null;
+        },
+        args: [frameName]
+    });
+    return rect;
+}
+
 async function runFullPageCapture(tab) {
     if (fpcInProgress) return;
     fpcInProgress = true;
@@ -85,22 +149,46 @@ async function runFullPageCapture(tab) {
         // not blocking on its multi-second scroll-and-stitch process.
         fpcExtraCaptures.forEach(capture => capture(tab));
 
-        const [{ result: metrics }] = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
+        // allFrames — Tradetech's schedule-edit page is a real <frameset>:
+        // the top document never scrolls (it's the empty frameset shell),
+        // the actual content lives in a named child frame (fr1/fr2, see
+        // upload-proof-relay.js's findSupportDocsButton() comment). Without
+        // this, only the top frame's (non-existent) scroll was measured,
+        // so the whole slice loop degenerated to one screenshot — silently
+        // dropping everything below the fold inside the real content frame.
+        const frameResults = await chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
             func: () => ({
-                totalHeight:    Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
-                viewportWidth:  window.innerWidth,
-                viewportHeight: window.innerHeight,
-                dpr:            window.devicePixelRatio || 1,
-                originalX:      window.scrollX,
-                originalY:      window.scrollY,
+                scrollHeight: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0),
+                clientHeight: window.innerHeight,
+                clientWidth:  window.innerWidth,
+                dpr:          window.devicePixelRatio || 1,
+                frameName:    window.name || "",
+                originalX:    window.scrollX,
+                originalY:    window.scrollY,
             })
         });
 
-        // captureVisibleTab returns device-pixel images (CSS px * dpr) —
-        // the stitched canvas must be sized/positioned in that space too.
-        const canvasWidth  = Math.round(metrics.viewportWidth * metrics.dpr);
-        const canvasHeight = Math.round(metrics.totalHeight   * metrics.dpr);
+        const topFrame = frameResults.find(f => f.frameId === 0);
+        let target = pickTargetFrame(frameResults);
+
+        // ponytail: only the single frame with the most overflow gets
+        // scrolled/stitched — a page with two independently-scrollable
+        // frames only fully captures the taller one. Matches Tradetech's
+        // real layout (one scrollable content frame under a static
+        // toolbar frame). Upgrade path if that ever changes: repeat the
+        // crop-and-paste per additional scrollable frame.
+        let rect = null;
+        if (target.frameId !== topFrame.frameId) {
+            rect = await findChildFrameRect(tab.id, target.result.frameName);
+            if (!rect) {
+                console.warn("[FullPageCapture] target frame's on-screen rect not found (nested deeper than one level, or unnamed) — falling back to top-frame-only capture");
+                target = topFrame;
+            }
+        }
+
+        const geometry = computeCaptureGeometry(topFrame, target, rect);
+        const { canvasWidth, canvasHeight, sliceViewportHeight } = geometry;
 
         if (canvasWidth > FPC_MAX_DIMENSION || canvasHeight > FPC_MAX_DIMENSION) {
             throw new Error(`Page is too large to capture (${canvasWidth}×${canvasHeight}px exceeds the ${FPC_MAX_DIMENSION}px canvas limit).`);
@@ -122,7 +210,8 @@ async function runFullPageCapture(tab) {
         // button) before scrolling, so it doesn't get captured once per
         // slice. visibility:hidden (not display:none) keeps layout/height
         // stable rather than reflowing the page mid-capture. Always
-        // restored in the finally block below, even on error.
+        // restored in the finally block below, even on error. Top-frame-
+        // only, same as before — out of scope for the iframe-reach fix.
         await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             func: () => {
@@ -137,12 +226,12 @@ async function runFullPageCapture(tab) {
         });
 
         try {
-            const slices = Math.max(1, Math.ceil(metrics.totalHeight / metrics.viewportHeight));
+            const slices = Math.max(1, Math.ceil(target.result.scrollHeight / sliceViewportHeight));
             for (let i = 0; i < slices; i++) {
-                const scrollY = Math.min(i * metrics.viewportHeight, metrics.totalHeight - metrics.viewportHeight);
+                const scrollY = Math.min(i * sliceViewportHeight, target.result.scrollHeight - sliceViewportHeight);
 
                 await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
+                    target: { tabId: tab.id, frameIds: [target.frameId] },
                     func: (y) => window.scrollTo(0, y),
                     args: [scrollY]
                 });
@@ -154,11 +243,10 @@ async function runFullPageCapture(tab) {
 
                 const dataUrl = await captureWithRetry(tab.windowId);
 
-                const sliceResp = await sendToTab(tab.id, {
-                    type: "FPC_SLICE",
-                    dataUrl,
-                    y: Math.round(scrollY * metrics.dpr)
-                });
+                const crop = geometry.cropRectFor(i);
+                const sliceResp = await sendToTab(tab.id, crop
+                    ? { type: "FPC_SLICE", dataUrl, cropRect: crop.cropRect, pasteY: crop.pasteY }
+                    : { type: "FPC_SLICE", dataUrl, y: Math.round(scrollY * topFrame.result.dpr) });
                 if (!sliceResp?.ok) throw new Error(sliceResp?.error || `Could not draw slice ${i + 1}/${slices}`);
             }
         } finally {
@@ -174,9 +262,9 @@ async function runFullPageCapture(tab) {
         }
 
         await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
+            target: { tabId: tab.id, frameIds: [target.frameId] },
             func: (x, y) => window.scrollTo(x, y),
-            args: [metrics.originalX, metrics.originalY]
+            args: [target.result.originalX, target.result.originalY]
         });
 
         const finishResp = await sendToTab(tab.id, { type: "FPC_FINISH" });

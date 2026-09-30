@@ -24,7 +24,16 @@
             if (message.type === "FPC_SLICE") {
                 const img = new Image();
                 img.onload = () => {
-                    ctx.drawImage(img, 0, message.y); // slice is already device-pixel-sized 1:1, no scaling needed
+                    if (message.cropRect) {
+                        // Only a child (frameset) content frame's own moving
+                        // region changed since slice 0 — everything else on
+                        // screen (toolbar/footer frames) is static and was
+                        // already drawn correctly by slice 0's full-image draw.
+                        const c = message.cropRect;
+                        ctx.drawImage(img, c.x, c.y, c.width, c.height, c.x, message.pasteY, c.width, c.height);
+                    } else {
+                        ctx.drawImage(img, 0, message.y); // slice is already device-pixel-sized 1:1, no scaling needed
+                    }
                     sendResponse({ ok: true });
                 };
                 img.onerror = () => sendResponse({ ok: false, error: "Could not decode a captured slice" });

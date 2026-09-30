@@ -285,7 +285,7 @@ flowchart LR
 | file | defines | used by |
 |---|---|---|
 | background-relay.js | renamingEnabled, ws, relayAvailable, pendingRenamingSend, awaitingRenamingEcho, batchJobRunning, connectWebSocket, broadcastRenameState, isRecognizedSchedulePage, AWR_AUDIT_SETTLE_MS, AWR_AUDIT_THROTTLE_MS, sleep, waitForTabComplete, RECEIPT_CAPTURE_SETTLE_MS, RECEIPT_CAPTURE_THROTTLE_MS, AWR_DATE_RESTORE_RECORDS, ddMmmYyyyToMmDdYy, setRelayAvailable | features/merge-download-signal-relay.js, features/rename-toggle-relay.js, features/schedule-capture-relay.js, features/service-relay-send-relay.js, utils/relay-socket-client.js, background.js |
-| background.js | fpcExtraCaptures, FPC_MAX_DIMENSION, FPC_MAX_AREA, FPC_SLICE_DELAY_MS, fpcInProgress, sendToTab, sleep, reportCaptureError | background-relay.js |
+| background.js | fpcExtraCaptures, FPC_MAX_DIMENSION, FPC_MAX_AREA, FPC_SLICE_DELAY_MS, fpcInProgress, pickTargetFrame, computeCaptureGeometry, sendToTab, sleep, reportCaptureError | background-relay.js |
 | core/boundary.js | PortSyncBoundary | features/date-syncing.js, features/manual-etd-highlight.js, features/port-highlighting.js |
 | features/arrival-depart-order-check.js | ArrivalDepartOrderCheck | features/insert-port.js, main.js |
 | features/auto-nav-schedules.js | AutoNavSchedules | features/due-service-scanner-relay.js, main.js |
