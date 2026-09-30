@@ -217,8 +217,19 @@ function locate(nodes, globalOffset) {
     }
     injectHighlightStyle(); // inert with nothing highlighted yet — safe to always add
 
-    const stored = await new Promise((resolve) => chrome.storage.local.get("ttHighlightEnabled", resolve));
-    highlightEnabled = !!stored.ttHighlightEnabled;
+    // On Tradetech, CustomRules' own localStorage is the real live value —
+    // read it directly (self-healing: anyone who'd already turned this on
+    // BEFORE chrome.storage.local mirroring existed would otherwise see it
+    // silently stop working here, since that mirror only gets written on
+    // the NEXT toggle, not retroactively for whatever was already set).
+    // Also re-writes the mirror every load, so it can't drift out of sync.
+    if (typeof CustomRules !== "undefined") {
+        highlightEnabled = CustomRules.isEnabled("enableCtrlDHighlight");
+        chrome.storage.local.set({ ttHighlightEnabled: highlightEnabled });
+    } else {
+        const stored = await new Promise((resolve) => chrome.storage.local.get("ttHighlightEnabled", resolve));
+        highlightEnabled = !!stored.ttHighlightEnabled;
+    }
     if (!highlightEnabled) return; // off — don't restore old highlights either, not just skip creating new ones
 
     try {
