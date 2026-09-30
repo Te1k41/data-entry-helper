@@ -339,6 +339,9 @@ async function runFullPageCapture(tab) {
 
             const cols = Math.max(1, Math.ceil(target.result.scrollWidth  / colStep));
             const rows = Math.max(1, Math.ceil(target.result.scrollHeight / rowStep));
+            const totalTiles = cols * rows;
+            let tileIndex = 0;
+            console.log(`[FullPageCapture] ${cols} cols × ${rows} rows = ${totalTiles} tiles (content ${target.result.scrollWidth}×${target.result.scrollHeight}px, step ${colStep}×${rowStep}px)`);
 
             for (let row = 0; row < rows; row++) {
                 const scrollY = Math.min(row * rowStep, target.result.scrollHeight - rowStep);
@@ -358,7 +361,8 @@ async function runFullPageCapture(tab) {
 
                     const dataUrl = await captureWithRetry(tab.windowId);
                     const { cropRect, pasteX, pasteY } = geometry.cropRectFor(col, row);
-                    const sliceResp = await sendToTab(tab.id, { type: "FPC_SLICE", dataUrl, cropRect, pasteX, pasteY });
+                    tileIndex++;
+                    const sliceResp = await sendToTab(tab.id, { type: "FPC_SLICE", dataUrl, cropRect, pasteX, pasteY, tileIndex, totalTiles });
                     if (!sliceResp?.ok) throw new Error(sliceResp?.error || `Could not draw tile row ${row + 1}/${rows} col ${col + 1}/${cols}`);
                 }
             }
