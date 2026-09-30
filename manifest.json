@@ -49,6 +49,7 @@
             "src/utils/button.js",
             "src/utils/relay-socket-client.js",
             "src/utils/toolbar.js",
+            "src/utils/draggable-panel.js",
             "src/utils/toolbar-relay.js",
             "src/utils/banner.js",
             "src/utils/dom.js",

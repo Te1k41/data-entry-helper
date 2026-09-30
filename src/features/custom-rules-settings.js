@@ -64,6 +64,8 @@ const CustomRulesSettings = {
         panel.appendChild(list);
         document.body.appendChild(panel);
 
+        DraggablePanel.enable(panel, header, "custom-rules");
+
         this._panel = panel;
         this._list  = list;
 

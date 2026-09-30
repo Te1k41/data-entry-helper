@@ -208,6 +208,8 @@ const AwrFlag = {
         panel.appendChild(inputRow);
         document.body.appendChild(panel);
 
+        DraggablePanel.enable(panel, header, "awr-services");
+
         this._servicesPanel = panel;
         this._servicesTags  = tags;
 

@@ -129,6 +129,8 @@ const HighlighterSettings = {
         panel.appendChild(body);
         document.body.appendChild(panel);
 
+        DraggablePanel.enable(panel, header, "highlighter");
+
         this._panel = panel;
         this._body  = body;
     },

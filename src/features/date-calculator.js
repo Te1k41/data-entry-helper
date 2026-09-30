@@ -61,7 +61,7 @@ const DateCalculator = {
         `;
 
         panel.innerHTML = `
-            <div style="font-weight:bold; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+            <div id="tt-date-calc-header" style="font-weight:bold; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
                 <span>🗓 Date Calc</span>
                 <span id="tt-date-calc-close" style="cursor:pointer;">✕</span>
             </div>
@@ -83,6 +83,8 @@ const DateCalculator = {
         `;
 
         document.body.appendChild(panel);
+
+        DraggablePanel.makeDraggable(panel, panel.querySelector("#tt-date-calc-header"), "date-calc");
 
         const baseInput     = panel.querySelector("#tt-date-calc-base");
         const offsetInput   = panel.querySelector("#tt-date-calc-offset");
@@ -144,7 +146,9 @@ const DateCalculator = {
         baseInput.addEventListener("input", () => touch("base"));
         offsetInput.addEventListener("input", () => touch("offset"));
         resultInput.addEventListener("input", () => touch("result"));
-        panel.querySelector("#tt-date-calc-close").addEventListener("click", () => panel.remove());
+        const closeSpan = panel.querySelector("#tt-date-calc-close");
+        closeSpan.addEventListener("mousedown", (e) => e.stopPropagation()); // don't let this start a header drag
+        closeSpan.addEventListener("click", () => panel.remove());
 
         // Click-only controls for all 3 fields — same click=±1,
         // Shift+click=±7 convention as DateStepButtons' own [−][+]
