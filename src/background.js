@@ -249,22 +249,39 @@ async function runFullPageCapture(tab) {
         // dropping everything below the fold inside the real content frame.
         const frameResults = await chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
-            func: () => ({
-                scrollWidth:  Math.max(document.documentElement.scrollWidth,  document.body ? document.body.scrollWidth  : 0),
-                scrollHeight: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0),
-                // documentElement.client* EXCLUDES that axis's own scrollbar
-                // strip (window.inner* does not) — using this as the step
-                // size is what keeps the scrollbar out of the stitched
-                // image, not a separate crop rule for it.
-                contentWidth:  document.documentElement.clientWidth,
-                contentHeight: document.documentElement.clientHeight,
-                clientWidth:  window.innerWidth,  // raw viewport size — only used for static-space-around-target math
-                clientHeight: window.innerHeight,
-                dpr:          window.devicePixelRatio || 1,
-                frameName:    window.name || "",
-                originalX:    window.scrollX,
-                originalY:    window.scrollY,
-            })
+            func: () => {
+                // document.scrollingElement is the browser's OWN answer to
+                // "which element is actually the page's scroll container" —
+                // document.documentElement in standards mode, but
+                // document.body in quirks mode (no <!DOCTYPE html>, common
+                // on old sites — confirmed live: a shipmentlink.com page
+                // with no doctype measured scrollWidth/scrollHeight as
+                // exactly equal to clientWidth/clientHeight, i.e. "nothing
+                // to scroll", when the page very much needed to scroll —
+                // documentElement.scrollHeight doesn't reliably reflect the
+                // true content height in quirks mode, body's does).
+                // window.scrollTo() itself also follows scrollingElement in
+                // both modes, so measuring the same element keeps this
+                // consistent with what actually scrolls, instead of
+                // guessing which one to hardcode per site.
+                const se = document.scrollingElement || document.documentElement;
+                return {
+                    scrollWidth:  se.scrollWidth,
+                    scrollHeight: se.scrollHeight,
+                    // *.client* EXCLUDES that axis's own scrollbar strip
+                    // (window.inner* does not) — using this as the step
+                    // size is what keeps the scrollbar out of the stitched
+                    // image, not a separate crop rule for it.
+                    contentWidth:  se.clientWidth,
+                    contentHeight: se.clientHeight,
+                    clientWidth:  window.innerWidth,  // raw viewport size — only used for static-space-around-target math
+                    clientHeight: window.innerHeight,
+                    dpr:          window.devicePixelRatio || 1,
+                    frameName:    window.name || "",
+                    originalX:    window.scrollX,
+                    originalY:    window.scrollY,
+                };
+            }
         });
 
         const topFrame = frameResults.find(f => f.frameId === 0);
