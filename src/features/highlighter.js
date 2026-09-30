@@ -1,14 +1,34 @@
 // ============================================================
 //  highlighter.js
-//  Four independent highlighter "slots" (manifest.json's "commands":
-//  highlight-1..4), each its own keyboard shortcut + color — shortcut
-//  assigned in chrome://extensions/shortcuts (browser-level, see below
-//  for why), color picked in the Highlighter settings panel
+//  Four independent highlighter "slots", each its own keyboard
+//  shortcut + color, both assigned from the Highlighter settings panel
 //  (highlighter-settings.js, Tradetech-only). Trigger a slot on a text
 //  selection → highlights it in that slot's color. Click an existing
 //  highlight → un-highlights it. Runs on every site, but does nothing
 //  at all unless the master switch is turned on in that settings panel
 //  — see highlightEnabled below.
+//
+//  TWO independent shortcut mechanisms, both live at once:
+//   1. Self-service (primary): the settings panel records a raw key
+//      combo (any key the user actually presses in the panel) into
+//      chrome.storage.local ("ttHighlightShortcuts"), and the plain
+//      keydown listener below matches against it directly — assigned
+//      entirely from our own tool, no browser settings page involved.
+//      Works for anything the browser itself doesn't already reserve.
+//   2. chrome.commands (manifest.json's "commands": highlight-1..4,
+//      background.js relays them as TOGGLE_HIGHLIGHT_SHORTCUT messages)
+//      — handled by the browser itself, one level above page scripts,
+//      so a shortcut manually assigned to it in chrome://extensions/
+//      shortcuts can claim a normally browser-reserved combo (like
+//      Ctrl+D — confirmed live, this is the only way that specific
+//      class of key actually works reliably; a page-level keydown +
+//      preventDefault() cannot suppress a reserved combo, which is
+//      exactly the "fighting with Edge Ctrl+D" bug this whole thing
+//      started from). Still the documented fallback for that one case.
+//  No collision between the two: when a combo IS bound at the
+//  chrome.commands level, the browser claims that keystroke before it
+//  ever reaches this page's own keydown listener at all, so recording
+//  the same combo in both places harmlessly never double-fires.
 //  Persists per-page via chrome.storage.local using a simplified
 //  W3C TextQuoteSelector ({exact, prefix, suffix}) since a DOM
 //  Range can't be serialized directly across reloads.
@@ -70,6 +90,7 @@ const activeRanges = new Map(HIGHLIGHT_SLOTS.map(slot => [slot, new Map()]));
 // storage on every keypress/click.
 let highlightEnabled = false;
 let slotColors = { ...DEFAULT_COLORS };
+let slotShortcuts = {}; // slot -> { ctrl, shift, alt, meta, key } | undefined (none recorded yet)
 
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
@@ -79,6 +100,35 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if ("ttHighlightColors" in changes) {
         slotColors = { ...DEFAULT_COLORS, ...(changes.ttHighlightColors.newValue || {}) };
         injectHighlightStyle();
+    }
+    if ("ttHighlightShortcuts" in changes) {
+        slotShortcuts = changes.ttHighlightShortcuts.newValue || {};
+    }
+});
+
+// True when `event` is exactly the recorded combo for `desc` — all
+// four modifiers compared explicitly (not just the ones the user held
+// down when recording), so e.g. a bare "Y" recording never matches a
+// Ctrl+Y keypress too.
+function eventMatchesShortcut(event, desc) {
+    if (!desc || !desc.key) return false;
+    return !!event.ctrlKey === !!desc.ctrl
+        && !!event.shiftKey === !!desc.shift
+        && !!event.altKey === !!desc.alt
+        && !!event.metaKey === !!desc.meta
+        && event.key.toLowerCase() === desc.key;
+}
+
+// Self-service path (see file header) — every keystroke on every site
+// gets checked against whatever's been recorded, so this has to stay
+// cheap: a plain object lookup per slot, no DOM work unless something
+// actually matches.
+document.addEventListener("keydown", (event) => {
+    for (const slot of HIGHLIGHT_SLOTS) {
+        if (!eventMatchesShortcut(event, slotShortcuts[slot])) continue;
+        event.preventDefault();
+        createHighlightFromSelection(slot);
+        return;
     }
 });
 
@@ -264,9 +314,10 @@ function locate(nodes, globalOffset) {
     }
 
     const stored = await new Promise((resolve) =>
-        chrome.storage.local.get(["ttHighlightEnabled", "ttHighlightColors"], resolve));
+        chrome.storage.local.get(["ttHighlightEnabled", "ttHighlightColors", "ttHighlightShortcuts"], resolve));
     highlightEnabled = !!stored.ttHighlightEnabled;
     slotColors = { ...DEFAULT_COLORS, ...(stored.ttHighlightColors || {}) };
+    slotShortcuts = stored.ttHighlightShortcuts || {};
 
     injectHighlightStyle(); // inert with nothing highlighted yet — safe to always add, even if off
     if (!highlightEnabled) return; // off — don't restore old highlights either, not just skip creating new ones
