@@ -22,6 +22,13 @@
 
   "action": {},
 
+  "commands": {
+      "toggle-highlight": {
+          "suggested_key": { "default": "Ctrl+Shift+H" },
+          "description": "Highlight the current text selection"
+      }
+  },
+
 "content_scripts": [
     {
         "matches": [

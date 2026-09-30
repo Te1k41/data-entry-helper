@@ -301,7 +301,7 @@ flowchart LR
 | features/fix-vessel-dates.js | FixVesselDates | features/custom-rules-settings.js, main.js |
 | features/force-tab-links.js | open | background-relay.js, background.js, features/duplicate-vessel-check.js, features/full-page-capture-inject.js, features/keyboard-navigation.js, features/port-highlighting.js, features/rename-toggle-relay.js, features/schedule-preview-tools-relay.js, features/schedule-table-scrape-relay.js, features/service-relay-send-relay.js, features/upload-proof-relay.js, utils/relay-socket-client.js |
 | features/full-page-capture-inject.js | - | - |
-| features/highlighter.js | CONTEXT_RADIUS, HIGHLIGHT_NAME, activeRanges, refreshHighlightPaint, injectHighlightStyle, storageKey, loadHighlights, captureContext, findRange, locate | features/live-check-relay.js |
+| features/highlighter.js | CONTEXT_RADIUS, HIGHLIGHT_NAME, activeRanges, highlightEnabled, refreshHighlightPaint, injectHighlightStyle, storageKey, loadHighlights, captureContext, createHighlightFromSelection, findRange, locate | features/live-check-relay.js |
 | features/insert-port.js | portField, portDateField, readPortRow, writePortRow, blankPortRowValues, PortActionHistory, InsertPort, DeletePort | features/port-name-reminder.js, features/save-confirmation.js, main.js |
 | features/keyboard-navigation.js | KeyboardFieldNav | main.js |
 | features/last-foreign-port-check.js | LastForeignPortCheck | main.js |

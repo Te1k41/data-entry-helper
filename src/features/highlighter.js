@@ -1,7 +1,10 @@
 // ============================================================
 //  highlighter.js
-//  Ctrl+D on a text selection → highlights it yellow.
-//  Click an existing highlight → un-highlights it.
+//  A keyboard shortcut (manifest.json "commands", default Ctrl+Shift+H)
+//  on a text selection → highlights it yellow. Click an existing
+//  highlight → un-highlights it. Runs on every site, but does nothing
+//  at all unless "Enable Ctrl+D Highlight" is turned on in the Custom
+//  Rules settings panel (Tradetech only) — see highlightEnabled below.
 //  Persists per-page via chrome.storage.local using a simplified
 //  W3C TextQuoteSelector ({exact, prefix, suffix}) since a DOM
 //  Range can't be serialized directly across reloads.
@@ -30,6 +33,24 @@ const HIGHLIGHT_NAME = "tt-highlight";
 // id -> Range, the live source of truth CSS.highlights.set() is
 // rebuilt from on every add/remove.
 const activeRanges = new Map();
+
+// This feature's own on/off switch, "Enable Ctrl+D Highlight" in the
+// Custom Rules settings panel — but that panel only exists on
+// Tradetech, and its storage (CustomRules, localStorage) is per-origin,
+// so it could never be seen from any other site this file runs on.
+// custom-rules.js mirrors it into chrome.storage.local (shared across
+// every origin) specifically so this one flag can be checked here,
+// everywhere, from a single source of truth. Cached + kept live via
+// onChanged rather than re-reading storage on every keypress. Starts
+// resolved false (off) until the initial read below finishes — no
+// window where a stale/default-on value could create a highlight
+// before this file has actually checked.
+let highlightEnabled = false;
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && "ttHighlightEnabled" in changes) {
+        highlightEnabled = !!changes.ttHighlightEnabled.newValue;
+    }
+});
 
 function refreshHighlightPaint() {
     CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...activeRanges.values()));
@@ -79,23 +100,29 @@ function captureContext(range) {
     };
 }
 
-// ── Create on Ctrl+D ────────────────────────────────────────
-// Togglable via Custom Rules on Tradetech only (that's the only place
-// the settings panel exists — CustomRules isn't loaded on other
-// sites, so the typeof guard leaves this always-on everywhere else).
-document.addEventListener("keydown", (event) => {
-    if (!(event.ctrlKey && event.key.toLowerCase() === "d")) return;
-    if (typeof CustomRules !== "undefined" && !CustomRules.isEnabled("enableCtrlDHighlight")) return;
+// ── Create on the toggle-highlight shortcut ──────────────────
+// Triggered via chrome.commands (background.js relays it here as a
+// runtime message), NOT a raw keydown listener. Ctrl+D — the shortcut
+// this used to hardcode — is a browser-reserved combo (bookmark this
+// page); a page-script keydown + preventDefault() can't reliably
+// suppress it, so it fought with the browser's own action (reported
+// live: "our Ctrl+D is fighting with Edge Ctrl+D"). chrome.commands is
+// handled by the browser itself, one level above page scripts, so a
+// manually-assigned shortcut (chrome://extensions/shortcuts) actually
+// wins instead of merely racing it. See manifest.json's "commands" key
+// for the current default binding.
+//
+// Gated on highlightEnabled (see above) — same flag everywhere,
+// Tradetech included, so the toggle actually means the same thing on
+// every site rather than only being enforced where the settings panel
+// happens to live.
+function createHighlightFromSelection() {
+    if (!highlightEnabled) return;
 
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
     const text = selection.toString();
     if (!text.trim()) return;
-
-    // Ctrl+D is normally "bookmark this page" — preventDefault() suppresses
-    // that (needs real-Chrome verification across versions/OSes, not
-    // testable from this environment).
-    event.preventDefault();
 
     // Cloned so it stays valid once the Selection itself is cleared below —
     // Selection.getRangeAt() can hand back a reference tied to the
@@ -110,6 +137,10 @@ document.addEventListener("keydown", (event) => {
     refreshHighlightPaint();
 
     saveHighlight({ id, exact: text, prefix, suffix });
+}
+
+chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "TOGGLE_HIGHLIGHT_SHORTCUT") createHighlightFromSelection();
 });
 
 // ── Remove on click ──────────────────────────────────────────
@@ -184,7 +215,11 @@ function locate(nodes, globalOffset) {
         console.warn("[Highlighter] CSS Custom Highlight API not available in this browser — highlighting disabled");
         return;
     }
-    injectHighlightStyle();
+    injectHighlightStyle(); // inert with nothing highlighted yet — safe to always add
+
+    const stored = await new Promise((resolve) => chrome.storage.local.get("ttHighlightEnabled", resolve));
+    highlightEnabled = !!stored.ttHighlightEnabled;
+    if (!highlightEnabled) return; // off — don't restore old highlights either, not just skip creating new ones
 
     try {
         const list = await loadHighlights();

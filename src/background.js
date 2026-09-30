@@ -48,6 +48,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 });
 
+// ── Highlighter shortcut (chrome.commands, not a raw keydown listener) ──
+// Ctrl+D used to be caught via a content-script keydown + preventDefault(),
+// but that's a page-level shortcut, and Ctrl+D is a browser-reserved one
+// (bookmark this page) — preventDefault() from a page script can't
+// reliably suppress it, so it kept firing alongside our own highlight
+// (reported live: "our Ctrl+D is fighting with Edge Ctrl+D"). A
+// chrome.commands binding is handled by the browser itself, one level
+// above page scripts, so once a user manually assigns a command's
+// shortcut to a normally-reserved combo (chrome://extensions/shortcuts
+// or edge://extensions/shortcuts), the browser lets that command claim
+// it instead — the only sanctioned way to actually override one.
+// Defaults to Ctrl+Shift+H (unclaimed by Chrome/Edge) since a
+// "suggested_key" can't auto-bind to an already-reserved combo; anyone
+// who specifically wants Ctrl+D back has to rebind it there themselves.
+chrome.commands.onCommand.addListener((command, tab) => {
+    if (command === "toggle-highlight" && tab?.id) {
+        chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_HIGHLIGHT_SHORTCUT" });
+    }
+});
+
 // ── Full Page Capture ────────────────────────────────────────
 // GoFullPage replacement. Triggered by the toolbar icon (an activeTab
 // gesture), NOT a popup — manifest.json's "action" has no default_popup,

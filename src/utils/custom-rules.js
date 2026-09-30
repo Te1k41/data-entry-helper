@@ -119,5 +119,16 @@ const CustomRules = {
 
     setEnabled(id, enabled) {
         localStorage.setItem(this.STORAGE_PREFIX + id, enabled ? "1" : "0");
+
+        // enableCtrlDHighlight is the one rule that actually needs to be
+        // seen OUTSIDE Tradetech (highlighter.js runs on <all_urls>) —
+        // localStorage is per-origin, so a toggle made here (Tradetech's
+        // origin, the only place this settings panel exists) could never
+        // reach any other site. chrome.storage.local is shared across
+        // every origin's content scripts, so mirror it there too —
+        // highlighter.js reads THIS, not CustomRules, everywhere.
+        if (id === "enableCtrlDHighlight") {
+            chrome.storage.local.set({ ttHighlightEnabled: enabled });
+        }
     }
 };
