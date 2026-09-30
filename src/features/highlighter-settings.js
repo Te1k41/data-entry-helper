@@ -140,11 +140,21 @@ const HighlighterSettings = {
     // no reload needed) — a slot whose key field is left blank keeps
     // whatever was already saved for it, so setting just one slot doesn't
     // wipe the other three.
+    //
+    // Does NOT also bind these at the browser level — there is no API for
+    // that. chrome.commands has exactly one method, getAll() (read-only);
+    // confirmed directly against the official docs — no update()/set(),
+    // and chrome://extensions/shortcuts is a privileged page no content
+    // script can be injected into or write to. The only sanctioned way a
+    // shortcut becomes a real browser-level binding is the user typing it
+    // into that page themselves. Best this can do: show exactly what was
+    // just picked so that's a copy job, not a lookup — see the banner
+    // built below and the "Browser shortcut settings" button underneath.
     saveAllShortcuts() {
         const stored = {};
-        const warnings = [];
+        const lines = [];
 
-        HIGHLIGHT_SLOTS_FOR_SETTINGS.forEach((slot) => {
+        HIGHLIGHT_SLOTS_FOR_SETTINGS.forEach((slot, i) => {
             const inputs = this._slotInputs?.[slot];
             if (!inputs) return;
             const key = inputs.keyInput.value.trim().toLowerCase();
@@ -152,9 +162,8 @@ const HighlighterSettings = {
 
             const desc = { ctrl: inputs.ctrlCb.checked, shift: inputs.shiftCb.checked, alt: inputs.altCb.checked, key };
             stored[slot] = desc;
-            if (isReservedCombo(desc)) {
-                warnings.push(`"${formatShortcut(desc)}" (Highlight ${HIGHLIGHT_SLOTS_FOR_SETTINGS.indexOf(slot) + 1}) is a browser shortcut too — it may not fire reliably. Use "Browser shortcut settings" below for that one instead.`);
-            }
+            const reserved = isReservedCombo(desc);
+            lines.push(`${reserved ? "⚠ " : ""}Highlight ${i + 1} → ${formatShortcut(desc)}${reserved ? " (browser-reserved)" : ""}`);
         });
 
         if (Object.keys(stored).length === 0) return; // nothing entered, nothing to save
@@ -162,15 +171,15 @@ const HighlighterSettings = {
         chrome.storage.local.get("ttHighlightShortcuts", (existing) => {
             const shortcuts = { ...(existing.ttHighlightShortcuts || {}), ...stored };
             chrome.storage.local.set({ ttHighlightShortcuts: shortcuts });
-            this._warning = warnings.length ? warnings.join(" ") : null;
+            this._saveSummary = lines;
             this.render();
         });
     },
 
     async render() {
         if (!this._body) return;
-        const warning = this._warning;
-        this._warning = null;
+        const saveSummary = this._saveSummary;
+        this._saveSummary = null;
         this._slotInputs = {};
 
         const stored = await new Promise((resolve) =>
@@ -188,11 +197,19 @@ const HighlighterSettings = {
 
         this._body.innerHTML = "";
 
-        if (warning) {
-            const warn = document.createElement("div");
-            warn.textContent = "⚠️ " + warning;
-            warn.style.cssText = "padding: 6px 10px !important; background: #fff3cd !important; color: #000000 !important; font-size: 9px !important; line-height: 1.4 !important;";
-            this._body.appendChild(warn);
+        if (saveSummary && saveSummary.length) {
+            const box = document.createElement("div");
+            box.style.cssText = "padding: 6px 10px !important; background: #fff3cd !important; color: #000000 !important; font-size: 9px !important; line-height: 1.5 !important;";
+            const heading = document.createElement("div");
+            heading.textContent = "Saved here. To ALSO make these real browser shortcuts, type them into \"Browser shortcut settings\" below:";
+            heading.style.cssText = "font-weight: bold !important; margin-bottom: 3px !important;";
+            box.appendChild(heading);
+            saveSummary.forEach((line) => {
+                const row = document.createElement("div");
+                row.textContent = line;
+                box.appendChild(row);
+            });
+            this._body.appendChild(box);
         }
 
         // Master switch
