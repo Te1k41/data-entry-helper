@@ -127,47 +127,55 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 // Picks whichever frame actually needs scrolling: the one with the most
-// overflow (scrollHeight beyond its own clientHeight). On an ordinary
+// overflow, horizontal + vertical combined (scrollWidth/scrollHeight
+// beyond its own contentWidth/contentHeight). On an ordinary
 // (non-frameset) page there's only one frame, so this always resolves to
 // the top frame — identical to the old top-frame-only behavior. Exposed
 // as a pure function (no chrome.* calls) so it's unit-testable directly.
 function pickTargetFrame(frameResults) {
     const topFrame = frameResults.find(f => f.frameId === 0);
-    return frameResults.reduce((best, f) => {
-        const bestOverflow = best.result.scrollHeight - best.result.clientHeight;
-        const overflow     = f.result.scrollHeight - f.result.clientHeight;
-        return overflow > bestOverflow ? f : best;
-    }, topFrame);
+    const overflowOf = (r) => Math.max(0, r.scrollWidth - r.contentWidth) + Math.max(0, r.scrollHeight - r.contentHeight);
+    return frameResults.reduce((best, f) =>
+        overflowOf(f.result) > overflowOf(best.result) ? f : best, topFrame);
 }
 
-// canvasWidth/canvasHeight in device px, plus per-slice crop/paste info
-// when the target is a child frame (needs its on-screen rect within the
-// top frame's viewport; null rect means "just use the top frame instead,
-// full-viewport slices" — same shape chosen either way so callers don't
-// branch on it). Pure function, unit-testable without chrome.* mocking.
+// canvasWidth/canvasHeight in device px, the column/row step size (each
+// EXCLUDING that frame's own scrollbar strip — document.documentElement.
+// clientWidth/clientHeight, not window.innerWidth/innerHeight, deliberately;
+// the difference between the two IS the scrollbar's own thickness, so
+// using the smaller "content" measurement is what keeps the scrollbar out
+// of the stitched result instead of needing a separate crop step for it),
+// plus per-tile crop/paste info. `backgroundRect` is null when the target
+// IS the whole tab viewport (nothing static surrounds it to pre-fill);
+// otherwise it's the one-time full-viewport snapshot the caller should
+// draw at canvas (0,0) BEFORE the main tile loop, to fill in whatever's
+// outside the target frame's own footprint (header/footer/side frames) —
+// the main loop's tiles then fully overpaint the target's own footprint
+// on top of it. Pure function, unit-testable without chrome.* mocking.
 function computeCaptureGeometry(topFrame, target, rect) {
     const dpr = topFrame.result.dpr;
-    const canvasWidth = Math.round(topFrame.result.clientWidth * dpr);
+    const t = target.result;
+    const isTopFrame = target.frameId === topFrame.frameId || !rect;
 
-    if (target.frameId === topFrame.frameId || !rect) {
-        return {
-            canvasWidth,
-            canvasHeight: Math.round(target.result.scrollHeight * dpr),
-            sliceViewportHeight: target.result.clientHeight,
-            cropRectFor: () => null, // top-frame path never crops — plain full-slice draw
-        };
-    }
+    const originLeft = isTopFrame ? 0 : rect.left;
+    const originTop  = isTopFrame ? 0 : rect.top;
+    const staticRight = isTopFrame ? 0 : topFrame.result.clientWidth  - rect.left - rect.width;
+    const staticBelow = isTopFrame ? 0 : topFrame.result.clientHeight - rect.top  - rect.height;
 
-    const staticBelow = topFrame.result.clientHeight - rect.top - rect.height;
-    const canvasHeight = Math.round((rect.top + target.result.scrollHeight + staticBelow) * dpr);
     return {
-        canvasWidth,
-        canvasHeight,
-        sliceViewportHeight: target.result.clientHeight,
-        cropRectFor: (sliceIndex) => sliceIndex === 0 ? null : {
-            cropRect: { x: rect.left * dpr, y: rect.top * dpr, width: rect.width * dpr, height: rect.height * dpr },
-            pasteY: Math.round((rect.top + sliceIndex * target.result.clientHeight) * dpr),
+        canvasWidth:  Math.round((originLeft + t.scrollWidth  + staticRight) * dpr),
+        canvasHeight: Math.round((originTop  + t.scrollHeight + staticBelow) * dpr),
+        colStep: t.contentWidth,
+        rowStep: t.contentHeight,
+        backgroundRect: isTopFrame ? null : {
+            width:  Math.round(topFrame.result.clientWidth  * dpr),
+            height: Math.round(topFrame.result.clientHeight * dpr),
         },
+        cropRectFor: (col, row) => ({
+            cropRect: { x: originLeft * dpr, y: originTop * dpr, width: t.contentWidth * dpr, height: t.contentHeight * dpr },
+            pasteX: Math.round((originLeft + col * t.contentWidth)  * dpr),
+            pasteY: Math.round((originTop  + row * t.contentHeight) * dpr),
+        }),
     };
 }
 
@@ -208,9 +216,16 @@ async function runFullPageCapture(tab) {
         const frameResults = await chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             func: () => ({
+                scrollWidth:  Math.max(document.documentElement.scrollWidth,  document.body ? document.body.scrollWidth  : 0),
                 scrollHeight: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0),
+                // documentElement.client* EXCLUDES that axis's own scrollbar
+                // strip (window.inner* does not) — using this as the step
+                // size is what keeps the scrollbar out of the stitched
+                // image, not a separate crop rule for it.
+                contentWidth:  document.documentElement.clientWidth,
+                contentHeight: document.documentElement.clientHeight,
+                clientWidth:  window.innerWidth,  // raw viewport size — only used for static-space-around-target math
                 clientHeight: window.innerHeight,
-                clientWidth:  window.innerWidth,
                 dpr:          window.devicePixelRatio || 1,
                 frameName:    window.name || "",
                 originalX:    window.scrollX,
@@ -237,7 +252,7 @@ async function runFullPageCapture(tab) {
         }
 
         const geometry = computeCaptureGeometry(topFrame, target, rect);
-        const { canvasWidth, canvasHeight, sliceViewportHeight } = geometry;
+        const { canvasWidth, canvasHeight, colStep, rowStep, backgroundRect } = geometry;
 
         if (canvasWidth > FPC_MAX_DIMENSION || canvasHeight > FPC_MAX_DIMENSION) {
             throw new Error(`Page is too large to capture (${canvasWidth}×${canvasHeight}px exceeds the ${FPC_MAX_DIMENSION}px canvas limit).`);
@@ -275,28 +290,43 @@ async function runFullPageCapture(tab) {
         });
 
         try {
-            const slices = Math.max(1, Math.ceil(target.result.scrollHeight / sliceViewportHeight));
-            for (let i = 0; i < slices; i++) {
-                const scrollY = Math.min(i * sliceViewportHeight, target.result.scrollHeight - sliceViewportHeight);
+            // One-time static-chrome background snapshot (header/footer/
+            // side frames outside the target's own footprint) — only
+            // needed when the target ISN'T the whole viewport. Captured at
+            // whatever scroll position the target already happens to be
+            // at; doesn't matter, the main loop below fully overpaints the
+            // target's own footprint (including any of its own scrollbar-
+            // strip remnants baked into this one snapshot) regardless.
+            if (backgroundRect) {
+                const bgDataUrl = await captureWithRetry(tab.windowId);
+                const bgResp = await sendToTab(tab.id, { type: "FPC_SLICE", dataUrl: bgDataUrl, pasteX: 0, pasteY: 0 });
+                if (!bgResp?.ok) throw new Error(bgResp?.error || "Could not draw background layer");
+            }
 
-                await chrome.scripting.executeScript({
-                    target: { tabId: tab.id, frameIds: [target.frameId] },
-                    func: (y) => window.scrollTo(0, y),
-                    args: [scrollY]
-                });
+            const cols = Math.max(1, Math.ceil(target.result.scrollWidth  / colStep));
+            const rows = Math.max(1, Math.ceil(target.result.scrollHeight / rowStep));
 
-                // ponytail: fixed delay, no scroll-completion/lazy-image-load
-                // detection. Upgrade path if a real page proves flaky: double
-                // rAF or a short MutationObserver-based debounce before capture.
-                await sleep(FPC_SLICE_DELAY_MS);
+            for (let row = 0; row < rows; row++) {
+                const scrollY = Math.min(row * rowStep, target.result.scrollHeight - rowStep);
+                for (let col = 0; col < cols; col++) {
+                    const scrollX = Math.min(col * colStep, target.result.scrollWidth - colStep);
 
-                const dataUrl = await captureWithRetry(tab.windowId);
+                    await chrome.scripting.executeScript({
+                        target: { tabId: tab.id, frameIds: [target.frameId] },
+                        func: (x, y) => window.scrollTo(x, y),
+                        args: [scrollX, scrollY]
+                    });
 
-                const crop = geometry.cropRectFor(i);
-                const sliceResp = await sendToTab(tab.id, crop
-                    ? { type: "FPC_SLICE", dataUrl, cropRect: crop.cropRect, pasteY: crop.pasteY }
-                    : { type: "FPC_SLICE", dataUrl, y: Math.round(scrollY * topFrame.result.dpr) });
-                if (!sliceResp?.ok) throw new Error(sliceResp?.error || `Could not draw slice ${i + 1}/${slices}`);
+                    // ponytail: fixed delay, no scroll-completion/lazy-image-load
+                    // detection. Upgrade path if a real page proves flaky: double
+                    // rAF or a short MutationObserver-based debounce before capture.
+                    await sleep(FPC_SLICE_DELAY_MS);
+
+                    const dataUrl = await captureWithRetry(tab.windowId);
+                    const { cropRect, pasteX, pasteY } = geometry.cropRectFor(col, row);
+                    const sliceResp = await sendToTab(tab.id, { type: "FPC_SLICE", dataUrl, cropRect, pasteX, pasteY });
+                    if (!sliceResp?.ok) throw new Error(sliceResp?.error || `Could not draw tile row ${row + 1}/${rows} col ${col + 1}/${cols}`);
+                }
             }
         } finally {
             await chrome.scripting.executeScript({

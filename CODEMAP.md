@@ -37,6 +37,7 @@ flowchart LR
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> core_boundary_js["core/boundary.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_awr_flag_js["features/awr-flag.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_date_calculator_js["features/date-calculator.js"]
+  features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_full_page_capture_inject_js["features/full-page-capture-inject.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_highlighter_settings_js["features/highlighter-settings.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_keyboard_navigation_js["features/keyboard-navigation.js"]
   features_awr_audit_relay_js["features/awr-audit-relay.js"] --> features_live_check_relay_js["features/live-check-relay.js"]
@@ -125,6 +126,7 @@ flowchart LR
   features_rotation_receipt_capture_relay_js["features/rotation-receipt-capture-relay.js"] --> features_awr_audit_relay_js["features/awr-audit-relay.js"]
   features_rotation_receipt_capture_relay_js["features/rotation-receipt-capture-relay.js"] --> features_awr_flag_js["features/awr-flag.js"]
   features_rotation_receipt_capture_relay_js["features/rotation-receipt-capture-relay.js"] --> features_date_calculator_js["features/date-calculator.js"]
+  features_rotation_receipt_capture_relay_js["features/rotation-receipt-capture-relay.js"] --> features_full_page_capture_inject_js["features/full-page-capture-inject.js"]
   features_rotation_receipt_capture_relay_js["features/rotation-receipt-capture-relay.js"] --> features_highlighter_settings_js["features/highlighter-settings.js"]
   features_rotation_receipt_capture_relay_js["features/rotation-receipt-capture-relay.js"] --> features_keyboard_navigation_js["features/keyboard-navigation.js"]
   features_rotation_receipt_capture_relay_js["features/rotation-receipt-capture-relay.js"] --> features_live_check_relay_js["features/live-check-relay.js"]
@@ -294,7 +296,7 @@ flowchart LR
 | core/boundary.js | PortSyncBoundary | features/date-syncing.js, features/manual-etd-highlight.js, features/port-highlighting.js |
 | features/arrival-depart-order-check.js | ArrivalDepartOrderCheck | features/insert-port.js, main.js |
 | features/auto-nav-schedules.js | AutoNavSchedules | features/due-service-scanner-relay.js, main.js |
-| features/awr-audit-relay.js | top, AwrAudit | background-relay.js, core/boundary.js, features/awr-flag.js, features/date-calculator.js, features/highlighter-settings.js, features/keyboard-navigation.js, features/live-check-relay.js, features/notes-sidebar.js, features/port-name-reminder.js, features/rename-toggle-relay.js, features/rotation-receipt-capture-relay.js, features/save-confirmation.js, features/schedule-preview-tools-relay.js, features/tradetech-stars.js, features/upload-proof-relay.js, features/vessel-name-reminder.js, features/vessel-recommendation.js, features/voyage-direction.js, utils/banner.js, utils/button.js, utils/toolbar.js, features/custom-rules-settings.js, main.js |
+| features/awr-audit-relay.js | top, AwrAudit | background-relay.js, core/boundary.js, features/awr-flag.js, features/date-calculator.js, features/full-page-capture-inject.js, features/highlighter-settings.js, features/keyboard-navigation.js, features/live-check-relay.js, features/notes-sidebar.js, features/port-name-reminder.js, features/rename-toggle-relay.js, features/rotation-receipt-capture-relay.js, features/save-confirmation.js, features/schedule-preview-tools-relay.js, features/tradetech-stars.js, features/upload-proof-relay.js, features/vessel-name-reminder.js, features/vessel-recommendation.js, features/voyage-direction.js, utils/banner.js, utils/button.js, utils/toolbar.js, features/custom-rules-settings.js, main.js |
 | features/awr-flag.js | AwrFlag | background-relay.js, main.js |
 | features/custom-rules-settings.js | CustomRulesSettings | main.js |
 | features/date-calculator.js | DateCalculator | main.js |
@@ -324,7 +326,7 @@ flowchart LR
 | features/rearrange-vessels.js | RearrangeVessels | features/schedule-capture-relay.js, main.js |
 | features/rename-toggle-relay.js | RenameToggle | rename-toggle-init-relay.js |
 | features/resize-toggle.js | ResizeToggleOff | main.js |
-| features/rotation-receipt-capture-relay.js | top, RotationReceiptCapture | background-relay.js, core/boundary.js, features/awr-audit-relay.js, features/awr-flag.js, features/date-calculator.js, features/highlighter-settings.js, features/keyboard-navigation.js, features/live-check-relay.js, features/notes-sidebar.js, features/port-name-reminder.js, features/rename-toggle-relay.js, features/save-confirmation.js, features/schedule-preview-tools-relay.js, features/tradetech-stars.js, features/upload-proof-relay.js, features/vessel-name-reminder.js, features/vessel-recommendation.js, features/voyage-direction.js, utils/banner.js, utils/button.js, utils/toolbar.js, features/custom-rules-settings.js, main.js |
+| features/rotation-receipt-capture-relay.js | top, RotationReceiptCapture | background-relay.js, core/boundary.js, features/awr-audit-relay.js, features/awr-flag.js, features/date-calculator.js, features/full-page-capture-inject.js, features/highlighter-settings.js, features/keyboard-navigation.js, features/live-check-relay.js, features/notes-sidebar.js, features/port-name-reminder.js, features/rename-toggle-relay.js, features/save-confirmation.js, features/schedule-preview-tools-relay.js, features/tradetech-stars.js, features/upload-proof-relay.js, features/vessel-name-reminder.js, features/vessel-recommendation.js, features/voyage-direction.js, utils/banner.js, utils/button.js, utils/toolbar.js, features/custom-rules-settings.js, main.js |
 | features/save-confirmation.js | SaveConfirmation | background-relay.js, features/rotation-receipt-capture-relay.js, main.js |
 | features/schedule-capture-relay.js | ScheduleCapture | main.js |
 | features/schedule-cascade.js | ScheduleCascade | features/date-step-buttons.js, features/vessel-recommendation.js, main.js |

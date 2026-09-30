@@ -25,14 +25,19 @@
                 const img = new Image();
                 img.onload = () => {
                     if (message.cropRect) {
-                        // Only a child (frameset) content frame's own moving
-                        // region changed since slice 0 — everything else on
-                        // screen (toolbar/footer frames) is static and was
-                        // already drawn correctly by slice 0's full-image draw.
+                        // Every regular tile: crop out everything except that
+                        // tile's own content box (already scrollbar-excluded
+                        // by background.js's use of documentElement.client*
+                        // as the step size) and paste at its stitched position.
                         const c = message.cropRect;
-                        ctx.drawImage(img, c.x, c.y, c.width, c.height, c.x, message.pasteY, c.width, c.height);
+                        ctx.drawImage(img, c.x, c.y, c.width, c.height, message.pasteX, message.pasteY, c.width, c.height);
                     } else {
-                        ctx.drawImage(img, 0, message.y); // slice is already device-pixel-sized 1:1, no scaling needed
+                        // The one-time background pass only (frameset case):
+                        // draw the whole raw screenshot as-is, to fill in
+                        // whatever's outside the target frame's own footprint
+                        // (a header/footer/side frame) before the tiles above
+                        // start overpainting that footprint on top of it.
+                        ctx.drawImage(img, message.pasteX, message.pasteY);
                     }
                     sendResponse({ ok: true });
                 };
