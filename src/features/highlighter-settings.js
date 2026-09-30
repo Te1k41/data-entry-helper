@@ -7,13 +7,19 @@
 //    - each of the 4 highlight slots' color (a plain <input type=color>,
 //      written straight to chrome.storage.local — no browser limitation
 //      here, unlike the shortcut itself)
-//    - each slot's CUSTOM shortcut — click "Set", press any key combo,
-//      done. Recorded straight into chrome.storage.local
+//    - each slot's CUSTOM shortcut — Ctrl/Shift/Alt checkboxes + a key
+//      field (a native <input list> — pick a suggestion or just type
+//      any key), then Save. Stored straight into chrome.storage.local
 //      ("ttHighlightShortcuts"); highlighter.js matches raw keydown
 //      events against it directly. Assigned entirely from this panel —
-//      no browser settings page involved. Warns (doesn't block) if the
-//      combo is one of a handful of well-known browser-reserved ones,
-//      since those specifically won't fire reliably this way.
+//      no browser settings page involved, and no live key-press capture
+//      either (that approach got stuck forever on any combo the browser
+//      fully swallows before page JS ever sees it, e.g. Ctrl+T/N/W —
+//      picking from a list/typing a key sidesteps that: building the
+//      combo never involves the browser actually acting on it). Warns
+//      (doesn't block) if the combo is one of a handful of well-known
+//      browser-reserved ones, since those specifically won't fire
+//      reliably once actually used, regardless of how they were set.
 //    - each slot's chrome.commands-BOUND shortcut, read-only (fetched
 //      from background.js, since chrome.commands isn't available to
 //      content scripts at all) — plus a button that opens
@@ -31,10 +37,11 @@
 
 // Best-effort, not exhaustive — combos Chrome/Edge are known to reserve
 // at the browser-chrome level, where a page-side keydown+preventDefault()
-// (what the self-service recorder relies on) can't reliably win. Anything
-// not on this list is assumed safe to record here; being wrong just means
-// a slot silently doesn't fire, same as picking a reserved one deliberately —
-// not a crash, just worth the warning so it's not a surprise.
+// (what highlighter.js's own matching relies on, once a combo is actually
+// USED) can't reliably win. Anything not on this list is assumed safe to
+// pick here; being wrong just means a slot silently doesn't fire, same as
+// picking a reserved one deliberately — not a crash, just worth the
+// warning so it's not a surprise.
 const HIGHLIGHTER_RESERVED_COMBOS = [
     { ctrl: true, key: "d" }, { ctrl: true, key: "t" }, { ctrl: true, key: "n" },
     { ctrl: true, key: "w" }, { ctrl: true, key: "l" }, { ctrl: true, key: "f" },
@@ -63,9 +70,16 @@ function formatShortcut(desc) {
     return parts.join("+");
 }
 
+// Suggestions for the key <input list=...> datalist — not a restriction,
+// just the common ones so the field isn't blank with nothing to pick
+// from. Typing any other single key (a symbol, etc.) works too.
+const HIGHLIGHTER_KEY_OPTIONS = [
+    ..."abcdefghijklmnopqrstuvwxyz0123456789".split(""),
+    ...Array.from({ length: 12 }, (_, i) => `f${i + 1}`),
+];
+
 const HighlighterSettings = {
     _shortcuts: {}, // slot -> "Ctrl+D" etc (chrome.commands side), populated (async) each time the panel opens
-    _recordingSlot: null, // slot currently waiting for a keypress, or null
 
     init() {
         if (!isOnScheduleForm()) return;
@@ -117,55 +131,51 @@ const HighlighterSettings = {
 
         this._panel = panel;
         this._body  = body;
-
-        // One listener for the panel's whole lifetime, not re-added per
-        // render — early-returns unless a "Set" button actually put us
-        // into recording mode. Captured on the PANEL (bubbles up from
-        // its own buttons), not document, so it doesn't interfere with
-        // highlighter.js's own document-level keydown listener elsewhere
-        // on the page.
-        panel.addEventListener("keydown", (event) => this.captureRecordedKey(event));
     },
 
-    // A bare modifier press (still deciding what to hold) is never itself
-    // a usable combo — wait for the actual key. Escape cancels instead of
-    // recording "Escape" as the shortcut, since that's clearly meant as
-    // "never mind", not a real pick.
-    captureRecordedKey(event) {
-        if (!this._recordingSlot) return;
-        event.preventDefault();
-        event.stopPropagation();
+    // Reads whatever's currently in each slot's checkboxes/key field (not
+    // necessarily what's saved yet) and writes all 4 in one go — matches
+    // "set a key, or all 4, then press Save" rather than a per-row save.
+    // Takes effect immediately in every open tab (chrome.storage.onChanged,
+    // no reload needed) — a slot whose key field is left blank keeps
+    // whatever was already saved for it, so setting just one slot doesn't
+    // wipe the other three.
+    saveAllShortcuts() {
+        const stored = {};
+        const warnings = [];
 
-        const key = event.key.toLowerCase();
-        if (["control", "shift", "alt", "meta"].includes(key)) return;
+        HIGHLIGHT_SLOTS_FOR_SETTINGS.forEach((slot) => {
+            const inputs = this._slotInputs?.[slot];
+            if (!inputs) return;
+            const key = inputs.keyInput.value.trim().toLowerCase();
+            if (!key) return; // left blank — don't touch this slot's saved combo
 
-        const slot = this._recordingSlot;
-        this._recordingSlot = null;
+            const desc = { ctrl: inputs.ctrlCb.checked, shift: inputs.shiftCb.checked, alt: inputs.altCb.checked, key };
+            stored[slot] = desc;
+            if (isReservedCombo(desc)) {
+                warnings.push(`"${formatShortcut(desc)}" (Highlight ${HIGHLIGHT_SLOTS_FOR_SETTINGS.indexOf(slot) + 1}) is a browser shortcut too — it may not fire reliably. Use "Browser shortcut settings" below for that one instead.`);
+            }
+        });
 
-        if (key === "escape") { this.render(); return; }
+        if (Object.keys(stored).length === 0) return; // nothing entered, nothing to save
 
-        const desc = { ctrl: event.ctrlKey, shift: event.shiftKey, alt: event.altKey, meta: event.metaKey, key };
-        this.saveShortcut(slot, desc);
-    },
-
-    async saveShortcut(slot, desc) {
-        const stored = await new Promise((resolve) => chrome.storage.local.get("ttHighlightShortcuts", resolve));
-        const shortcuts = { ...(stored.ttHighlightShortcuts || {}), [slot]: desc };
-        chrome.storage.local.set({ ttHighlightShortcuts: shortcuts });
-        this._justRecordedWarning = isReservedCombo(desc)
-            ? `"${formatShortcut(desc)}" is a browser shortcut too — it may not fire reliably here. Use "Change shortcuts" below for this one instead.`
-            : null;
-        this.render();
+        chrome.storage.local.get("ttHighlightShortcuts", (existing) => {
+            const shortcuts = { ...(existing.ttHighlightShortcuts || {}), ...stored };
+            chrome.storage.local.set({ ttHighlightShortcuts: shortcuts });
+            this._warning = warnings.length ? warnings.join(" ") : null;
+            this.render();
+        });
     },
 
     async render() {
         if (!this._body) return;
-        const warning = this._justRecordedWarning;
-        this._justRecordedWarning = null;
+        const warning = this._warning;
+        this._warning = null;
+        this._slotInputs = {};
 
         const stored = await new Promise((resolve) =>
             chrome.storage.local.get(["ttHighlightEnabled", "ttHighlightColors", "ttHighlightShortcuts"], resolve));
-        const enabled       = !!stored.ttHighlightEnabled;
+        const enabled       = stored.ttHighlightEnabled !== false; // default ON, matches highlighter.js
         const colors        = { ...HIGHLIGHT_DEFAULT_COLORS_FOR_SETTINGS, ...(stored.ttHighlightColors || {}) };
         const customCombos  = stored.ttHighlightShortcuts || {};
 
@@ -239,32 +249,39 @@ const HighlighterSettings = {
             topLine.appendChild(label);
             topLine.appendChild(colorInput);
 
+            const combo = customCombos[slot] || {};
             const customLine = document.createElement("div");
-            customLine.style.cssText = "display: flex !important; align-items: center !important; gap: 6px !important; font-size: 9px !important; margin-bottom: 2px !important;";
-            const isRecording = this._recordingSlot === slot;
-            const customText = document.createElement("div");
-            customText.style.cssText = "flex: 1 !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important;";
-            customText.textContent = isRecording ? "Press any key combo…" : `Shortcut: ${formatShortcut(customCombos[slot]) || "(none)"}`;
-            const setBtn = document.createElement("button");
-            setBtn.type = "button";
-            setBtn.textContent = isRecording ? "…" : "Set";
-            setBtn.title = "Click, then press the key combo you want for this slot";
-            setBtn.style.cssText = `
-                flex-shrink: 0 !important;
-                padding: 2px 6px !important;
-                font-family: monospace !important;
-                font-size: 9px !important;
-                background: ${isRecording ? "#fff3cd" : "#f0f0f0"} !important;
-                color: #000000 !important;
-                border: 1px solid #000000 !important;
-                cursor: pointer !important;
-            `;
-            setBtn.addEventListener("click", () => {
-                this._recordingSlot = isRecording ? null : slot;
-                this.render();
-            });
-            customLine.appendChild(customText);
-            customLine.appendChild(setBtn);
+            customLine.style.cssText = "display: flex !important; align-items: center !important; gap: 4px !important; font-size: 9px !important; margin-bottom: 2px !important; flex-wrap: wrap !important;";
+
+            const mkCheckbox = (labelText, checked) => {
+                const wrap = document.createElement("label");
+                wrap.style.cssText = "display: flex !important; align-items: center !important; gap: 2px !important; cursor: pointer !important;";
+                const cb = document.createElement("input");
+                cb.type = "checkbox";
+                cb.checked = !!checked;
+                wrap.appendChild(cb);
+                wrap.appendChild(document.createTextNode(labelText));
+                return { wrap, cb };
+            };
+            const ctrlBox  = mkCheckbox("Ctrl", combo.ctrl);
+            const shiftBox = mkCheckbox("Shift", combo.shift);
+            const altBox   = mkCheckbox("Alt", combo.alt);
+
+            // A native <input list> — pick a suggestion from the datalist
+            // or just type any other key directly, no fixed enum.
+            const keyInput = document.createElement("input");
+            keyInput.type = "text";
+            keyInput.setAttribute("list", "tt-highlighter-key-options");
+            keyInput.placeholder = "key";
+            keyInput.value = combo.key || "";
+            keyInput.style.cssText = "width: 44px !important; font-family: monospace !important; font-size: 9px !important; padding: 1px 3px !important; border: 1px solid #000000 !important;";
+
+            this._slotInputs[slot] = { ctrlCb: ctrlBox.cb, shiftCb: shiftBox.cb, altCb: altBox.cb, keyInput };
+
+            customLine.appendChild(ctrlBox.wrap);
+            customLine.appendChild(shiftBox.wrap);
+            customLine.appendChild(altBox.wrap);
+            customLine.appendChild(keyInput);
 
             const boundLine = document.createElement("div");
             boundLine.style.cssText = "font-size: 9px !important; color: #666666 !important;";
@@ -278,8 +295,41 @@ const HighlighterSettings = {
             this._body.appendChild(block);
         });
 
-        // Shortcut settings link — for the rare case a "Set" button above
-        // isn't enough: reserved combos like Ctrl+D need this manual step
+        // Shared datalist for every slot's key <input list>.
+        const datalist = document.createElement("datalist");
+        datalist.id = "tt-highlighter-key-options";
+        HIGHLIGHTER_KEY_OPTIONS.forEach((k) => {
+            const opt = document.createElement("option");
+            opt.value = k;
+            datalist.appendChild(opt);
+        });
+        this._body.appendChild(datalist);
+
+        // One shared Save for all 4 slots at once — set a key for one or
+        // all four, click this once, done. Applies immediately in every
+        // open tab (chrome.storage.onChanged), no reload needed.
+        const saveRow = document.createElement("div");
+        saveRow.style.cssText = "padding: 8px 10px !important; border-top: 1px dashed #000000 !important;";
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.textContent = "💾 Save Shortcuts";
+        saveBtn.style.cssText = `
+            width: 100% !important;
+            padding: 5px !important;
+            font-family: monospace !important;
+            font-size: 10px !important;
+            font-weight: bold !important;
+            background: #d6f5d6 !important;
+            color: #000000 !important;
+            border: 1px solid #000000 !important;
+            cursor: pointer !important;
+        `;
+        saveBtn.addEventListener("click", () => this.saveAllShortcuts());
+        saveRow.appendChild(saveBtn);
+        this._body.appendChild(saveRow);
+
+        // Shortcut settings link — for the rare case the field above isn't
+        // enough: reserved combos like Ctrl+D need this manual step
         // instead (the only sanctioned way to actually claim one — the
         // browser only lets it override its own action once assigned
         // here, confirmed live).
@@ -288,7 +338,7 @@ const HighlighterSettings = {
         const shortcutsBtn = document.createElement("button");
         shortcutsBtn.type = "button";
         shortcutsBtn.textContent = "🔧 Browser shortcut settings (for reserved keys)";
-        shortcutsBtn.title = "Opens the browser's own extension-shortcuts page — only needed for a combo like Ctrl+D that \"Set\" above warns about";
+        shortcutsBtn.title = "Opens the browser's own extension-shortcuts page — only needed for a combo like Ctrl+D that the picker above warns about";
         shortcutsBtn.style.cssText = `
             width: 100% !important;
             padding: 5px !important;

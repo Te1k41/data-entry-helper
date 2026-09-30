@@ -95,7 +95,10 @@ let slotShortcuts = {}; // slot -> { ctrl, shift, alt, meta, key } | undefined (
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if ("ttHighlightEnabled" in changes) {
-        highlightEnabled = !!changes.ttHighlightEnabled.newValue;
+        // Default ON: missing/undefined means "never explicitly turned
+        // off", not "off" — this feature should just work everywhere out
+        // of the box, not need a manual enable step before it does anything.
+        highlightEnabled = changes.ttHighlightEnabled.newValue !== false;
     }
     if ("ttHighlightColors" in changes) {
         slotColors = { ...DEFAULT_COLORS, ...(changes.ttHighlightColors.newValue || {}) };
@@ -315,7 +318,7 @@ function locate(nodes, globalOffset) {
 
     const stored = await new Promise((resolve) =>
         chrome.storage.local.get(["ttHighlightEnabled", "ttHighlightColors", "ttHighlightShortcuts"], resolve));
-    highlightEnabled = !!stored.ttHighlightEnabled;
+    highlightEnabled = stored.ttHighlightEnabled !== false; // default ON — see onChanged listener above
     slotColors = { ...DEFAULT_COLORS, ...(stored.ttHighlightColors || {}) };
     slotShortcuts = stored.ttHighlightShortcuts || {};
 
