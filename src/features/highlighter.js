@@ -1,10 +1,18 @@
 // ============================================================
 //  highlighter.js
-//  Ctrl+D on a text selection → wraps it in a yellow <mark>.
-//  Click an existing <mark> → un-highlights it.
+//  Ctrl+D on a text selection → highlights it yellow.
+//  Click an existing highlight → un-highlights it.
 //  Persists per-page via chrome.storage.local using a simplified
 //  W3C TextQuoteSelector ({exact, prefix, suffix}) since a DOM
 //  Range can't be serialized directly across reloads.
+//
+//  Uses the CSS Custom Highlight API (CSS.highlights + ::highlight())
+//  instead of wrapping text in <mark> elements — paints the highlight
+//  purely at render time, with ZERO DOM mutation of the page itself.
+//  A Range can span multiple elements (e.g. dragged across several
+//  <td>/<tr> in a schedule table) with no special-casing needed here;
+//  the old <mark>-wrapping approach had to split per text node to
+//  avoid corrupting table structure — moot now, nothing is inserted.
 //
 //  ponytail: best-effort text-quote matching only — not resilient
 //  to major page-structure changes. Full W3C Web Annotation range
@@ -17,6 +25,21 @@
 // ============================================================
 
 const CONTEXT_RADIUS = 30;
+const HIGHLIGHT_NAME = "tt-highlight";
+
+// id -> Range, the live source of truth CSS.highlights.set() is
+// rebuilt from on every add/remove.
+const activeRanges = new Map();
+
+function refreshHighlightPaint() {
+    CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...activeRanges.values()));
+}
+
+function injectHighlightStyle() {
+    const style = document.createElement("style");
+    style.textContent = `::highlight(${HIGHLIGHT_NAME}) { background-color: yellow; }`;
+    document.head.appendChild(style);
+}
 
 function storageKey() {
     return `tt-highlight:${location.href}`;
@@ -39,60 +62,6 @@ async function removeHighlight(id) {
     const key = storageKey();
     const list = await loadHighlights();
     chrome.storage.local.set({ [key]: list.filter((h) => h.id !== id) });
-}
-
-// Wraps each text node the range touches SEPARATELY (one <mark> per
-// node, all sharing `id`) instead of one extractContents()/insertNode()
-// over the whole range. A single wrap over a range spanning multiple
-// elements — e.g. a selection dragged across several <td>/<tr> in a
-// schedule table — rips a partial table fragment out and reinserts it
-// at one point, corrupting the table's rows/columns. Per-text-node subranges
-// never cross an element boundary, so extraction/insertion always stays
-// safely within one cell/element.
-function wrapRange(range, id) {
-    for (const { node, start, end } of getTextNodesInRange(range)) {
-        const subRange = document.createRange();
-        subRange.setStart(node, start);
-        subRange.setEnd(node, end);
-
-        const mark = document.createElement("mark");
-        mark.dataset.ttHighlightId = id;
-        mark.style.backgroundColor = "yellow";
-
-        const contents = subRange.extractContents(); // always just this one text node — never crosses an element boundary
-        mark.appendChild(contents);
-        subRange.insertNode(mark);
-    }
-}
-
-// Every text node the range intersects, with start/end offsets clipped
-// to the range's own boundaries (so the middle nodes are taken whole,
-// while the first/last nodes only take the portion actually selected).
-// Collected up front, before any DOM mutation, so wrapping one node
-// can't invalidate the offsets/references already captured for the rest.
-function getTextNodesInRange(range) {
-    const result = [];
-    const root = range.commonAncestorContainer;
-    const walker = document.createTreeWalker(
-        root.nodeType === Node.TEXT_NODE ? root.parentNode : root,
-        NodeFilter.SHOW_TEXT,
-        { acceptNode: (n) => range.intersectsNode(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }
-    );
-
-    let node;
-    while ((node = walker.nextNode())) {
-        const start = node === range.startContainer ? range.startOffset : 0;
-        const end   = node === range.endContainer   ? range.endOffset   : node.nodeValue.length;
-        if (start < end) result.push({ node, start, end });
-    }
-    return result;
-}
-
-function unwrap(mark) {
-    const parent = mark.parentNode;
-    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-    parent.removeChild(mark);
-    parent.normalize();
 }
 
 function captureContext(range) {
@@ -128,28 +97,43 @@ document.addEventListener("keydown", (event) => {
     // testable from this environment).
     event.preventDefault();
 
-    const range = selection.getRangeAt(0);
-    const { prefix, suffix } = captureContext(range); // must run BEFORE wrapRange mutates the range
+    // Cloned so it stays valid once the Selection itself is cleared below —
+    // Selection.getRangeAt() can hand back a reference tied to the
+    // selection's own internal lifecycle, not a standalone snapshot.
+    const range = selection.getRangeAt(0).cloneRange();
+    const { prefix, suffix } = captureContext(range);
     const id = crypto.randomUUID();
 
-    wrapRange(range, id);
     selection.removeAllRanges();
+
+    activeRanges.set(id, range);
+    refreshHighlightPaint();
 
     saveHighlight({ id, exact: text, prefix, suffix });
 });
 
-// ── Remove on click (event delegation — highlights are added both
-// live and on restore, so one delegated listener beats per-element
-// listeners, same convention as this codebase's other delegated
-// click listeners) ──────────────────────────────
+// ── Remove on click ──────────────────────────────────────────
+// No DOM element to attach a listener to (nothing was inserted) — find
+// whichever stored range, if any, contains the clicked point instead.
 document.addEventListener("click", (event) => {
-    const mark = event.target.closest?.("mark[data-tt-highlight-id]");
-    if (!mark) return;
-    const id = mark.dataset.ttHighlightId;
-    // A highlight spanning multiple table cells/elements is now several
-    // <mark>s sharing one id (see wrapRange) — remove them all together.
-    document.querySelectorAll(`mark[data-tt-highlight-id="${id}"]`).forEach(unwrap);
-    removeHighlight(id);
+    if (activeRanges.size === 0) return;
+    const caret = document.caretRangeFromPoint(event.clientX, event.clientY);
+    if (!caret) return;
+
+    for (const [id, range] of activeRanges) {
+        let inside;
+        try {
+            inside = range.isPointInRange(caret.startContainer, caret.startOffset);
+        } catch (e) {
+            continue; // range's nodes detached from the document since it was created
+        }
+        if (!inside) continue;
+
+        activeRanges.delete(id);
+        refreshHighlightPaint();
+        removeHighlight(id);
+        return;
+    }
 });
 
 // ── Restore on load ─────────────────────────────────────────
@@ -196,6 +180,12 @@ function locate(nodes, globalOffset) {
 }
 
 (async () => {
+    if (!window.Highlight || !CSS.highlights) {
+        console.warn("[Highlighter] CSS Custom Highlight API not available in this browser — highlighting disabled");
+        return;
+    }
+    injectHighlightStyle();
+
     try {
         const list = await loadHighlights();
         for (const entry of list) {
@@ -205,11 +195,12 @@ function locate(nodes, globalOffset) {
                     console.warn("[Highlighter] could not restore:", entry.exact.slice(0, 40));
                     continue;
                 }
-                wrapRange(range, entry.id);
+                activeRanges.set(entry.id, range);
             } catch (err) {
                 console.warn("[Highlighter] restore failed for one highlight:", err);
             }
         }
+        refreshHighlightPaint();
     } catch (err) {
         console.warn("[Highlighter] restore skipped:", err); // never break the page
     }
