@@ -1,10 +1,14 @@
 // ============================================================
 //  highlighter.js
-//  A keyboard shortcut (manifest.json "commands", default Ctrl+Shift+H)
-//  on a text selection → highlights it yellow. Click an existing
+//  Four independent highlighter "slots" (manifest.json's "commands":
+//  highlight-1..4), each its own keyboard shortcut + color — shortcut
+//  assigned in chrome://extensions/shortcuts (browser-level, see below
+//  for why), color picked in the Highlighter settings panel
+//  (highlighter-settings.js, Tradetech-only). Trigger a slot on a text
+//  selection → highlights it in that slot's color. Click an existing
 //  highlight → un-highlights it. Runs on every site, but does nothing
-//  at all unless "Enable Ctrl+D Highlight" is turned on in the Custom
-//  Rules settings panel (Tradetech only) — see highlightEnabled below.
+//  at all unless the master switch is turned on in that settings panel
+//  — see highlightEnabled below.
 //  Persists per-page via chrome.storage.local using a simplified
 //  W3C TextQuoteSelector ({exact, prefix, suffix}) since a DOM
 //  Range can't be serialized directly across reloads.
@@ -16,6 +20,15 @@
 //  <td>/<tr> in a schedule table) with no special-casing needed here;
 //  the old <mark>-wrapping approach had to split per text node to
 //  avoid corrupting table structure — moot now, nothing is inserted.
+//  One named Highlight + ::highlight() rule per slot, so each slot's
+//  color is independent of the others.
+//
+//  ponytail: 4 fixed slots, not an arbitrary user-defined count —
+//  matches a classic multi-color highlighter set. Upgrade path if more
+//  are ever wanted: add another "highlight-N" entry to manifest.json's
+//  "commands" (Chrome only auto-suggests a shortcut for the first
+//  handful; the rest are exactly as manually-bindable as slot 1 is
+//  today) and one more entry to HIGHLIGHT_SLOTS/DEFAULT_COLORS below.
 //
 //  ponytail: best-effort text-quote matching only — not resilient
 //  to major page-structure changes. Full W3C Web Annotation range
@@ -28,38 +41,64 @@
 // ============================================================
 
 const CONTEXT_RADIUS = 30;
-const HIGHLIGHT_NAME = "tt-highlight";
 
-// id -> Range, the live source of truth CSS.highlights.set() is
-// rebuilt from on every add/remove.
-const activeRanges = new Map();
+// Matches manifest.json's "commands" names exactly — each is both the
+// chrome.commands identifier AND (prefixed "tt-") the CSS Custom
+// Highlight API registration name.
+const HIGHLIGHT_SLOTS = ["highlight-1", "highlight-2", "highlight-3", "highlight-4"];
+const DEFAULT_COLORS = {
+    "highlight-1": "#ffff00", // yellow
+    "highlight-2": "#90ee90", // light green
+    "highlight-3": "#ff8fc7", // pink
+    "highlight-4": "#87ceeb", // sky blue
+};
 
-// This feature's own on/off switch, "Enable Ctrl+D Highlight" in the
-// Custom Rules settings panel — but that panel only exists on
-// Tradetech, and its storage (CustomRules, localStorage) is per-origin,
-// so it could never be seen from any other site this file runs on.
-// custom-rules.js mirrors it into chrome.storage.local (shared across
-// every origin) specifically so this one flag can be checked here,
-// everywhere, from a single source of truth. Cached + kept live via
-// onChanged rather than re-reading storage on every keypress. Starts
-// resolved false (off) until the initial read below finishes — no
-// window where a stale/default-on value could create a highlight
-// before this file has actually checked.
+function highlightName(slot) {
+    return `tt-${slot}`;
+}
+
+// slot -> (id -> Range). Each slot's own CSS.highlights entry is
+// rebuilt from its own map on every add/remove — kept separate per
+// slot so one slot's highlights never affect another's color/paint.
+const activeRanges = new Map(HIGHLIGHT_SLOTS.map(slot => [slot, new Map()]));
+
+// This feature's master on/off switch, and each slot's color — both
+// live in chrome.storage.local (shared across every origin this file
+// runs on, unlike Tradetech-only localStorage) since the Highlighter
+// settings panel only exists on Tradetech but this file runs
+// everywhere. Cached + kept live via onChanged rather than re-reading
+// storage on every keypress/click.
 let highlightEnabled = false;
+let slotColors = { ...DEFAULT_COLORS };
+
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && "ttHighlightEnabled" in changes) {
+    if (area !== "local") return;
+    if ("ttHighlightEnabled" in changes) {
         highlightEnabled = !!changes.ttHighlightEnabled.newValue;
+    }
+    if ("ttHighlightColors" in changes) {
+        slotColors = { ...DEFAULT_COLORS, ...(changes.ttHighlightColors.newValue || {}) };
+        injectHighlightStyle();
     }
 });
 
-function refreshHighlightPaint() {
-    CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...activeRanges.values()));
+function refreshHighlightPaint(slot) {
+    CSS.highlights.set(highlightName(slot), new Highlight(...activeRanges.get(slot).values()));
 }
 
+// One <style> element, regenerated (not re-appended) whenever colors
+// change, so every slot's ::highlight() rule always matches the
+// latest chosen colors without stacking up duplicate <style> tags.
 function injectHighlightStyle() {
-    const style = document.createElement("style");
-    style.textContent = `::highlight(${HIGHLIGHT_NAME}) { background-color: yellow; }`;
-    document.head.appendChild(style);
+    let style = document.getElementById("tt-highlight-style");
+    if (!style) {
+        style = document.createElement("style");
+        style.id = "tt-highlight-style";
+        document.head.appendChild(style);
+    }
+    style.textContent = HIGHLIGHT_SLOTS
+        .map(slot => `::highlight(${highlightName(slot)}) { background-color: ${slotColors[slot]}; }`)
+        .join("\n");
 }
 
 function storageKey() {
@@ -100,23 +139,23 @@ function captureContext(range) {
     };
 }
 
-// ── Create on the toggle-highlight shortcut ──────────────────
+// ── Create on a slot's shortcut ──────────────────────────────
 // Triggered via chrome.commands (background.js relays it here as a
 // runtime message), NOT a raw keydown listener. Ctrl+D — the shortcut
-// this used to hardcode — is a browser-reserved combo (bookmark this
+// slot 1 used to hardcode — is a browser-reserved combo (bookmark this
 // page); a page-script keydown + preventDefault() can't reliably
 // suppress it, so it fought with the browser's own action (reported
 // live: "our Ctrl+D is fighting with Edge Ctrl+D"). chrome.commands is
 // handled by the browser itself, one level above page scripts, so a
 // manually-assigned shortcut (chrome://extensions/shortcuts) actually
-// wins instead of merely racing it. See manifest.json's "commands" key
-// for the current default binding.
+// wins instead of merely racing it — confirmed live, Ctrl+D reassigned
+// there works. See manifest.json's "commands" key for current bindings.
 //
 // Gated on highlightEnabled (see above) — same flag everywhere,
-// Tradetech included, so the toggle actually means the same thing on
-// every site rather than only being enforced where the settings panel
-// happens to live.
-function createHighlightFromSelection() {
+// Tradetech included, so the master switch actually means the same
+// thing on every site rather than only being enforced where the
+// settings panel happens to live.
+function createHighlightFromSelection(slot) {
     if (!highlightEnabled) return;
 
     const selection = window.getSelection();
@@ -133,37 +172,45 @@ function createHighlightFromSelection() {
 
     selection.removeAllRanges();
 
-    activeRanges.set(id, range);
-    refreshHighlightPaint();
+    activeRanges.get(slot).set(id, range);
+    refreshHighlightPaint(slot);
 
-    saveHighlight({ id, exact: text, prefix, suffix });
+    saveHighlight({ id, slot, exact: text, prefix, suffix });
 }
 
 chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === "TOGGLE_HIGHLIGHT_SHORTCUT") createHighlightFromSelection();
+    if (message?.type === "TOGGLE_HIGHLIGHT_SHORTCUT" && HIGHLIGHT_SLOTS.includes(message.slot)) {
+        createHighlightFromSelection(message.slot);
+    }
 });
 
 // ── Remove on click ──────────────────────────────────────────
 // No DOM element to attach a listener to (nothing was inserted) — find
-// whichever stored range, if any, contains the clicked point instead.
+// whichever stored range, in whichever slot, contains the clicked
+// point instead.
 document.addEventListener("click", (event) => {
-    if (activeRanges.size === 0) return;
-    const caret = document.caretRangeFromPoint(event.clientX, event.clientY);
-    if (!caret) return;
-
-    for (const [id, range] of activeRanges) {
-        let inside;
-        try {
-            inside = range.isPointInRange(caret.startContainer, caret.startOffset);
-        } catch (e) {
-            continue; // range's nodes detached from the document since it was created
+    let caret = null;
+    for (const [slot, ranges] of activeRanges) {
+        if (ranges.size === 0) continue;
+        if (!caret) {
+            caret = document.caretRangeFromPoint(event.clientX, event.clientY);
+            if (!caret) return;
         }
-        if (!inside) continue;
 
-        activeRanges.delete(id);
-        refreshHighlightPaint();
-        removeHighlight(id);
-        return;
+        for (const [id, range] of ranges) {
+            let inside;
+            try {
+                inside = range.isPointInRange(caret.startContainer, caret.startOffset);
+            } catch (e) {
+                continue; // range's nodes detached from the document since it was created
+            }
+            if (!inside) continue;
+
+            ranges.delete(id);
+            refreshHighlightPaint(slot);
+            removeHighlight(id);
+            return;
+        }
     }
 });
 
@@ -215,38 +262,34 @@ function locate(nodes, globalOffset) {
         console.warn("[Highlighter] CSS Custom Highlight API not available in this browser — highlighting disabled");
         return;
     }
-    injectHighlightStyle(); // inert with nothing highlighted yet — safe to always add
 
-    // On Tradetech, CustomRules' own localStorage is the real live value —
-    // read it directly (self-healing: anyone who'd already turned this on
-    // BEFORE chrome.storage.local mirroring existed would otherwise see it
-    // silently stop working here, since that mirror only gets written on
-    // the NEXT toggle, not retroactively for whatever was already set).
-    // Also re-writes the mirror every load, so it can't drift out of sync.
-    if (typeof CustomRules !== "undefined") {
-        highlightEnabled = CustomRules.isEnabled("enableCtrlDHighlight");
-        chrome.storage.local.set({ ttHighlightEnabled: highlightEnabled });
-    } else {
-        const stored = await new Promise((resolve) => chrome.storage.local.get("ttHighlightEnabled", resolve));
-        highlightEnabled = !!stored.ttHighlightEnabled;
-    }
+    const stored = await new Promise((resolve) =>
+        chrome.storage.local.get(["ttHighlightEnabled", "ttHighlightColors"], resolve));
+    highlightEnabled = !!stored.ttHighlightEnabled;
+    slotColors = { ...DEFAULT_COLORS, ...(stored.ttHighlightColors || {}) };
+
+    injectHighlightStyle(); // inert with nothing highlighted yet — safe to always add, even if off
     if (!highlightEnabled) return; // off — don't restore old highlights either, not just skip creating new ones
 
     try {
         const list = await loadHighlights();
         for (const entry of list) {
+            // Entries saved before multi-slot existed have no `slot` — treat
+            // them as slot 1 (this file's original single highlight) rather
+            // than silently dropping pre-existing highlights on upgrade.
+            const slot = HIGHLIGHT_SLOTS.includes(entry.slot) ? entry.slot : HIGHLIGHT_SLOTS[0];
             try {
                 const range = findRange(entry);
                 if (!range) {
                     console.warn("[Highlighter] could not restore:", entry.exact.slice(0, 40));
                     continue;
                 }
-                activeRanges.set(entry.id, range);
+                activeRanges.get(slot).set(entry.id, range);
             } catch (err) {
                 console.warn("[Highlighter] restore failed for one highlight:", err);
             }
         }
-        refreshHighlightPaint();
+        HIGHLIGHT_SLOTS.forEach(refreshHighlightPaint);
     } catch (err) {
         console.warn("[Highlighter] restore skipped:", err); // never break the page
     }

@@ -46,9 +46,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true; // async sendResponse — keep the channel open
     }
 
+    // Highlighter settings panel (highlighter-settings.js, Tradetech-only)
+    // needs the REAL currently-bound shortcut per slot — chrome.commands
+    // isn't available to content scripts at all, only extension pages and
+    // the background/service worker, so it has to ask here instead.
+    if (message?.type === "GET_HIGHLIGHT_SHORTCUTS") {
+        chrome.commands.getAll((commands) => {
+            sendResponse(commands
+                .filter(c => c.name.startsWith("highlight-"))
+                .map(c => ({ name: c.name, shortcut: c.shortcut || "" })));
+        });
+        return true; // async sendResponse
+    }
+
+    // Same panel's "Change shortcuts" button — chrome://extensions/shortcuts
+    // can only be opened via chrome.tabs.create from an extension context,
+    // never by a content script navigating there itself (blocked as a
+    // privileged URL). Edge recognizes chrome:// extension pages as an
+    // alias of its own edge:// equivalent, so one URL covers both browsers.
+    if (message?.type === "OPEN_SHORTCUTS_PAGE") {
+        chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
+        return;
+    }
+
 });
 
-// ── Highlighter shortcut (chrome.commands, not a raw keydown listener) ──
+// ── Highlighter shortcuts (chrome.commands, not a raw keydown listener) ──
 // Ctrl+D used to be caught via a content-script keydown + preventDefault(),
 // but that's a page-level shortcut, and Ctrl+D is a browser-reserved one
 // (bookmark this page) — preventDefault() from a page script can't
@@ -58,13 +81,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // above page scripts, so once a user manually assigns a command's
 // shortcut to a normally-reserved combo (chrome://extensions/shortcuts
 // or edge://extensions/shortcuts), the browser lets that command claim
-// it instead — the only sanctioned way to actually override one.
-// Defaults to Ctrl+Shift+H (unclaimed by Chrome/Edge) since a
-// "suggested_key" can't auto-bind to an already-reserved combo; anyone
-// who specifically wants Ctrl+D back has to rebind it there themselves.
+// it instead — the only sanctioned way to actually override one
+// (confirmed live: Ctrl+D reassigned there does work).
+//
+// Four slots (manifest.json's "commands"), each its own independent
+// shortcut + color (color picked in the Highlighter settings panel,
+// not here) — only the first ships a suggested default (Ctrl+Shift+H,
+// unclaimed by Chrome/Edge); a "suggested_key" can't auto-bind to an
+// already-reserved combo anyway, so the rest start unbound and every
+// slot (including the first, if a different key is wanted) is exactly
+// as manually assignable as Ctrl+D was above.
 chrome.commands.onCommand.addListener((command, tab) => {
-    if (command === "toggle-highlight" && tab?.id) {
-        chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_HIGHLIGHT_SHORTCUT" });
+    if (command.startsWith("highlight-") && tab?.id) {
+        chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_HIGHLIGHT_SHORTCUT", slot: command });
     }
 });
 

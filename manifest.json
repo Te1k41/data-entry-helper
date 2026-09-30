@@ -23,9 +23,18 @@
   "action": {},
 
   "commands": {
-      "toggle-highlight": {
+      "highlight-1": {
           "suggested_key": { "default": "Ctrl+Shift+H" },
-          "description": "Highlight the current text selection"
+          "description": "Highlight #1 (color set in the Highlighter settings panel)"
+      },
+      "highlight-2": {
+          "description": "Highlight #2 (color set in the Highlighter settings panel)"
+      },
+      "highlight-3": {
+          "description": "Highlight #3 (color set in the Highlighter settings panel)"
+      },
+      "highlight-4": {
+          "description": "Highlight #4 (color set in the Highlighter settings panel)"
       }
   },
 
@@ -67,6 +76,7 @@
             "src/features/duplicate-vessel-check.js",
             "src/features/fix-vessel-dates.js",
             "src/features/custom-rules-settings.js",
+            "src/features/highlighter-settings.js",
             "src/features/vessel-no-date.js",
             "src/features/port-no-date.js",
             "src/features/vessel-to-be-announced.js",

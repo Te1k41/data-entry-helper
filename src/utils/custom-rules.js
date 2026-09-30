@@ -82,12 +82,6 @@ const CustomRules = {
             default:     false
         },
         {
-            id:          "enableCtrlDHighlight",
-            label:       "Enable Ctrl+D Highlight",
-            description: "Ctrl+D on a text selection wraps it in a yellow highlight (click it again to remove). This runs on every site, not just Tradetech — this toggle only controls it here, since that's where the settings panel lives.",
-            default:     false
-        },
-        {
             id:          "enableNotesDateReplacement",
             label:       "Enable Notes Date Auto-Update",
             description: "On page load, swaps any stale date already typed into the notes textarea for today's date (lines mentioning \"map\" are left alone). Only runs once the SP (port) and SV (vessel) rows have actually loaded.",
@@ -119,16 +113,5 @@ const CustomRules = {
 
     setEnabled(id, enabled) {
         localStorage.setItem(this.STORAGE_PREFIX + id, enabled ? "1" : "0");
-
-        // enableCtrlDHighlight is the one rule that actually needs to be
-        // seen OUTSIDE Tradetech (highlighter.js runs on <all_urls>) —
-        // localStorage is per-origin, so a toggle made here (Tradetech's
-        // origin, the only place this settings panel exists) could never
-        // reach any other site. chrome.storage.local is shared across
-        // every origin's content scripts, so mirror it there too —
-        // highlighter.js reads THIS, not CustomRules, everywhere.
-        if (id === "enableCtrlDHighlight") {
-            chrome.storage.local.set({ ttHighlightEnabled: enabled });
-        }
     }
 };
