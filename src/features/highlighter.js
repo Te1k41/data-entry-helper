@@ -88,7 +88,9 @@ const activeRanges = new Map(HIGHLIGHT_SLOTS.map(slot => [slot, new Map()]));
 // settings panel only exists on Tradetech but this file runs
 // everywhere. Cached + kept live via onChanged rather than re-reading
 // storage on every keypress/click.
-let highlightEnabled = false;
+// Starts true (same default as the stored value) so a shortcut pressed
+// before the async storage read below finishes isn't silently dropped.
+let highlightEnabled = true;
 let slotColors = { ...DEFAULT_COLORS };
 let slotShortcuts = {}; // slot -> { ctrl, shift, alt, meta, key } | undefined (none recorded yet)
 
@@ -98,7 +100,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
         // Default ON: missing/undefined means "never explicitly turned
         // off", not "off" — this feature should just work everywhere out
         // of the box, not need a manual enable step before it does anything.
+        const wasEnabled = highlightEnabled;
         highlightEnabled = changes.ttHighlightEnabled.newValue !== false;
+        if (highlightEnabled && !wasEnabled) restoreHighlights(); // turned on mid-page — show saved ones without a reload
     }
     if ("ttHighlightColors" in changes) {
         slotColors = { ...DEFAULT_COLORS, ...(changes.ttHighlightColors.newValue || {}) };
@@ -113,27 +117,34 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // four modifiers compared explicitly (not just the ones the user held
 // down when recording), so e.g. a bare "Y" recording never matches a
 // Ctrl+Y keypress too.
+//
+// Key compared two ways: event.key (what the key types) OR the physical
+// key from event.code — Shift+1 types "!", Alt+letter types a symbol
+// on some layouts, so event.key alone missed combos saved as "1"/"h".
 function eventMatchesShortcut(event, desc) {
-    if (!desc || !desc.key) return false;
+    if (!desc || !desc.key || !event.key) return false; // Chrome autofill fires keydown with no .key
+    const physical = (event.code || "").replace(/^(Key|Digit|Numpad)/, "").toLowerCase();
     return !!event.ctrlKey === !!desc.ctrl
         && !!event.shiftKey === !!desc.shift
         && !!event.altKey === !!desc.alt
         && !!event.metaKey === !!desc.meta
-        && event.key.toLowerCase() === desc.key;
+        && (event.key.toLowerCase() === desc.key || physical === desc.key);
 }
 
 // Self-service path (see file header) — every keystroke on every site
 // gets checked against whatever's been recorded, so this has to stay
 // cheap: a plain object lookup per slot, no DOM work unless something
-// actually matches.
-document.addEventListener("keydown", (event) => {
+// actually matches. Capture phase on window so a page that
+// stopPropagation()s its own keydowns can't swallow ours first.
+window.addEventListener("keydown", (event) => {
     for (const slot of HIGHLIGHT_SLOTS) {
         if (!eventMatchesShortcut(event, slotShortcuts[slot])) continue;
-        event.preventDefault();
-        createHighlightFromSelection(slot);
+        // Only eat the key when it actually highlighted something — a
+        // plain-letter shortcut must still type normally with no selection.
+        if (createHighlightFromSelection(slot)) event.preventDefault();
         return;
     }
-});
+}, true);
 
 function refreshHighlightPaint(slot) {
     CSS.highlights.set(highlightName(slot), new Highlight(...activeRanges.get(slot).values()));
@@ -147,7 +158,7 @@ function injectHighlightStyle() {
     if (!style) {
         style = document.createElement("style");
         style.id = "tt-highlight-style";
-        document.head.appendChild(style);
+        (document.head || document.documentElement).appendChild(style);
     }
     style.textContent = HIGHLIGHT_SLOTS
         .map(slot => `::highlight(${highlightName(slot)}) { background-color: ${slotColors[slot]}; }`)
@@ -209,12 +220,12 @@ function captureContext(range) {
 // thing on every site rather than only being enforced where the
 // settings panel happens to live.
 function createHighlightFromSelection(slot) {
-    if (!highlightEnabled) return;
+    if (!highlightEnabled || !window.Highlight || !CSS.highlights) return false;
 
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
     const text = selection.toString();
-    if (!text.trim()) return;
+    if (!text.trim()) return false;
 
     // Cloned so it stays valid once the Selection itself is cleared below —
     // Selection.getRangeAt() can hand back a reference tied to the
@@ -229,10 +240,14 @@ function createHighlightFromSelection(slot) {
     refreshHighlightPaint(slot);
 
     saveHighlight({ id, slot, exact: text, prefix, suffix });
+    return true;
 }
 
+// Runs in every frame (manifest all_frames) and background.js's relay
+// reaches all of them — only the focused frame acts, so an old leftover
+// selection in some other frame/iframe doesn't get highlighted instead.
 chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === "TOGGLE_HIGHLIGHT_SHORTCUT" && HIGHLIGHT_SLOTS.includes(message.slot)) {
+    if (message?.type === "TOGGLE_HIGHLIGHT_SHORTCUT" && HIGHLIGHT_SLOTS.includes(message.slot) && document.hasFocus()) {
         createHighlightFromSelection(message.slot);
     }
 });
@@ -242,6 +257,11 @@ chrome.runtime.onMessage.addListener((message) => {
 // whichever stored range, in whichever slot, contains the clicked
 // point instead.
 document.addEventListener("click", (event) => {
+    // A drag-select or double-click that starts inside a highlight also
+    // fires "click" — that's the user selecting text, not asking to
+    // remove the highlight (was wiping highlights "randomly").
+    if (event.detail > 1) return;
+    if (!window.getSelection()?.isCollapsed) return;
     let caret = null;
     for (const [slot, ranges] of activeRanges) {
         if (ranges.size === 0) continue;
@@ -324,7 +344,13 @@ function locate(nodes, globalOffset) {
 
     injectHighlightStyle(); // inert with nothing highlighted yet — safe to always add, even if off
     if (!highlightEnabled) return; // off — don't restore old highlights either, not just skip creating new ones
+    restoreHighlights();
+})();
 
+// Idempotent (keyed by saved id) — safe to call again when the master
+// switch is turned back on mid-page.
+async function restoreHighlights() {
+    if (!window.Highlight || !CSS.highlights) return;
     try {
         const list = await loadHighlights();
         for (const entry of list) {
@@ -347,4 +373,4 @@ function locate(nodes, globalOffset) {
     } catch (err) {
         console.warn("[Highlighter] restore skipped:", err); // never break the page
     }
-})();
+}
