@@ -234,22 +234,39 @@ async function findChildFrameRect(tabId, frameName) {
     return rect;
 }
 
-// GoFullPage-style: visibility:hidden every position:fixed/sticky element
-// (sticky headers, floating toolbars, our own buttons) so it isn't stamped
-// into every tile. visibility (not display:none) keeps layout/height stable.
-// Idempotent — an element already hidden by an earlier call keeps its
-// ORIGINAL saved visibility. Restored in runFullPageCapture()'s finally.
-// Resolves after the hide has painted (double rAF), with a timeout so a
-// frame that never paints (hidden iframe, throttled rAF) can't hang it.
+// Floating (position:fixed/sticky) elements would otherwise be stamped
+// into every tile. Like GoFullPage, each one shows up ONCE, where it
+// belongs in a full-page picture:
+//   "first"  (top row of tiles)    — fixed elements pinned to the top half
+//                                     of the screen (site header, our Rename
+//                                     button) + sticky ones, still sitting
+//                                     in their natural spot
+//   "middle"                        — none
+//   "last"   (bottom row of tiles)  — fixed elements pinned to the bottom
+//                                     half (chat bubble, cookie bar)
+//   "only"   (page fits one row)   — all of them
+// Re-run after EVERY scroll, not once up front: many sites only turn their
+// header fixed once you scroll (live: cmacgm.com's header was stamped over
+// every tile, covering the rows under it). visibility (not display:none)
+// keeps layout stable. Each element's original visibility is saved once,
+// for the restore in runFullPageCapture()'s finally. Resolves after the
+// change has painted (double rAF; 150ms timeout so a frame that never
+// paints can't hang), with where the frame really is scrolled to.
+// ponytail: top/bottom halves only — a left/right-pinned side widget shows
+// on the first/last ROW of every column. Left/right split is the upgrade.
 // Runs inside the page (executeScript) — must stay self-contained.
-function fpcHideFloatingAndRead() {
+function fpcHideFloatingAndRead(mode) {
+    const half = window.innerHeight / 2;
     document.querySelectorAll("*").forEach((el) => {
-        if (el.dataset.ttFpcPrevVisibility !== undefined) return;
-        const cs = getComputedStyle(el);
-        if (cs.position === "fixed" || cs.position === "sticky") {
-            el.dataset.ttFpcPrevVisibility = el.style.visibility || "";
-            el.style.visibility = "hidden";
-        }
+        const pos = getComputedStyle(el).position;
+        if (pos !== "fixed" && pos !== "sticky") return;
+        if (el.dataset.ttFpcPrevVisibility === undefined) el.dataset.ttFpcPrevVisibility = el.style.visibility || "";
+        const r = el.getBoundingClientRect();
+        const pinnedTop = r.top + r.height / 2 < half;
+        const show = mode === "only"
+            || (mode === "first" && (pos === "sticky" || pinnedTop))
+            || (mode === "last" && pos === "fixed" && !pinnedTop);
+        el.style.visibility = show ? el.dataset.ttFpcPrevVisibility : "hidden";
     });
     return new Promise((resolve) => {
         const done = () => resolve({ x: window.scrollX, y: window.scrollY });
@@ -372,7 +389,7 @@ async function runFullPageCapture(tab) {
             // would otherwise leave a strip nobody captured between it and
             // the next one. Stops when a row/column reaches the far edge, or
             // stops advancing at all (page refuses to scroll further).
-            const scrollAndRead = async (x, y) => {
+            const scrollAndRead = async (x, y, mode) => {
                 await chrome.scripting.executeScript({
                     target: { tabId: tab.id, frameIds: [target.frameId] },
                     // behavior:"instant" — a page with CSS scroll-behavior:
@@ -385,16 +402,12 @@ async function runFullPageCapture(tab) {
                 // detection. Upgrade path if a real page proves flaky: double
                 // rAF or a short MutationObserver-based debounce before capture.
                 await sleep(FPC_SLICE_DELAY_MS);
-                // Hide floating elements AFTER every scroll, not once up front:
-                // many sites only turn their header position:fixed once you
-                // scroll (live: cmacgm.com's header was stamped over every
-                // tile, covering the rows under it). Every frame too — on a
-                // frameset page (Tradetech) the target is a child frame with
-                // its own floating elements (our Toolbar). Also returns where
-                // each frame really is, read right before the screenshot.
+                // Every frame — on a frameset page (Tradetech) the target is a
+                // child frame with its own floating elements (our Toolbar).
                 const results = await chrome.scripting.executeScript({
                     target: { tabId: tab.id, allFrames: true },
                     func: fpcHideFloatingAndRead,
+                    args: [mode],
                 });
                 return results.find(r => r.frameId === target.frameId).result;
             };
@@ -403,7 +416,9 @@ async function runFullPageCapture(tab) {
             for (let row = 1; ; row++) {
                 let reqX = 0, rowY = null, prevX = -1;
                 for (let col = 1; ; col++) {
-                    const at = await scrollAndRead(reqX, reqY);
+                    const firstRow = row === 1, lastRow = reqY >= maxY;
+                    const mode = firstRow && lastRow ? "only" : firstRow ? "first" : lastRow ? "last" : "middle";
+                    const at = await scrollAndRead(reqX, reqY, mode);
                     const dataUrl = await captureWithRetry(tab.windowId);
                     const { cropRect, pasteX, pasteY } = geometry.cropRectFor(at.x, at.y);
                     tileIndex++;
