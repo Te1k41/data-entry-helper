@@ -234,6 +234,30 @@ async function findChildFrameRect(tabId, frameName) {
     return rect;
 }
 
+// GoFullPage-style: visibility:hidden every position:fixed/sticky element
+// (sticky headers, floating toolbars, our own buttons) so it isn't stamped
+// into every tile. visibility (not display:none) keeps layout/height stable.
+// Idempotent — an element already hidden by an earlier call keeps its
+// ORIGINAL saved visibility. Restored in runFullPageCapture()'s finally.
+// Resolves after the hide has painted (double rAF), with a timeout so a
+// frame that never paints (hidden iframe, throttled rAF) can't hang it.
+// Runs inside the page (executeScript) — must stay self-contained.
+function fpcHideFloatingAndRead() {
+    document.querySelectorAll("*").forEach((el) => {
+        if (el.dataset.ttFpcPrevVisibility !== undefined) return;
+        const cs = getComputedStyle(el);
+        if (cs.position === "fixed" || cs.position === "sticky") {
+            el.dataset.ttFpcPrevVisibility = el.style.visibility || "";
+            el.style.visibility = "hidden";
+        }
+    });
+    return new Promise((resolve) => {
+        const done = () => resolve({ x: window.scrollX, y: window.scrollY });
+        setTimeout(done, 150);
+        requestAnimationFrame(() => requestAnimationFrame(done));
+    });
+}
+
 async function runFullPageCapture(tab) {
     if (fpcInProgress) return;
     fpcInProgress = true;
@@ -322,28 +346,6 @@ async function runFullPageCapture(tab) {
         const startResp = await sendToTab(tab.id, { type: "FPC_START", canvasWidth, canvasHeight });
         if (!startResp?.ok) throw new Error(startResp?.error || "Could not start capture canvas");
 
-        // GoFullPage-style: hide every position:fixed/sticky element (sticky
-        // headers, floating toolbars — including our own rename-toggle
-        // button) before scrolling, so it doesn't get captured once per
-        // slice. visibility:hidden (not display:none) keeps layout/height
-        // stable rather than reflowing the page mid-capture. Always
-        // restored in the finally block below, even on error. Every frame,
-        // not just the top one: on a frameset page (Tradetech) the target
-        // is a child frame, and its own fixed elements (our Toolbar, a
-        // sticky header) otherwise got stamped into every tile.
-        await chrome.scripting.executeScript({
-            target: { tabId: tab.id, allFrames: true },
-            func: () => {
-                document.querySelectorAll("*").forEach((el) => {
-                    const cs = getComputedStyle(el);
-                    if (cs.position === "fixed" || cs.position === "sticky") {
-                        el.dataset.ttFpcPrevVisibility = el.style.visibility || "";
-                        el.style.visibility = "hidden";
-                    }
-                });
-            }
-        });
-
         try {
             // One-time static-chrome background snapshot (header/footer/
             // side frames outside the target's own footprint) — only
@@ -383,13 +385,18 @@ async function runFullPageCapture(tab) {
                 // detection. Upgrade path if a real page proves flaky: double
                 // rAF or a short MutationObserver-based debounce before capture.
                 await sleep(FPC_SLICE_DELAY_MS);
-                // Read AFTER the settle delay, right before the screenshot:
-                // where the page really is when it gets captured.
-                const [{ result }] = await chrome.scripting.executeScript({
-                    target: { tabId: tab.id, frameIds: [target.frameId] },
-                    func: () => ({ x: window.scrollX, y: window.scrollY }),
+                // Hide floating elements AFTER every scroll, not once up front:
+                // many sites only turn their header position:fixed once you
+                // scroll (live: cmacgm.com's header was stamped over every
+                // tile, covering the rows under it). Every frame too — on a
+                // frameset page (Tradetech) the target is a child frame with
+                // its own floating elements (our Toolbar). Also returns where
+                // each frame really is, read right before the screenshot.
+                const results = await chrome.scripting.executeScript({
+                    target: { tabId: tab.id, allFrames: true },
+                    func: fpcHideFloatingAndRead,
                 });
-                return result;
+                return results.find(r => r.frameId === target.frameId).result;
             };
 
             let reqY = 0, prevRowY = -1;
