@@ -116,6 +116,9 @@ const FPC_SLICE_DELAY_MS = 600;        // ponytail: one knob covers both scroll-
                                         // ~2 calls/sec captureVisibleTab rate limit — bump this first if
                                         // MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND errors ever show up
 
+const FPC_OVERLAP_PX     = 1;          // each tile overlaps the previous by 1 CSS px — absorbs sub-pixel
+                                        // landing drift (dpr 1.25/1.5); the overlap is identical pixels, invisible
+
 let fpcInProgress = false; // ponytail: global lock, not per-tab — one capture per profile at a time
                             // is the only realistic case here; per-tab lock is the upgrade path
 
@@ -191,19 +194,18 @@ function computeCaptureGeometry(topFrame, target, rect) {
             width:  Math.round(topFrame.result.clientWidth  * dpr),
             height: Math.round(topFrame.result.clientHeight * dpr),
         },
-        // The last tile in a row/column doesn't sit at a clean col*step
-        // multiple — background.js's own scroll clamp (Math.min(col*step,
-        // total-step)) pulls it back to align flush with the TRUE content
-        // edge instead, exactly like this same clamp does here for where
-        // it gets pasted. Getting this wrong (pasting every tile at a
-        // plain col*step regardless of clamping) is the OTHER half of the
-        // reported seam bug: whenever content isn't an exact multiple of
-        // the tile size — the common case — the last tile in each
-        // direction would land short of or past where it actually was
-        // captured from.
-        cropRectFor: (col, row) => {
-            const pasteXOffset = Math.min(col * stepX, Math.max(0, contentWidthPx  - stepX));
-            const pasteYOffset = Math.min(row * stepY, Math.max(0, contentHeightPx - stepY));
+        // Pasted at where the frame ACTUALLY scrolled to (read back right
+        // before the screenshot), not where we asked it to go — a page can
+        // land somewhere else (scroll snapping, content that grew/shrank
+        // since it was measured, sub-pixel snapping at non-integer dpr),
+        // and pasting at the predicted spot is exactly what tore seams.
+        // No clamp to the far edge either: the real position already IS
+        // the edge for the last tile, and a clamp built from the rounded
+        // step was off by one device row at dpr 1.5 (1237.5 rounds to
+        // 1238). Anything past the canvas edge is just clipped by drawImage.
+        cropRectFor: (actualX, actualY) => {
+            const pasteXOffset = Math.round(actualX * dpr);
+            const pasteYOffset = Math.round(actualY * dpr);
             return {
                 cropRect: { x: originLeftPx, y: originTopPx, width: stepX, height: stepY },
                 pasteX: originLeftPx + pasteXOffset,
@@ -325,10 +327,12 @@ async function runFullPageCapture(tab) {
         // button) before scrolling, so it doesn't get captured once per
         // slice. visibility:hidden (not display:none) keeps layout/height
         // stable rather than reflowing the page mid-capture. Always
-        // restored in the finally block below, even on error. Top-frame-
-        // only, same as before — out of scope for the iframe-reach fix.
+        // restored in the finally block below, even on error. Every frame,
+        // not just the top one: on a frameset page (Tradetech) the target
+        // is a child frame, and its own fixed elements (our Toolbar, a
+        // sticky header) otherwise got stamped into every tile.
         await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
+            target: { tabId: tab.id, allFrames: true },
             func: () => {
                 document.querySelectorAll("*").forEach((el) => {
                     const cs = getComputedStyle(el);
@@ -354,38 +358,67 @@ async function runFullPageCapture(tab) {
                 if (!bgResp?.ok) throw new Error(bgResp?.error || "Could not draw background layer");
             }
 
-            const cols = Math.max(1, Math.ceil(target.result.scrollWidth  / colStep));
-            const rows = Math.max(1, Math.ceil(target.result.scrollHeight / rowStep));
-            const totalTiles = cols * rows;
+            const maxX = Math.max(0, target.result.scrollWidth  - colStep);
+            const maxY = Math.max(0, target.result.scrollHeight - rowStep);
+            const totalTiles = Math.max(1, Math.ceil(target.result.scrollWidth / colStep)) * Math.max(1, Math.ceil(target.result.scrollHeight / rowStep)); // estimate, for the progress count
             let tileIndex = 0;
-            console.log(`[FullPageCapture] ${cols} cols × ${rows} rows = ${totalTiles} tiles (content ${target.result.scrollWidth}×${target.result.scrollHeight}px, step ${colStep}×${rowStep}px)`);
+            console.log(`[FullPageCapture] ~${totalTiles} tiles (content ${target.result.scrollWidth}×${target.result.scrollHeight}px, step ${colStep}×${rowStep}px)`);
 
-            for (let row = 0; row < rows; row++) {
-                const scrollY = Math.min(row * rowStep, target.result.scrollHeight - rowStep);
-                for (let col = 0; col < cols; col++) {
-                    const scrollX = Math.min(col * colStep, target.result.scrollWidth - colStep);
+            // Each next tile is requested one step past where the previous
+            // one ACTUALLY landed, not past where it was asked to go — a
+            // tile that lands short (scroll snapping, sub-pixel snapping)
+            // would otherwise leave a strip nobody captured between it and
+            // the next one. Stops when a row/column reaches the far edge, or
+            // stops advancing at all (page refuses to scroll further).
+            const scrollAndRead = async (x, y) => {
+                await chrome.scripting.executeScript({
+                    target: { tabId: tab.id, frameIds: [target.frameId] },
+                    // behavior:"instant" — a page with CSS scroll-behavior:
+                    // smooth would otherwise still be animating when the
+                    // screenshot fires.
+                    func: (x, y) => window.scrollTo({ left: x, top: y, behavior: "instant" }),
+                    args: [x, y]
+                });
+                // ponytail: fixed delay, no scroll-completion/lazy-image-load
+                // detection. Upgrade path if a real page proves flaky: double
+                // rAF or a short MutationObserver-based debounce before capture.
+                await sleep(FPC_SLICE_DELAY_MS);
+                // Read AFTER the settle delay, right before the screenshot:
+                // where the page really is when it gets captured.
+                const [{ result }] = await chrome.scripting.executeScript({
+                    target: { tabId: tab.id, frameIds: [target.frameId] },
+                    func: () => ({ x: window.scrollX, y: window.scrollY }),
+                });
+                return result;
+            };
 
-                    await chrome.scripting.executeScript({
-                        target: { tabId: tab.id, frameIds: [target.frameId] },
-                        func: (x, y) => window.scrollTo(x, y),
-                        args: [scrollX, scrollY]
-                    });
-
-                    // ponytail: fixed delay, no scroll-completion/lazy-image-load
-                    // detection. Upgrade path if a real page proves flaky: double
-                    // rAF or a short MutationObserver-based debounce before capture.
-                    await sleep(FPC_SLICE_DELAY_MS);
-
+            let reqY = 0, prevRowY = -1;
+            for (let row = 1; ; row++) {
+                let reqX = 0, rowY = null, prevX = -1;
+                for (let col = 1; ; col++) {
+                    const at = await scrollAndRead(reqX, reqY);
                     const dataUrl = await captureWithRetry(tab.windowId);
-                    const { cropRect, pasteX, pasteY } = geometry.cropRectFor(col, row);
+                    const { cropRect, pasteX, pasteY } = geometry.cropRectFor(at.x, at.y);
                     tileIndex++;
-                    const sliceResp = await sendToTab(tab.id, { type: "FPC_SLICE", dataUrl, cropRect, pasteX, pasteY, tileIndex, totalTiles });
-                    if (!sliceResp?.ok) throw new Error(sliceResp?.error || `Could not draw tile row ${row + 1}/${rows} col ${col + 1}/${cols}`);
+                    // Progress on the toolbar icon, not on the page — anything
+                    // drawn on the page ends up in the screenshot (and a fixed
+                    // badge gets hidden by the step above anyway).
+                    chrome.action.setBadgeText({ tabId: tab.id, text: `${Math.min(99, Math.floor(tileIndex / totalTiles * 100))}%` });
+                    const sliceResp = await sendToTab(tab.id, { type: "FPC_SLICE", dataUrl, cropRect, pasteX, pasteY });
+                    if (!sliceResp?.ok) throw new Error(sliceResp?.error || `Could not draw tile row ${row} col ${col}`);
+
+                    if (rowY === null) rowY = at.y;
+                    if (reqX >= maxX || at.x >= maxX || at.x <= prevX) break;
+                    prevX = at.x;
+                    reqX = Math.min(at.x + colStep - FPC_OVERLAP_PX, maxX);
                 }
+                if (reqY >= maxY || rowY >= maxY || rowY <= prevRowY) break;
+                prevRowY = rowY;
+                reqY = Math.min(rowY + rowStep - FPC_OVERLAP_PX, maxY);
             }
         } finally {
             await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
+                target: { tabId: tab.id, allFrames: true },
                 func: () => {
                     document.querySelectorAll("[data-tt-fpc-prev-visibility]").forEach((el) => {
                         el.style.visibility = el.dataset.ttFpcPrevVisibility;
@@ -397,7 +430,7 @@ async function runFullPageCapture(tab) {
 
         await chrome.scripting.executeScript({
             target: { tabId: tab.id, frameIds: [target.frameId] },
-            func: (x, y) => window.scrollTo(x, y),
+            func: (x, y) => window.scrollTo({ left: x, top: y, behavior: "instant" }),
             args: [target.result.originalX, target.result.originalY]
         });
 
@@ -417,6 +450,7 @@ async function runFullPageCapture(tab) {
             filename: `fullcapture-${Date.now()}.png`
         });
     } finally {
+        chrome.action.setBadgeText({ tabId: tab.id, text: "" });
         fpcInProgress = false;
     }
 }

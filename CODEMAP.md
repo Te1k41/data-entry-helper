@@ -276,6 +276,7 @@ flowchart LR
   utils_toolbar_js["utils/toolbar.js"] --> features_schedule_cascade_js["features/schedule-cascade.js"]
   utils_toolbar_js["utils/toolbar.js"] --> features_voyage_direction_js["features/voyage-direction.js"]
   utils_toolbar_js["utils/toolbar.js"] --> utils_banner_js["utils/banner.js"]
+  utils_toolbar_js["utils/toolbar.js"] --> background_js["background.js"]
   utils_toolbar_js["utils/toolbar.js"] --> features_due_service_scanner_relay_js["features/due-service-scanner-relay.js"]
   utils_toolbar_js["utils/toolbar.js"] --> features_live_check_relay_js["features/live-check-relay.js"]
   utils_toolbar_js["utils/toolbar.js"] --> features_notes_sidebar_js["features/notes-sidebar.js"]
@@ -301,7 +302,7 @@ flowchart LR
 | file | defines | used by |
 |---|---|---|
 | background-relay.js | renamingEnabled, ws, relayAvailable, pendingRenamingSend, awaitingRenamingEcho, batchJobRunning, connectWebSocket, broadcastRenameState, isRecognizedSchedulePage, AWR_AUDIT_SETTLE_MS, AWR_AUDIT_THROTTLE_MS, sleep, waitForTabComplete, RECEIPT_CAPTURE_SETTLE_MS, RECEIPT_CAPTURE_THROTTLE_MS, AWR_DATE_RESTORE_RECORDS, ddMmmYyyyToMmDdYy, setRelayAvailable | features/merge-download-signal-relay.js, features/rename-toggle-relay.js, features/schedule-capture-relay.js, features/service-relay-send-relay.js, utils/relay-socket-client.js, background.js |
-| background.js | fpcExtraCaptures, FPC_MAX_DIMENSION, FPC_MAX_AREA, FPC_SLICE_DELAY_MS, fpcInProgress, pickTargetFrame, computeCaptureGeometry, sendToTab, sleep, reportCaptureError | background-relay.js |
+| background.js | fpcExtraCaptures, FPC_MAX_DIMENSION, FPC_MAX_AREA, FPC_SLICE_DELAY_MS, FPC_OVERLAP_PX, fpcInProgress, pickTargetFrame, computeCaptureGeometry, sendToTab, sleep, reportCaptureError | background-relay.js |
 | core/boundary.js | PortSyncBoundary | features/date-syncing.js, features/manual-etd-highlight.js, features/port-highlighting.js |
 | features/arrival-depart-order-check.js | ArrivalDepartOrderCheck | features/insert-port.js, main.js |
 | features/auto-nav-schedules.js | AutoNavSchedules | features/due-service-scanner-relay.js, main.js |
@@ -365,7 +366,7 @@ flowchart LR
 | utils/port-row.js | PortRow | features/insert-port.js, features/port-no-date.js, features/schedule-capture-relay.js |
 | utils/relay-socket-client.js | RelayConnectionStatus, onRelayConnectionStatusChange, isRelayConnected, connectRelaySocket | features/due-service-scanner-relay.js, features/live-check-relay.js, features/schedule-preview-tools-relay.js, features/upload-proof-relay.js, utils/toolbar-relay.js, background-relay.js, features/merge-download-signal-relay.js, features/schedule-capture-relay.js, features/service-relay-send-relay.js |
 | utils/toolbar-relay.js | ToolbarRelay | - |
-| utils/toolbar.js | isOnScheduleForm, Toolbar | features/awr-audit-relay.js, features/awr-flag.js, features/date-calculator.js, features/duplicate-vessel.js, features/highlighter-settings.js, features/insert-port.js, features/rearrange-vessels.js, features/schedule-cascade.js, features/voyage-direction.js, utils/banner.js, features/due-service-scanner-relay.js, features/live-check-relay.js, features/notes-sidebar.js, features/rotation-receipt-capture-relay.js, features/schedule-preview-tools-relay.js, features/update-extension-native.js, features/upload-proof-relay.js, utils/custom-rules.js, utils/draggable-panel.js, utils/toolbar-relay.js |
+| utils/toolbar.js | isOnScheduleForm, Toolbar | features/awr-audit-relay.js, features/awr-flag.js, features/date-calculator.js, features/duplicate-vessel.js, features/highlighter-settings.js, features/insert-port.js, features/rearrange-vessels.js, features/schedule-cascade.js, features/voyage-direction.js, utils/banner.js, background.js, features/due-service-scanner-relay.js, features/live-check-relay.js, features/notes-sidebar.js, features/rotation-receipt-capture-relay.js, features/schedule-preview-tools-relay.js, features/update-extension-native.js, features/upload-proof-relay.js, utils/custom-rules.js, utils/draggable-panel.js, utils/toolbar-relay.js |
 | utils/vessel-row.js | VesselRow | features/duplicate-vessel.js, features/live-check-relay.js, features/schedule-capture-relay.js, features/validation.js, features/vessel-no-date.js, features/vessel-recommendation.js |
 | utils/voyage.js | VoyageUtils | features/duplicate-vessel.js, features/fix-vessel-dates.js, features/live-check.js, features/voyage-step-buttons.js |
 
