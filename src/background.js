@@ -234,45 +234,110 @@ async function findChildFrameRect(tabId, frameName) {
     return rect;
 }
 
-// Floating (position:fixed/sticky) elements would otherwise be stamped
-// into every tile. Like GoFullPage, each one shows up ONCE, where it
-// belongs in a full-page picture:
-//   "first"  (top row of tiles)    — fixed elements pinned to the top half
-//                                     of the screen (site header, our Rename
-//                                     button) + sticky ones, still sitting
-//                                     in their natural spot
+// Floating elements (site headers, chat bubbles, our own buttons) would
+// otherwise be stamped into every tile. Like GoFullPage, each one shows up
+// ONCE, where it belongs in a full-page picture:
+//   "first"  (top row of tiles)    — ones pinned to the top half of the
+//                                     screen (site header, Rename button)
 //   "middle"                        — none
-//   "last"   (bottom row of tiles)  — fixed elements pinned to the bottom
-//                                     half (chat bubble, cookie bar)
+//   "last"   (bottom row of tiles)  — ones pinned to the bottom half
+//                                     (chat bubble, cookie bar)
 //   "only"   (page fits one row)   — all of them
-// Re-run after EVERY scroll, not once up front: many sites only turn their
-// header fixed once you scroll (live: cmacgm.com's header was stamped over
-// every tile, covering the rows under it). visibility (not display:none)
-// keeps layout stable. Each element's original visibility is saved once,
-// for the restore in runFullPageCapture()'s finally. Resolves after the
-// change has painted (double rAF; 150ms timeout so a frame that never
-// paints can't hang), with where the frame really is scrolled to.
+//
+// "Floating" is decided by BEHAVIOR, not CSS: nudge the page 1px and see
+// what didn't move with it. Catches position:fixed, stuck position:sticky,
+// headers that only turn fixed once you scroll (live: cmacgm.com), and
+// "fake sticky" headers that JS re-positions on every scroll — none of
+// which a computed-style check reliably finds (live: zim.com's header
+// slipped past it). A sticky element still sitting in its natural spot
+// moves with the page, so it's correctly left alone as content.
+// Candidates = every fixed/sticky element (shadow roots included) + whatever
+// is under a grid of points along the top/bottom edges of the screen, plus
+// their ancestors. Frames that can't scroll fall back to "position:fixed".
+//
+// Hidden with opacity:0 !important + transition:none — unlike visibility,
+// a child can't override opacity, and site CSS with !important can't beat
+// an inline !important. Original inline values are kept in an isolated-
+// world Map (survives between executeScript calls in the same frame) for
+// the restore at the end. Once hidden, an element only comes back when
+// "last"/"only" wants it, so a header that slides away while we nudge
+// isn't caught mid-animation. Resolves after the change has painted, with
+// where the frame really is scrolled to.
 // ponytail: top/bottom halves only — a left/right-pinned side widget shows
 // on the first/last ROW of every column. Left/right split is the upgrade.
 // Runs inside the page (executeScript) — must stay self-contained.
-function fpcHideFloatingAndRead(mode) {
-    const half = window.innerHeight / 2;
-    document.querySelectorAll("*").forEach((el) => {
-        const pos = getComputedStyle(el).position;
-        if (pos !== "fixed" && pos !== "sticky") return;
-        if (el.dataset.ttFpcPrevVisibility === undefined) el.dataset.ttFpcPrevVisibility = el.style.visibility || "";
+async function fpcHideFloatingAndRead(mode) {
+    const saved = globalThis.__ttFpcSaved || (globalThis.__ttFpcSaved = new Map());
+    const se = document.scrollingElement || document.documentElement;
+    const W = window.innerWidth, H = window.innerHeight;
+    const frame = () => new Promise((r) => { setTimeout(r, 100); requestAnimationFrame(() => requestAnimationFrame(r)); });
+    const parentOf = (el) => el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null);
+
+    const cands = new Set();
+    const walk = (root) => root.querySelectorAll("*").forEach((el) => {
+        const p = getComputedStyle(el).position;
+        if (p === "fixed" || p === "sticky") cands.add(el);
+        if (el.shadowRoot) walk(el.shadowRoot);
+    });
+    walk(document);
+    for (const y of [2, 40, 90, H - 90, H - 40, H - 2]) {
+        for (let i = 0; i <= 10; i++) {
+            for (let el of document.elementsFromPoint(Math.min(W - 1, i * W / 10), y)) {
+                for (; el && el !== document.body && el !== document.documentElement; el = parentOf(el)) cands.add(el);
+            }
+        }
+    }
+
+    const before = new Map([...cands].map((el) => [el, el.getBoundingClientRect().top]));
+    const y0 = window.scrollY;
+    const dy = y0 + H < se.scrollHeight - 1 ? 1 : -1;
+    window.scrollTo({ left: window.scrollX, top: y0 + dy, behavior: "instant" });
+    await frame();
+    const nudged = window.scrollY !== y0;
+    const floating = new Set([...cands].filter((el) => nudged
+        ? Math.abs(el.getBoundingClientRect().top - before.get(el)) < 0.5
+        : getComputedStyle(el).position === "fixed"));
+    if (nudged) {
+        window.scrollTo({ left: window.scrollX, top: y0, behavior: "instant" });
+        await frame();
+    }
+
+    const restore = (el) => {
+        for (const [prop, value, priority] of saved.get(el)) {
+            if (value) el.style.setProperty(prop, value, priority); else el.style.removeProperty(prop);
+        }
+        saved.delete(el);
+    };
+    for (const el of floating) {
+        let inner = false;
+        for (let p = parentOf(el); p && !inner; p = parentOf(p)) inner = floating.has(p);
+        if (inner) continue; // outermost floating element only
+
         const r = el.getBoundingClientRect();
-        const pinnedTop = r.top + r.height / 2 < half;
-        const show = mode === "only"
-            || (mode === "first" && (pos === "sticky" || pinnedTop))
-            || (mode === "last" && pos === "fixed" && !pinnedTop);
-        el.style.visibility = show ? el.dataset.ttFpcPrevVisibility : "hidden";
-    });
-    return new Promise((resolve) => {
-        const done = () => resolve({ x: window.scrollX, y: window.scrollY });
-        setTimeout(done, 150);
-        requestAnimationFrame(() => requestAnimationFrame(done));
-    });
+        const pinnedTop = r.top + r.height / 2 < H / 2;
+        const show = mode === "only" || (mode === "first" && pinnedTop) || (mode === "last" && !pinnedTop);
+        if (show) {
+            if (saved.has(el)) restore(el);
+        } else if (!saved.has(el)) {
+            saved.set(el, ["opacity", "transition"].map((p) => [p, el.style.getPropertyValue(p), el.style.getPropertyPriority(p)]));
+            el.style.setProperty("transition", "none", "important");
+            el.style.setProperty("opacity", "0", "important");
+        }
+    }
+    await frame();
+    return { x: window.scrollX, y: window.scrollY };
+}
+
+// Puts back everything fpcHideFloatingAndRead() changed in this frame.
+function fpcRestoreFloating() {
+    const saved = globalThis.__ttFpcSaved;
+    if (!saved) return;
+    for (const [el, props] of saved) {
+        for (const [prop, value, priority] of props) {
+            if (value) el.style.setProperty(prop, value, priority); else el.style.removeProperty(prop);
+        }
+    }
+    saved.clear();
 }
 
 async function runFullPageCapture(tab) {
@@ -441,12 +506,7 @@ async function runFullPageCapture(tab) {
         } finally {
             await chrome.scripting.executeScript({
                 target: { tabId: tab.id, allFrames: true },
-                func: () => {
-                    document.querySelectorAll("[data-tt-fpc-prev-visibility]").forEach((el) => {
-                        el.style.visibility = el.dataset.ttFpcPrevVisibility;
-                        delete el.dataset.ttFpcPrevVisibility;
-                    });
-                }
+                func: fpcRestoreFloating,
             }).catch(() => {}); // tab may have navigated/closed mid-capture — best effort only
         }
 
