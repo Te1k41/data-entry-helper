@@ -443,7 +443,8 @@ const PortHighlighting = {
             // starts the West leg; SP008="WE" ends it) — stop leg 2's
             // scan window there instead of letting it run all the way
             // to the unrelated sync boundary.
-            const pivotKeyField = document.querySelector(`input[name="SP${pivotRow}_port_key"]`);
+            // pivotRow is a parsed number — pad back to "SP004", or this matches nothing
+            const pivotKeyField = document.querySelector(`input[name="SP${String(pivotRow).padStart(3, "0")}_port_key"]`);
             const pivotDirections = this.parsePortKeyDirections(pivotKeyField?.value);
             if (pivotDirections?.start) {
                 const leg2EndRow = this.findLegEndRow(pivotRow, pivotDirections.start);
