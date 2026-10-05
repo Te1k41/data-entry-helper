@@ -21,20 +21,13 @@ Toolbar.register({
     label: "🔄 Update Extension",
     title: "Download the latest code and reload the extension (needs the one-time updater setup — see updater/README.md)",
     group: "misc",
-    onClick: () => {
-        console.log("🖱 Update Extension (native) clicked");
-        chrome.runtime.sendMessage({ type: "CHECK_FOR_UPDATE_NATIVE" }, (response) => {
-            // On a real update the background script reloads the tab (and
-            // itself) before ever replying — a response here means either
-            // nothing changed, the pull failed, or the native host isn't
-            // registered yet, all banner-worthy, not a reload in flight.
-            if (!response) {
-                showTemporaryBanner({ title: "🔄 Update Extension", message: "No response from the background script — try again" });
-            } else if (!response.ok) {
-                showTemporaryBanner({ title: "🔄 Update Extension", message: response.reason || "Update failed — see updater/README.md for setup" });
-            } else if (!response.updated) {
-                showTemporaryBanner({ title: "🔄 Update Extension", message: "Already up to date" });
-            }
-        });
-    }
+    // Progress/result banners live in UpdateFlow (utils/update-flow.js),
+    // shared with the private edition's relay-based button.
+    onClick: () => UpdateFlow.run({
+        buttonId:    "tt-update-extension-native-btn",
+        label:       "🔄 Update Extension",
+        messageType: "CHECK_FOR_UPDATE_NATIVE",
+        waitingText: "Checking GitHub and downloading the latest version…",
+        failHint:    "Update failed — see updater/README.md for setup",
+    }),
 });

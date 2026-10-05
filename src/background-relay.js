@@ -165,9 +165,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
             if (result.ok && result.updated) {
                 console.log(`🔄 Extension updated to ${result.commit} — reloading`);
-                if (sender.tab?.id) chrome.tabs.reload(sender.tab.id);
-                chrome.runtime.reload();
-                return; // reload() tears this context down — no sendResponse after it
+                // Reply first and reload ~2s later, so the button can show
+                // "Updated — reloading…" + what's new instead of the page just
+                // blinking. ttJustUpdated lets the reloaded page say it worked.
+                chrome.storage.local.set({ ttJustUpdated: { at: Date.now(), commit: result.commit, commits: result.commits || [] } });
+                sendResponse(result);
+                setTimeout(() => {
+                    if (sender.tab?.id) chrome.tabs.reload(sender.tab.id);
+                    chrome.runtime.reload();
+                }, 2000);
+                return;
             }
             sendResponse(result);
         })();

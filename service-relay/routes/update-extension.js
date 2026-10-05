@@ -49,6 +49,8 @@ async function handlePull(req, res) {
             updated: before !== after,
             commit: after.slice(0, 7),
             message: pullOutput.trim(),
+            // newest first, capped — shown in the "what's new" banner
+            commits: before === after ? [] : git(["log", "--format=%s", "-n", "10", `${before}..${after}`]).trim().split(/\r?\n/).filter(Boolean),
         });
     } catch (err) {
         console.error("❌ Update Extension failed:", err);

@@ -52,6 +52,7 @@
             "src/utils/draggable-panel.js",
             "src/utils/toolbar-relay.js",
             "src/utils/banner.js",
+            "src/utils/update-flow.js",
             "src/utils/dom.js",
             "src/utils/voyage.js",
             "src/utils/vessel-row.js",

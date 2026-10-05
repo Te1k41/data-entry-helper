@@ -16,20 +16,13 @@ Toolbar.register({
     title:     "Pull the latest code from git and reload the extension",
     group:     "misc",
     requiresRelay: true,
-    onClick: () => {
-        console.log("🖱 Update Extension clicked");
-        chrome.runtime.sendMessage({ type: "CHECK_FOR_UPDATE" }, (response) => {
-            // On a real update the background script reloads the tab (and
-            // itself) before ever replying, so a response here means
-            // either nothing changed or the pull failed — either way,
-            // there's no reload in flight and a banner is the right call.
-            if (!response) {
-                showTemporaryBanner({ title: "🔄 Update Extension", message: "No response from the background script — try again" });
-            } else if (!response.ok) {
-                showTemporaryBanner({ title: "🔄 Update Extension", message: response.reason || "Update failed — check the background service worker console" });
-            } else if (!response.updated) {
-                showTemporaryBanner({ title: "🔄 Update Extension", message: `Already up to date (${response.commit})` });
-            }
-        });
-    }
+    // Progress/result banners live in UpdateFlow (utils/update-flow.js),
+    // shared with the community edition's native updater button.
+    onClick: () => UpdateFlow.run({
+        buttonId:    "tt-update-extension-btn",
+        label:       "🔄 Update Extension",
+        messageType: "CHECK_FOR_UPDATE",
+        waitingText: "Pulling the latest code from git…",
+        failHint:    "Update failed — check the background service worker console",
+    }),
 });
