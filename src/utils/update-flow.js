@@ -8,9 +8,8 @@
 //   - a banner says what's happening, with a live seconds counter
 //   - on a real update: "Updated to abc1234 — reloading…" + what's new,
 //     shown ~2s before background.js reloads the tab and the extension
-//   - after that reload: a "✅ Extension updated" banner, once, listing
-//     what changed (handed over via chrome.storage.local "ttJustUpdated",
-//     written by background.js right before it reloads)
+//   - after that reload: a "✅ Extension updated" browser notification
+//     (background.js), visible on whatever site you're on
 // ============================================================
 
 const UpdateFlow = {
@@ -60,18 +59,3 @@ function formatUpdateCommits(commits) {
     if (!commits?.length) return "";
     return "<br><br>What's new:<br>" + commits.map(c => `• ${escapeUpdateText(c)}`).join("<br>");
 }
-
-// After the reload: say it worked, once. Only in the frame that actually
-// shows the Toolbar's page — not a <frameset> shell (no real <body> to
-// draw on) and not Tradetech's other, form-less child frames, or the same
-// banner would pop up once per frame.
-chrome.storage.local.get("ttJustUpdated", ({ ttJustUpdated: info }) => {
-    if (!info || Date.now() - info.at > 2 * 60 * 1000) return;
-    if (document.body?.tagName !== "BODY") return;
-    if (window !== window.top && !isOnScheduleForm()) return;
-    chrome.storage.local.remove("ttJustUpdated");
-    showTemporaryBanner({
-        title:   "✅ Extension updated",
-        message: `Now on ${escapeUpdateText(info.commit || "the latest version")}${formatUpdateCommits(info.commits)}`,
-    }, 10000);
-});

@@ -7,6 +7,28 @@ importScripts("background-relay.js");
 // The imported companion may already have registered a side-capture.
 var fpcExtraCaptures = globalThis.fpcExtraCaptures || [];
 
+// Right after an Update Extension reload (utils/update-flow.js): say it
+// worked with a browser notification, so it shows whatever site you're
+// on — an in-page banner could only reach Tradetech (the only site with
+// host permissions), and tabs already open keep orphaned content scripts
+// until refreshed. ttJustUpdated is written by the update handlers just
+// before they reload; this top-level code runs as the new service worker
+// starts. Removed once shown, ignored if stale.
+chrome.storage.local.get("ttJustUpdated", ({ ttJustUpdated: info }) => {
+    if (!info) return;
+    chrome.storage.local.remove("ttJustUpdated");
+    if (Date.now() - info.at > 2 * 60 * 1000) return;
+    const commits = (info.commits || []).slice(0, 5);
+    chrome.notifications.create("tt-extension-updated", {
+        type:     commits.length ? "list" : "basic",
+        iconUrl:  "src/assets/updated-128.png",
+        title:    "✅ Extension updated",
+        message:  `Now on ${info.commit || "the latest version"}`,
+        items:    commits.map(c => ({ title: "•", message: c })),
+        priority: 1,
+    });
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // window.close() from a content script only works if the tab has a
     // live window.opener reference (opened via a script/target="_blank"
