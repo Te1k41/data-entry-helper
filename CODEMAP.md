@@ -521,6 +521,8 @@ flowchart LR
 | dashboard/ports.js | - | - |
 | dashboard/route-map.js | - | - |
 | dashboard/settings.js | - | - |
+| dashboard/vendor/d3-array.min.js | - | - |
+| dashboard/vendor/d3-geo.min.js | - | - |
 | date-translator.js | - | fill-calc.js |
 | download-watcher.js | config.js, relay-state.js, proof-extract.js, proof-parsers/yangming-html.js, proof-parsers/evergreen-html.js, schedule-dom-scrape-store.js | server.js |
 | due-date-utils.js | - | current-batch-store.js, due-services-trim.js, routes/due-services.js |

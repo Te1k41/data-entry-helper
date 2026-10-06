@@ -42,6 +42,12 @@ const COUNTRY_ALIASES = {
     "ST LUCIA": "LC", "GUAM": "GU", "EAST TIMOR": "TL", "SINT MAARTEN": "SX", "SINT MAARTEN DUTCH": "SX",
 };
 
+// Tradetech port names the sources spell differently (normalized
+// Tradetech name -> the name the sources use). Add as they come up.
+const NAME_ALIASES = {
+    "TANGER MED": "TANGIER MEDITERRANEAN", // Morocco — user-confirmed
+};
+
 // Canals/straits Tradetech lists as rotation stops.
 const WAYPOINTS = {
     "SUEZ CANAL": [30.6, 32.33], "PANAMA CANAL": [9.08, -79.68], "PANAMA CANAL CARIB": [9.35, -79.92],
@@ -115,6 +121,7 @@ function locateOne({ name, code }) {
 
     const { cc, sub, cities } = parseName(name);
     const variants = cities.flatMap(nameVariants);
+    for (const v of [...variants]) if (NAME_ALIASES[v]) variants.push(normKey(NAME_ALIASES[v]));
 
     // Before the datasets: UN/LOCODE's own "Suez Canal" entry sits at
     // 42.3°N (the Black Sea) — a known-good fixed point beats it.

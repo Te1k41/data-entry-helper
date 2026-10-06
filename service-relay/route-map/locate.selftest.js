@@ -24,6 +24,7 @@ const near = (hit, lat, lon, km = 60) => {
         [{ name: "GLOUCESTER CITY, NJ USA", code: "GLC" }, 39.9, -75.1, "or-unplaced"], // was wrongly Gloucester, VA
         [{ name: "SUEZ CANAL, EGYPT", code: "SUZ" }, 30.6, 32.3],
         [{ name: "FUKUYAMA, HIROSHIMA, JAPAN", code: "FKY" }, 34.4, 133.4],
+        [{ name: "TANGER MED, MOROCCO", code: "TNG" }, 35.88, -5.51],       // alias -> Tangier Mediterranean
     ];
     const hits = await locate(cases.map(c => c[0]));
     const fails = [];

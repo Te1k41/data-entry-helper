@@ -17,7 +17,9 @@
     .rmBar .status { color: var(--muted); font-size: 12px; }
     .rmMapWrap { background: #fff; border: 1px solid var(--border); position: relative; }
     .rmMapWrap.placing { cursor: crosshair; outline: 2px solid var(--amber); }
-    .rmMapWrap svg { display: block; width: 100%; height: auto; }
+    .rmMapWrap svg { display: block; width: 100%; height: auto; user-select: none; }
+    .rmMapWrap { cursor: grab; }
+    .rmMapWrap:active { cursor: grabbing; }
     .rmDrop { border: 2px dashed var(--border); padding: 40px; text-align: center; color: var(--dim); }
     .rmDrop.over { border-color: var(--blue); color: var(--blue); }
     table.rmPorts { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
@@ -50,6 +52,9 @@
     <div class="rmMain">
         <div class="rmBar">
             <button id="rmExport" disabled>⬇ Export PNG</button>
+            <button id="rmZoomIn" title="Zoom in (or scroll on the map)">＋</button>
+            <button id="rmZoomOut" title="Zoom out">－</button>
+            <button id="rmZoomReset" title="Fit the whole route">⤢ Reset view</button>
             <span class="status" id="rmStatus">Pick a receipt.</span>
         </div>
         <div class="rmMapWrap" id="rmMap"><div class="rmDrop" style="border:none;">No route loaded</div></div>

@@ -5,6 +5,10 @@
 //  Operator / Carriers box. Everything is one SVG, so Export PNG
 //  captures exactly what's on screen.
 //
+//  Zoom (wheel, ＋/－) and pan (drag) change the VIEW and redraw, rather
+//  than scaling a picture — so arrows, dots, labels and arrowheads keep the
+//  same clear on-screen size at every zoom, while coastlines get sharper.
+//
 //  Data: routes/route-map.js (receipt list, route + placed ports, land).
 //  Map: Mercator, centred on the route's own longitude — the world is
 //  drawn 3x side by side (land.json rings already stop at ±180°), so a
@@ -83,10 +87,24 @@ function placeLabels(labels, dots, H = 13) {
     });
 }
 
+// Zoom by `factor` (>1 = in) keeping the map point under (ux, uy) — SVG
+// user units, origin top-left of the map — exactly where it is.
+const MIN_W = 1.5, MAX_W = 720; // degrees of longitude across the map
+function zoomAt(v, ux, uy, factor, mapW = W, mapH = MAP_H) {
+    const w = Math.min(MAX_W, Math.max(MIN_W, v.w / factor)), h = (w * v.h) / v.w;
+    const mx = v.x0 + v.w * (ux / mapW), my = v.y0 + v.h * (1 - uy / mapH);
+    return { x0: mx - w * (ux / mapW), y0: my - h * (1 - uy / mapH), w, h };
+}
+
+// Pan by a drag of (dx, dy) SVG user units (drag right = see more west).
+function panBy(v, dx, dy, mapW = W, mapH = MAP_H) {
+    return { ...v, x0: v.x0 - dx * (v.w / mapW), y0: v.y0 + dy * (v.h / mapH) };
+}
+
 const cityLabel = name => String(name || "").split(",")[0].replace(/\s*\(.*?\)\s*/g, " ").trim()
     .toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 
-if (typeof module !== "undefined") module.exports = { mercY, invMercY, centerLon, unwrap, fitView, pivotRow, bendPoint, cityLabel, placeLabels };
+if (typeof module !== "undefined") module.exports = { mercY, invMercY, centerLon, unwrap, fitView, pivotRow, bendPoint, cityLabel, placeLabels, zoomAt, panBy };
 
 // ── Page ──────────────────────────────────────────────────────
 
@@ -125,13 +143,14 @@ if (typeof document !== "undefined") {
         status(`Loading ${label}…`);
         const result = await promise;
         if (!result.ok) { status(result.reason); return; }
+        if (current?.reload !== reload) view = null; // a different route re-fits; a reload (after Place) keeps your zoom
         current = { ...result, label, reload };
         land ||= await (await fetch("/route-map/land.json")).json();
         borders ||= await (await fetch("/route-map/borders.json")).json();
         render();
     }
 
-    function render() {
+    function render(withTable = true) {
         const { data, places, source } = current;
         const ports = data.ports.map((p, i) => ({ ...p, place: places[i] }));
         const placed = ports.filter(p => p.place);
@@ -139,7 +158,7 @@ if (typeof document !== "undefined") {
 
         const center = placed.length ? centerLon(placed.map(p => p.place.lon)) : 0;
         for (const p of placed) { p.x = unwrap(p.place.lon, center); p.y = mercY(p.place.lat); }
-        view = fitView(placed.length ? placed : [{ x: center, y: 0 }]);
+        view ||= fitView(placed.length ? placed : [{ x: center, y: 0 }]);
         const k = W / view.w;
         const sx = x => (x - view.x0) * k, sy = y => (view.y0 + view.h - y) * k;
 
@@ -178,7 +197,7 @@ if (typeof document !== "undefined") {
             if (Math.hypot(b.x - a.x, b.y - a.y) < 4) continue;
             const c = bendPoint(a, b), leg = legOf(placed[i]);
             const gap = ports.indexOf(placed[i]) - ports.indexOf(placed[i - 1]) > 1; // an unplaced port in between
-            arrows += `<path d="M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${c.x.toFixed(1)},${c.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}" fill="none" stroke="${COLORS[leg]}" stroke-width="2"${gap ? ' stroke-dasharray="6 4"' : ""} marker-end="url(#arrow${leg})"/>`;
+            arrows += `<path d="M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${c.x.toFixed(1)},${c.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}" fill="none" stroke="${COLORS[leg]}" stroke-width="2.6" stroke-linecap="round"${gap ? ' stroke-dasharray="6 4"' : ""} marker-end="url(#arrow${leg})"/>`;
         }
 
         // Dots + labels, one per distinct spot (a port visited twice gets one dot).
@@ -195,7 +214,7 @@ if (typeof document !== "undefined") {
         spotList.forEach((s, i) => {
             const approx = s.p.place.how === "approx", l = spotsLabels[i];
             dots += (s.highlighted ? `<circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="11" fill="none" stroke="#f2c200" stroke-width="4"/>` : "")
-                + `<circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="5.5" fill="${approx ? "#f28c28" : "#e8202a"}" stroke="#fff" stroke-width="1.5"/>`;
+                + `<circle data-port="${esc(s.p.name)}" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="5.5" fill="${approx ? "#f28c28" : "#e8202a"}" stroke="#fff" stroke-width="1.5"/>`;
             labels += `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" font-size="13" font-weight="bold" fill="#111" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(texts[i])}</text>`;
         });
 
@@ -215,7 +234,7 @@ if (typeof document !== "undefined") {
             + `<text x="14" y="${MAP_H + 54}" font-size="12" fill="#555">${pivot ? `<tspan fill="${COLORS[0]}">━ leg 1</tspan>  <tspan fill="${COLORS[1]}">━ leg 2</tspan>  ·  ` : ""}<tspan fill="#c9a000">◯</tspan> highlighted port</text>`;
 
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${totalH}" font-family="Arial, Helvetica, sans-serif">
-            <defs>${COLORS.map((c, i) => `<marker id="arrow${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join("")}
+            <defs>${COLORS.map((c, i) => `<marker id="arrow${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" markerUnits="strokeWidth" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join("")}
                 <clipPath id="mapClip"><rect width="${W}" height="${MAP_H}"/></clipPath></defs>
             <rect width="${W}" height="${totalH}" fill="#fff"/>
             <g clip-path="url(#mapClip)">
@@ -232,6 +251,7 @@ if (typeof document !== "undefined") {
         $("rmExport").disabled = false;
 
         const unplaced = ports.filter(p => !p.place).length;
+        if (!withTable) return; // zoom/pan redraw — table and status unchanged
         status(`${data.service || current.label}: ${placed.length}/${ports.length} ports placed${unplaced ? ` — ${unplaced} not placed, use “Place” below` : ""}${source === "review-store" ? " · older receipt: route taken from stored review data" : ""}`);
         renderTable(ports);
     }
@@ -257,10 +277,48 @@ if (typeof document !== "undefined") {
         current?.reload();
     }
 
+    // Mouse position -> SVG user units (viewBox is W wide, aspect kept).
+    const toUser = (e) => {
+        const r = $("rmMap").querySelector("svg").getBoundingClientRect();
+        return { ux: ((e.clientX - r.left) / r.width) * W, uy: ((e.clientY - r.top) / r.width) * W };
+    };
+    let pending = false;
+    const redraw = () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; render(false); }); };
+
+    $("rmMap").addEventListener("wheel", (e) => {
+        if (!view || !current) return;
+        const { ux, uy } = toUser(e);
+        if (uy > MAP_H) return;
+        e.preventDefault();
+        view = zoomAt(view, ux, uy, Math.exp(-e.deltaY * 0.0015));
+        redraw();
+    }, { passive: false });
+
+    let drag = null, dragged = false;
+    $("rmMap").addEventListener("mousedown", (e) => {
+        if (e.button !== 0 || !view) return;
+        const p = toUser(e);
+        if (p.uy > MAP_H) return;
+        drag = { ...p, view }; dragged = false;
+        e.preventDefault(); // no text selection while dragging
+    });
+    window.addEventListener("mousemove", (e) => {
+        if (!drag) return;
+        const p = toUser(e);
+        if (Math.hypot(p.ux - drag.ux, p.uy - drag.uy) > 3) dragged = true;
+        if (dragged) { view = panBy(drag.view, p.ux - drag.ux, p.uy - drag.uy); redraw(); }
+    });
+    window.addEventListener("mouseup", () => { drag = null; });
+
+    const zoomCenter = factor => { if (view && current) { view = zoomAt(view, W / 2, MAP_H / 2, factor); render(false); } };
+    $("rmZoomIn").onclick = () => zoomCenter(1.6);
+    $("rmZoomOut").onclick = () => zoomCenter(1 / 1.6);
+    $("rmZoomReset").onclick = () => { if (current) { view = null; render(false); } };
+
     $("rmMap").addEventListener("click", (e) => {
+        if (dragged) { dragged = false; return; } // end of a pan, not a placement click
         if (!placing || !view) return;
-        const svg = $("rmMap").querySelector("svg"), r = svg.getBoundingClientRect();
-        const ux = ((e.clientX - r.left) / r.width) * W, uy = ((e.clientY - r.top) / r.width) * W; // viewBox is W wide, aspect kept
+        const { ux, uy } = toUser(e);
         if (uy > MAP_H) return;
         const k = W / view.w;
         let lon = ux / k + view.x0;
