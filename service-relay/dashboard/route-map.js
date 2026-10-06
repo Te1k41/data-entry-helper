@@ -111,7 +111,13 @@ if (typeof module !== "undefined") module.exports = { mercY, invMercY, centerLon
 if (typeof document !== "undefined") {
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    let land = null, borders = null, current = null, placing = null, view = null;
+    let land = null, borders = null, current = null, placing = null;
+    let view = null;   // flat map: { x0, y0, w, h } in longitude / Mercator degrees
+    let globe = null;  // globe: { rotate: [λ, φ, 0], scale } (d3 orthographic)
+    let layer = null;  // the layer last drawn (for click -> lon/lat)
+    let landFeature = null, borderFeature = null; // GeoJSON for d3 (globe)
+    let mode = "globe";
+    try { mode = localStorage.getItem("tt-route-map-mode") || "globe"; } catch (e) { /* storage blocked — default */ }
 
     const status = msg => { $("rmStatus").textContent = msg; };
 
@@ -143,7 +149,7 @@ if (typeof document !== "undefined") {
         status(`Loading ${label}…`);
         const result = await promise;
         if (!result.ok) { status(result.reason); return; }
-        if (current?.reload !== reload) view = null; // a different route re-fits; a reload (after Place) keeps your zoom
+        if (current?.reload !== reload) view = globe = null; // a different route re-fits; a reload (after Place) keeps your zoom
         current = { ...result, label, reload };
         land ||= await (await fetch("/route-map/land.json")).json();
         borders ||= await (await fetch("/route-map/borders.json")).json();
@@ -156,55 +162,28 @@ if (typeof document !== "undefined") {
         const placed = ports.filter(p => p.place);
         if (!placed.length) { status("None of this route's ports could be placed — use “Place” in the table below."); }
 
-        const center = placed.length ? centerLon(placed.map(p => p.place.lon)) : 0;
-        for (const p of placed) { p.x = unwrap(p.place.lon, center); p.y = mercY(p.place.lat); }
-        view ||= fitView(placed.length ? placed : [{ x: center, y: 0 }]);
-        const k = W / view.w;
-        const sx = x => (x - view.x0) * k, sy = y => (view.y0 + view.h - y) * k;
-
-        // Land, 3 copies so any centre longitude has full coverage.
-        let landPath = "";
-        for (const off of [-360, 0, 360]) {
-            for (const ring of land) {
-                let inView = false;
-                const pts = ring.map(([lon, lat]) => {
-                    const x = sx(lon + off), y = sy(mercY(lat));
-                    if (x > -50 && x < W + 50 && y > -50 && y < MAP_H + 50) inView = true;
-                    return `${x.toFixed(1)},${y.toFixed(1)}`;
-                });
-                if (inView) landPath += `M${pts.join("L")}Z`;
-            }
-        }
-        // Country borders — same 3 copies, open polylines.
-        let borderPath = "";
-        for (const off of [-360, 0, 360]) {
-            for (const line of borders) {
-                const pts = line.map(([lon, lat]) => [sx(lon + off), sy(mercY(lat))]);
-                if (pts.some(([x, y]) => x > -50 && x < W + 50 && y > -50 && y < MAP_H + 50)) {
-                    borderPath += `M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L")}`;
-                }
-            }
-        }
-        const dateLines = [];
-        for (let x = Math.ceil((view.x0 - 180) / 360) * 360 + 180; x < view.x0 + view.w; x += 360) dateLines.push(sx(x));
+        layer = mode === "globe" ? globeLayer(placed) : flatLayer(placed);
 
         // Arrows between consecutive placed ports.
         const pivot = pivotRow(data.ports);
         const legOf = p => (pivot && parseInt(p.row, 10) > pivot ? 1 : 0);
         let arrows = "";
         for (let i = 1; i < placed.length; i++) {
-            const a = { x: sx(placed[i - 1].x), y: sy(placed[i - 1].y) }, b = { x: sx(placed[i].x), y: sy(placed[i].y) };
-            if (Math.hypot(b.x - a.x, b.y - a.y) < 4) continue;
-            const c = bendPoint(a, b), leg = legOf(placed[i]);
+            const leg = legOf(placed[i]);
             const gap = ports.indexOf(placed[i]) - ports.indexOf(placed[i - 1]) > 1; // an unplaced port in between
-            arrows += `<path d="M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${c.x.toFixed(1)},${c.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}" fill="none" stroke="${COLORS[leg]}" stroke-width="2.6" stroke-linecap="round"${gap ? ' stroke-dasharray="6 4"' : ""} marker-end="url(#arrow${leg})"/>`;
+            for (const seg of layer.arc(placed[i - 1], placed[i])) {
+                arrows += `<path d="${seg.d}" fill="none" stroke="${COLORS[leg]}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"${gap ? ' stroke-dasharray="6 4"' : ""}${seg.end ? ` marker-end="url(#arrow${leg})"` : ""}/>`;
+            }
         }
 
-        // Dots + labels, one per distinct spot (a port visited twice gets one dot).
+        // Dots + labels, one per distinct spot (a port visited twice gets
+        // one dot); on the globe only ports on the visible side.
         const spots = new Map();
         for (const p of placed) {
-            const key = `${sx(p.x).toFixed(0)},${sy(p.y).toFixed(0)}`;
-            if (!spots.has(key)) spots.set(key, { x: sx(p.x), y: sy(p.y), p, highlighted: false });
+            const at = layer.pos(p);
+            if (!at.visible) continue;
+            const key = `${at.x.toFixed(0)},${at.y.toFixed(0)}`;
+            if (!spots.has(key)) spots.set(key, { x: at.x, y: at.y, p, highlighted: false });
             if (p.row === data.highlightedRow) spots.get(key).highlighted = true;
         }
         const spotList = [...spots.values()];
@@ -238,10 +217,7 @@ if (typeof document !== "undefined") {
                 <clipPath id="mapClip"><rect width="${W}" height="${MAP_H}"/></clipPath></defs>
             <rect width="${W}" height="${totalH}" fill="#fff"/>
             <g clip-path="url(#mapClip)">
-                <rect width="${W}" height="${MAP_H}" fill="#ffffff"/>
-                <path d="${landPath}" fill="#d6d6d6" stroke="#9a9a9a" stroke-width="0.6" fill-rule="evenodd"/>
-                <path d="${borderPath}" fill="none" stroke="#a8a8a8" stroke-width="0.7"/>
-                ${dateLines.map(x => `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${MAP_H}" stroke="#9a9a9a" stroke-dasharray="4 4"/>`).join("")}
+                ${layer.background}
                 ${arrows}${dots}${labels}
             </g>
             <rect width="${W}" height="${MAP_H}" fill="none" stroke="#bbb"/>
@@ -254,6 +230,118 @@ if (typeof document !== "undefined") {
         if (!withTable) return; // zoom/pan redraw — table and status unchanged
         status(`${data.service || current.label}: ${placed.length}/${ports.length} ports placed${unplaced ? ` — ${unplaced} not placed, use “Place” below` : ""}${source === "review-store" ? " · older receipt: route taken from stored review data" : ""}`);
         renderTable(ports);
+    }
+
+    // ── Flat map (Mercator, like Tradetech's) ──
+    function flatLayer(placed) {
+        const center = placed.length ? centerLon(placed.map(p => p.place.lon)) : 0;
+        const xy = p => ({ x: unwrap(p.place.lon, center), y: mercY(p.place.lat) });
+        view ||= fitView(placed.length ? placed.map(xy) : [{ x: center, y: 0 }]);
+        const k = W / view.w;
+        const sx = x => (x - view.x0) * k, sy = y => (view.y0 + view.h - y) * k;
+        const inView = (x, y) => x > -50 && x < W + 50 && y > -50 && y < MAP_H + 50;
+
+        // Land + borders, 3 copies so any centre longitude has full coverage.
+        let landPath = "", borderPath = "";
+        for (const off of [-360, 0, 360]) {
+            for (const ring of land) {
+                const pts = ring.map(([lon, lat]) => [sx(lon + off), sy(mercY(lat))]);
+                if (pts.some(([x, y]) => inView(x, y))) landPath += `M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L")}Z`;
+            }
+            for (const line of borders) {
+                const pts = line.map(([lon, lat]) => [sx(lon + off), sy(mercY(lat))]);
+                if (pts.some(([x, y]) => inView(x, y))) borderPath += `M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L")}`;
+            }
+        }
+        let dateLines = "";
+        for (let x = Math.ceil((view.x0 - 180) / 360) * 360 + 180; x < view.x0 + view.w; x += 360) {
+            dateLines += `<line x1="${sx(x).toFixed(1)}" y1="0" x2="${sx(x).toFixed(1)}" y2="${MAP_H}" stroke="#9a9a9a" stroke-dasharray="4 4"/>`;
+        }
+
+        const pos = p => { const { x, y } = xy(p); return { x: sx(x), y: sy(y), visible: true }; };
+        return {
+            background: `<rect width="${W}" height="${MAP_H}" fill="#ffffff"/>
+                <path d="${landPath}" fill="#d6d6d6" stroke="#9a9a9a" stroke-width="0.6" fill-rule="evenodd"/>
+                <path d="${borderPath}" fill="none" stroke="#a8a8a8" stroke-width="0.7"/>${dateLines}`,
+            pos,
+            arc(pa, pb) {
+                const a = pos(pa), b = pos(pb);
+                if (Math.hypot(b.x - a.x, b.y - a.y) < 4) return [];
+                const c = bendPoint(a, b);
+                return [{ d: `M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${c.x.toFixed(1)},${c.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`, end: true }];
+            },
+            invert(ux, uy) {
+                const lon = ((((ux / k + view.x0 + 180) % 360) + 360) % 360) - 180;
+                return [lon, invMercY(view.y0 + view.h - uy / k)];
+            },
+        };
+    }
+
+    // ── Globe (3D: d3 orthographic) ──
+    // Arcs are great circles lifted off the surface (higher the longer the
+    // hop) so they read as 3D; any part behind the globe is hidden.
+    function globeLayer(placed) {
+        const R0 = Math.min(W, MAP_H) / 2 - 16;
+        if (!globe) {
+            const c = placed.length ? d3.geoCentroid({ type: "MultiPoint", coordinates: placed.map(p => [p.place.lon, p.place.lat]) }) : [0, 20];
+            const spread = Math.max(0.05, ...placed.map(p => d3.geoDistance(c, [p.place.lon, p.place.lat])));
+            // whole globe for a far-flung route, closer in for a regional one
+            globe = { rotate: [-c[0], -c[1], 0], scale: spread >= Math.PI / 2 ? R0 : Math.min(R0 * 6, Math.max(R0, (R0 * 0.85) / Math.sin(spread))) };
+        }
+        // d3 wants each ring wound so it encloses the SMALL side of the sphere
+        landFeature ||= { type: "MultiPolygon", coordinates: land.map(r => [d3.geoArea({ type: "Polygon", coordinates: [r] }) > 2 * Math.PI ? [...r].reverse() : r]) };
+        borderFeature ||= { type: "MultiLineString", coordinates: borders };
+
+        const proj = d3.geoOrthographic().translate([W / 2, MAP_H / 2]).scale(globe.scale).rotate(globe.rotate).clipAngle(90).precision(0.3);
+        const path = d3.geoPath(proj);
+        const rot = d3.geoRotation(globe.rotate);
+        // lon/lat (+ height above the surface, 1 = on it) -> unit-sphere x, y, z (z toward the viewer)
+        const toXYZ = (ll, lift = 1) => {
+            const [l, p] = rot(ll).map(v => (v * Math.PI) / 180);
+            return [Math.cos(p) * Math.sin(l) * lift, Math.sin(p) * lift, Math.cos(p) * Math.cos(l) * lift];
+        };
+        const screen = ([x, y]) => [W / 2 + globe.scale * x, MAP_H / 2 - globe.scale * y];
+        const visible = ([x, y, z]) => z > 0 || x * x + y * y > 1; // in front, or lifted out past the edge
+        const sphere = path({ type: "Sphere" });
+
+        return {
+            background: `<defs>
+                    <radialGradient id="rmOcean" cx="42%" cy="38%" r="65%"><stop offset="0" stop-color="#f6fbff"/><stop offset="1" stop-color="#c6dcee"/></radialGradient>
+                    <radialGradient id="rmShade" cx="42%" cy="38%" r="62%"><stop offset="0.6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.16"/></radialGradient>
+                </defs>
+                <rect width="${W}" height="${MAP_H}" fill="#ffffff"/>
+                <path d="${sphere}" fill="url(#rmOcean)"/>
+                <path d="${path(d3.geoGraticule10())}" fill="none" stroke="#b9cfe2" stroke-width="0.5"/>
+                <path d="${path(landFeature)}" fill="#d9d9d9" stroke="#9a9a9a" stroke-width="0.5"/>
+                <path d="${path(borderFeature)}" fill="none" stroke="#a8a8a8" stroke-width="0.6"/>
+                <path d="${sphere}" fill="url(#rmShade)" stroke="#8fa7bb" stroke-width="1"/>`,
+            pos(p) {
+                const v = toXYZ([p.place.lon, p.place.lat]);
+                const [x, y] = screen(v);
+                return { x, y, visible: v[2] > 0 };
+            },
+            arc(pa, pb) {
+                const A = [pa.place.lon, pa.place.lat], B = [pb.place.lon, pb.place.lat];
+                const dist = d3.geoDistance(A, B);
+                if (dist < 1e-4) return [];
+                const along = d3.geoInterpolate(A, B), height = Math.min(0.3, 0.06 + dist * 0.22), n = Math.max(16, Math.ceil(dist * 60));
+                const segs = [];
+                let cur = null;
+                for (let i = 0; i <= n; i++) {
+                    const t = i / n, v = toXYZ(along(t), 1 + height * Math.sin(Math.PI * t));
+                    if (!visible(v)) { cur = null; continue; }
+                    const [x, y] = screen(v);
+                    if (!cur) segs.push(cur = { pts: [], end: false });
+                    cur.pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+                    if (i === n) cur.end = true;
+                }
+                return segs.filter(g => g.pts.length > 1).map(g => ({ d: `M${g.pts.join("L")}`, end: g.end }));
+            },
+            invert(ux, uy) {
+                if (Math.hypot(ux - W / 2, uy - MAP_H / 2) > globe.scale) return null; // off the globe
+                return proj.invert([ux, uy]);
+            },
+        };
     }
 
     function renderTable(ports) {
@@ -286,44 +374,65 @@ if (typeof document !== "undefined") {
     const redraw = () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; render(false); }); };
 
     $("rmMap").addEventListener("wheel", (e) => {
-        if (!view || !current) return;
+        if (!current) return;
         const { ux, uy } = toUser(e);
         if (uy > MAP_H) return;
         e.preventDefault();
-        view = zoomAt(view, ux, uy, Math.exp(-e.deltaY * 0.0015));
+        zoomBy(Math.exp(-e.deltaY * 0.0015), ux, uy);
         redraw();
     }, { passive: false });
 
     let drag = null, dragged = false;
     $("rmMap").addEventListener("mousedown", (e) => {
-        if (e.button !== 0 || !view) return;
+        if (e.button !== 0 || !current) return;
         const p = toUser(e);
         if (p.uy > MAP_H) return;
-        drag = { ...p, view }; dragged = false;
+        drag = { ...p, view, rotate: globe?.rotate }; dragged = false;
         e.preventDefault(); // no text selection while dragging
     });
     window.addEventListener("mousemove", (e) => {
         if (!drag) return;
         const p = toUser(e);
         if (Math.hypot(p.ux - drag.ux, p.uy - drag.uy) > 3) dragged = true;
-        if (dragged) { view = panBy(drag.view, p.ux - drag.ux, p.uy - drag.uy); redraw(); }
+        if (!dragged) return;
+        if (mode === "globe" && globe) {
+            // spin so the surface follows the cursor (degrees per pixel at the centre)
+            const k = 180 / (Math.PI * globe.scale);
+            globe.rotate = [drag.rotate[0] + (p.ux - drag.ux) * k, Math.max(-89, Math.min(89, drag.rotate[1] - (p.uy - drag.uy) * k)), 0];
+        } else if (drag.view) view = panBy(drag.view, p.ux - drag.ux, p.uy - drag.uy);
+        redraw();
     });
     window.addEventListener("mouseup", () => { drag = null; });
 
-    const zoomCenter = factor => { if (view && current) { view = zoomAt(view, W / 2, MAP_H / 2, factor); render(false); } };
+    function zoomBy(factor, ux, uy) {
+        if (mode === "globe" && globe) {
+            const R0 = Math.min(W, MAP_H) / 2 - 16;
+            globe.scale = Math.max(R0 * 0.6, Math.min(R0 * 80, globe.scale * factor));
+        } else if (view) view = zoomAt(view, ux, uy, factor);
+    }
+    const zoomCenter = factor => { if (current) { zoomBy(factor, W / 2, MAP_H / 2); render(false); } };
+    const setMode = m => {
+        mode = m;
+        try { localStorage.setItem("tt-route-map-mode", m); } catch (e) { /* not remembered — fine */ }
+        $("rmModeGlobe").classList.toggle("active", m === "globe");
+        $("rmModeFlat").classList.toggle("active", m === "flat");
+        if (current) render(false);
+    };
+    $("rmModeGlobe").onclick = () => setMode("globe");
+    $("rmModeFlat").onclick = () => setMode("flat");
+    setMode(mode);
     $("rmZoomIn").onclick = () => zoomCenter(1.6);
     $("rmZoomOut").onclick = () => zoomCenter(1 / 1.6);
-    $("rmZoomReset").onclick = () => { if (current) { view = null; render(false); } };
+    $("rmZoomReset").onclick = () => { if (current) { view = globe = null; render(false); } };
 
     $("rmMap").addEventListener("click", (e) => {
         if (dragged) { dragged = false; return; } // end of a pan, not a placement click
-        if (!placing || !view) return;
+        if (!placing || !layer) return;
         const { ux, uy } = toUser(e);
         if (uy > MAP_H) return;
-        const k = W / view.w;
-        let lon = ux / k + view.x0;
-        lon = ((((lon + 180) % 360) + 360) % 360) - 180;
-        const lat = invMercY(view.y0 + view.h - uy / k);
+        const at = layer.invert(ux, uy);
+        if (!at) return; // clicked off the globe
+        const [lon, lat] = at;
         const name = placing;
         placing = null;
         $("rmMap").classList.remove("placing");

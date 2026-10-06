@@ -151,6 +151,7 @@ const ROUTES = [
     { method: "GET",  match: exact("/dashboard/highlight-review.js"),   handler: dashboardRoutes.handleHighlightReviewJs },
     { method: "GET",  match: url => url.split("?")[0] === "/dashboard/route-map", handler: dashboardRoutes.handleRouteMapPage }, // ?file= opens a receipt
     { method: "GET",  match: exact("/dashboard/route-map.js"),          handler: dashboardRoutes.handleRouteMapJs },
+    { method: "GET",  match: prefix("/dashboard/vendor/"),             handler: dashboardRoutes.handleVendor },
     { method: "GET",  match: exact("/route-map/receipts"),              handler: routeMapRoutes.handleList },
     { method: "GET",  match: prefix("/route-map/receipt?"),             handler: routeMapRoutes.handleReceipt },
     { method: "POST", match: exact("/route-map/parse"),                 handler: routeMapRoutes.handleParse },
