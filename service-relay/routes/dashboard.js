@@ -73,6 +73,14 @@ function handleHighlightReviewJs(req, res) {
     serveFile(res, "highlight-review.js", "application/javascript");
 }
 
+function handleRouteMapPage(req, res) {
+    serveFile(res, "route-map.html", "text/html");
+}
+
+function handleRouteMapJs(req, res) {
+    serveFile(res, "route-map.js", "application/javascript");
+}
+
 module.exports = {
     handleDashboardIndex,
     handleDashboardCss,
@@ -86,4 +94,6 @@ module.exports = {
     handleFillTestPage,
     handleHighlightReviewPage,
     handleHighlightReviewJs,
+    handleRouteMapPage,
+    handleRouteMapJs,
 };

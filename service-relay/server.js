@@ -30,6 +30,7 @@ const receiptsRoutes = require("./routes/receipts");
 const highlightReviewRoutes = require("./routes/highlight-review");
 const highlightReviewStore = require("./highlight-review-store");
 const updateExtensionRoutes = require("./routes/update-extension");
+const routeMapRoutes = require("./routes/route-map");
 
 const relaySocket     = require("./relay-socket");
 const downloadWatcher = require("./download-watcher");
@@ -148,6 +149,14 @@ const ROUTES = [
     { method: "GET",  match: prefix("/highlight-review/export"),        handler: highlightReviewRoutes.handleExport },
     { method: "GET",  match: exact("/dashboard/highlight-review"),      handler: dashboardRoutes.handleHighlightReviewPage },
     { method: "GET",  match: exact("/dashboard/highlight-review.js"),   handler: dashboardRoutes.handleHighlightReviewJs },
+    { method: "GET",  match: url => url.split("?")[0] === "/dashboard/route-map", handler: dashboardRoutes.handleRouteMapPage }, // ?file= opens a receipt
+    { method: "GET",  match: exact("/dashboard/route-map.js"),          handler: dashboardRoutes.handleRouteMapJs },
+    { method: "GET",  match: exact("/route-map/receipts"),              handler: routeMapRoutes.handleList },
+    { method: "GET",  match: prefix("/route-map/receipt?"),             handler: routeMapRoutes.handleReceipt },
+    { method: "POST", match: exact("/route-map/parse"),                 handler: routeMapRoutes.handleParse },
+    { method: "POST", match: exact("/route-map/override"),              handler: routeMapRoutes.handleOverride },
+    { method: "POST", match: exact("/route-map/update-ports"),          handler: routeMapRoutes.handleUpdatePorts },
+    { method: "GET",  match: exact("/route-map/land.json"),             handler: routeMapRoutes.handleLand },
 ];
 
 function handleRequest(req, res) {

@@ -467,6 +467,10 @@ flowchart LR
   routes_result_js["routes/result.js"] --> build_result_js["build-result.js"]
   routes_result_js["routes/result.js"] --> proof_extract_js["proof-extract.js"]
   routes_result_js["routes/result.js"] --> read_json_body_js["read-json-body.js"]
+  routes_route_map_js["routes/route-map.js"] --> config_js["config.js"]
+  routes_route_map_js["routes/route-map.js"] --> read_json_body_js["read-json-body.js"]
+  routes_route_map_js["routes/route-map.js"] --> highlight_review_store_js["highlight-review-store.js"]
+  routes_route_map_js["routes/route-map.js"] --> route_map_locate_js["route-map/locate.js"]
   routes_schedule_guideline_js["routes/schedule-guideline.js"] --> schedule_guideline_store_js["schedule-guideline-store.js"]
   routes_settings_js["routes/settings.js"] --> settings_store_js["settings-store.js"]
   routes_settings_js["routes/settings.js"] --> read_json_body_js["read-json-body.js"]
@@ -491,6 +495,7 @@ flowchart LR
   server_js["server.js"] --> routes_highlight_review_js["routes/highlight-review.js"]
   server_js["server.js"] --> highlight_review_store_js["highlight-review-store.js"]
   server_js["server.js"] --> routes_update_extension_js["routes/update-extension.js"]
+  server_js["server.js"] --> routes_route_map_js["routes/route-map.js"]
   server_js["server.js"] --> relay_socket_js["relay-socket.js"]
   server_js["server.js"] --> download_watcher_js["download-watcher.js"]
   server_js["server.js"] --> due_services_store_js["due-services-store.js"]
@@ -508,12 +513,13 @@ flowchart LR
 | atomic-write.js | - | activity-log-store.js, current-batch-store.js, due-services-store.js, highlight-review-store.js, schedule-dom-scrape-store.js, schedule-guideline-store.js, settings-store.js |
 | build-result.js | config.js, schedule-guideline-store.js, port-dictionary.js | proof-extract.js, routes/result.js |
 | carrier-links.js | - | routes/due-services.js |
-| config.js | settings-store.js | activity-log-store.js, build-result.js, current-batch-store.js, download-watcher.js, due-services-store.js, highlight-review-store.js, merge-cleanup.js, port-dictionary.js, proof-extract.js, relay-socket.js, relay-state.js, route-map/build-data.js, route-map/locate.js, route-map/locate.selftest.js, routes/due-services.js, routes/files.js, routes/highlight-review.js, routes/proof-extract.js, routes/receipts.js, schedule-dom-scrape-store.js, schedule-guideline-store.js, server.js, vessel-dictionary.js |
+| config.js | settings-store.js | activity-log-store.js, build-result.js, current-batch-store.js, download-watcher.js, due-services-store.js, highlight-review-store.js, merge-cleanup.js, port-dictionary.js, proof-extract.js, relay-socket.js, relay-state.js, route-map/build-data.js, route-map/locate.js, route-map/locate.selftest.js, routes/due-services.js, routes/files.js, routes/highlight-review.js, routes/proof-extract.js, routes/receipts.js, routes/route-map.js, schedule-dom-scrape-store.js, schedule-guideline-store.js, server.js, vessel-dictionary.js |
 | current-batch-store.js | config.js, due-services-trim.js, due-date-utils.js, atomic-write.js, settings-store.js | routes/due-services.js |
 | dashboard/dashboard.js | - | - |
 | dashboard/highlight-review.js | - | - |
 | dashboard/merge.js | - | - |
 | dashboard/ports.js | - | - |
+| dashboard/route-map.js | - | - |
 | dashboard/settings.js | - | - |
 | date-translator.js | - | fill-calc.js |
 | download-watcher.js | config.js, relay-state.js, proof-extract.js, proof-parsers/yangming-html.js, proof-parsers/evergreen-html.js, schedule-dom-scrape-store.js | server.js |
@@ -523,7 +529,7 @@ flowchart LR
 | fill-calc.js | port-dictionary.js, vessel-dictionary.js, date-translator.js | fill-calc.selftest.js, routes/fill-test.js |
 | fill-calc.selftest.js | fill-calc.js, schedule-guideline-store.js, proof-extract.js, port-dictionary.js, vessel-dictionary.js | - |
 | highlight-replay.js | - | highlight-review-store.js |
-| highlight-review-store.js | config.js, atomic-write.js, highlight-replay.js | routes/highlight-review.js, server.js |
+| highlight-review-store.js | config.js, atomic-write.js, highlight-replay.js | routes/highlight-review.js, routes/route-map.js, server.js |
 | merge-cleanup.js | config.js, relay-state.js | relay-socket.js |
 | port-dictionary.js | config.js | build-result.js, fill-calc.js, fill-calc.selftest.js, routes/fill-test.js, routes/result.js, server.js |
 | proof-extract.js | proof-parsers/index.js, config.js, schedule-guideline-store.js, build-result.js | download-watcher.js, fill-calc.selftest.js, routes/proof-extract.js, routes/result.js |
@@ -534,11 +540,11 @@ flowchart LR
 | proof-parsers/one.js | - | proof-parsers/index.js |
 | proof-parsers/oocl.js | - | proof-parsers/index.js |
 | proof-parsers/yangming-html.js | - | download-watcher.js |
-| read-json-body.js | - | routes/due-services.js, routes/files.js, routes/fill-test.js, routes/highlight-review.js, routes/proof-extract.js, routes/receipts.js, routes/result.js, routes/settings.js, routes/vessel-dictionary.js |
+| read-json-body.js | - | routes/due-services.js, routes/files.js, routes/fill-test.js, routes/highlight-review.js, routes/proof-extract.js, routes/receipts.js, routes/result.js, routes/route-map.js, routes/settings.js, routes/vessel-dictionary.js |
 | relay-socket.js | relay-state.js, merge-cleanup.js, schedule-guideline-store.js, schedule-dom-scrape-store.js, config.js | routes/due-services.js, server.js |
 | relay-state.js | config.js | download-watcher.js, merge-cleanup.js, relay-socket.js, routes/relay.js |
 | route-map/build-data.js | route-map/names.js, config.js | route-map/locate.js |
-| route-map/locate.js | config.js, route-map/names.js, route-map/build-data.js | route-map/locate.selftest.js |
+| route-map/locate.js | config.js, route-map/names.js, route-map/build-data.js | route-map/locate.selftest.js, routes/route-map.js |
 | route-map/locate.selftest.js | route-map/locate.js, config.js | - |
 | route-map/names.js | - | route-map/build-data.js, route-map/locate.js |
 | routes/dashboard.js | - | server.js |
@@ -550,13 +556,14 @@ flowchart LR
 | routes/receipts.js | config.js, read-json-body.js | server.js |
 | routes/relay.js | relay-state.js | server.js |
 | routes/result.js | port-dictionary.js, build-result.js, proof-extract.js, read-json-body.js | server.js |
+| routes/route-map.js | config.js, read-json-body.js, highlight-review-store.js, route-map/locate.js | server.js |
 | routes/schedule-guideline.js | schedule-guideline-store.js | server.js |
 | routes/settings.js | settings-store.js, read-json-body.js | server.js |
 | routes/update-extension.js | - | server.js |
 | routes/vessel-dictionary.js | vessel-dictionary.js, read-json-body.js | server.js |
 | schedule-dom-scrape-store.js | config.js, atomic-write.js | download-watcher.js, relay-socket.js, routes/fill-test.js, server.js |
 | schedule-guideline-store.js | config.js, atomic-write.js | build-result.js, fill-calc.selftest.js, proof-extract.js, relay-socket.js, routes/fill-test.js, routes/proof-extract.js, routes/schedule-guideline.js, server.js |
-| server.js | config.js, routes/relay.js, routes/files.js, routes/due-services.js, routes/dashboard.js, routes/settings.js, routes/proof-extract.js, routes/schedule-guideline.js, routes/result.js, routes/vessel-dictionary.js, routes/fill-test.js, routes/receipts.js, routes/highlight-review.js, highlight-review-store.js, routes/update-extension.js, relay-socket.js, download-watcher.js, due-services-store.js, schedule-guideline-store.js, schedule-dom-scrape-store.js, port-dictionary.js, vessel-dictionary.js | - |
+| server.js | config.js, routes/relay.js, routes/files.js, routes/due-services.js, routes/dashboard.js, routes/settings.js, routes/proof-extract.js, routes/schedule-guideline.js, routes/result.js, routes/vessel-dictionary.js, routes/fill-test.js, routes/receipts.js, routes/highlight-review.js, highlight-review-store.js, routes/update-extension.js, routes/route-map.js, relay-socket.js, download-watcher.js, due-services-store.js, schedule-guideline-store.js, schedule-dom-scrape-store.js, port-dictionary.js, vessel-dictionary.js | - |
 | settings-store.js | atomic-write.js | config.js, current-batch-store.js, due-services-trim.js, routes/settings.js |
 | vessel-dictionary.js | config.js | fill-calc.js, fill-calc.selftest.js, routes/fill-test.js, routes/vessel-dictionary.js, server.js |
 

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>tt-route-map</title>
+<link rel="stylesheet" href="/dashboard/style.css">
+<style>
+    .rmLayout { display: flex; gap: 16px; align-items: flex-start; max-width: 1500px; margin: 0 auto; padding: 0 16px 24px; }
+    .rmSide { width: 260px; flex-shrink: 0; }
+    .rmList { max-height: 60vh; overflow-y: auto; border: 1px solid var(--border-soft); background: var(--bg); margin-top: 8px; }
+    .rmItem { padding: 6px 10px; border-bottom: 1px solid var(--border-soft); font-size: 12px; cursor: pointer; }
+    .rmItem:hover { background: var(--bg-alt); }
+    .rmItem.current { background: var(--blue-soft); border-left: 3px solid var(--blue); }
+    .rmItem .when { color: var(--dim); font-size: 11px; }
+    .rmMain { flex: 1; min-width: 0; }
+    .rmBar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .rmBar .status { color: var(--muted); font-size: 12px; }
+    .rmMapWrap { background: #fff; border: 1px solid var(--border); position: relative; }
+    .rmMapWrap.placing { cursor: crosshair; outline: 2px solid var(--amber); }
+    .rmMapWrap svg { display: block; width: 100%; height: auto; }
+    .rmDrop { border: 2px dashed var(--border); padding: 40px; text-align: center; color: var(--dim); }
+    .rmDrop.over { border-color: var(--blue); color: var(--blue); }
+    table.rmPorts { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+    table.rmPorts th { text-align: left; padding: 5px 8px; color: var(--blue); font-size: 11px; text-transform: uppercase; border-bottom: 2px solid var(--border); }
+    table.rmPorts td { padding: 5px 8px; border-bottom: 1px solid var(--border-soft); }
+    table.rmPorts tr.hl { background: rgba(255, 235, 59, 0.15); }
+    .pl-exact, .pl-waypoint, .pl-code, .pl-override { color: var(--green); }
+    .pl-approx { color: var(--amber); }
+    .pl-none { color: var(--red); }
+    .rmPorts button { padding: 2px 8px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="topBar" style="padding: 10px 16px; display: flex; gap: 10px; align-items: center;">
+    <button onclick="location.href='/dashboard'">← Dashboard</button>
+    <b style="color: var(--text-strong);">🗺 Route Map</b>
+</div>
+<div class="rmLayout">
+    <div class="rmSide">
+        <label class="rmDrop" id="rmDrop" style="display:block; padding: 14px;">
+            Drop a receipt PNG here<br>or click to open one
+            <input type="file" id="rmFile" accept="image/png" style="display:none">
+        </label>
+        <div class="rmList" id="rmList"></div>
+        <div style="margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap;">
+            <button id="rmUpdatePorts" title="Re-download port coordinates (IMF PortWatch + UN/LOCODE)">⟳ Update port data</button>
+        </div>
+        <div class="status" id="rmFolder" style="font-size: 11px; color: var(--dim); margin-top: 6px; word-break: break-all;"></div>
+    </div>
+    <div class="rmMain">
+        <div class="rmBar">
+            <button id="rmExport" disabled>⬇ Export PNG</button>
+            <span class="status" id="rmStatus">Pick a receipt.</span>
+        </div>
+        <div class="rmMapWrap" id="rmMap"><div class="rmDrop" style="border:none;">No route loaded</div></div>
+        <table class="rmPorts" id="rmPorts"></table>
+    </div>
+</div>
+<script src="/dashboard/route-map.js"></script>
+</body>
+</html>

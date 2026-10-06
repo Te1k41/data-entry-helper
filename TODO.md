@@ -2,6 +2,16 @@
 
 Open items, newest first. Remove an item when it ships (the commit is the record).
 
+## Route Map (private only — community once proven)
+
+- [ ] Prove it on real use, then ship to community: move the page into the extension
+  (extension page + bundled land/ports data, no relay) and drop the `-relay` from
+  `src/utils/receipt-data-relay.js`. Until then don't sync it (memory: route map private-only).
+- [ ] Country borders on the map (Natural Earth admin-0 boundary lines) like Tradetech's.
+- [ ] 31/494 receipt port names still unplaced (e.g. Pyongtaek, Sihanoukville, Tanger Med,
+  Apapa, Messina) — place once via the map's "Place" button, or add aliases.
+- [ ] Batch "Route maps for all receipts" export, if wanted.
+
 ## Fill feature
 
 - [ ] **ZIM schedule reader (all vessels, full rotations)** — fill gets *nothing* from ZIM today:
