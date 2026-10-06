@@ -15,11 +15,10 @@
     .rmMain { flex: 1; min-width: 0; }
     .rmBar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
     .rmBar .status { color: var(--muted); font-size: 12px; }
-    .rmMapWrap { background: #fff; border: 1px solid var(--border); position: relative; }
+    .rmMapWrap { background: #fff; border: 1px solid var(--border); position: relative; border-radius: 4px; overflow: hidden; }
     .rmMapWrap.placing { cursor: crosshair; outline: 2px solid var(--amber); }
     .rmMapWrap svg { display: block; width: 100%; height: auto; user-select: none; }
     .rmMapWrap { cursor: grab; }
-    .rmBar button.active { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
     .rmMapWrap:active { cursor: grabbing; }
     .rmDrop { border: 2px dashed var(--border); padding: 40px; text-align: center; color: var(--dim); }
     .rmDrop.over { border-color: var(--blue); color: var(--blue); }
@@ -52,8 +51,6 @@
     </div>
     <div class="rmMain">
         <div class="rmBar">
-            <button id="rmModeGlobe" title="3D globe — drag to spin, scroll to zoom">🌐 Globe</button>
-            <button id="rmModeFlat" title="Flat map, like Tradetech's">🗺 Flat</button>
             <button id="rmExport" disabled>⬇ Export PNG</button>
             <button id="rmZoomIn" title="Zoom in (or scroll on the map)">＋</button>
             <button id="rmZoomOut" title="Zoom out">－</button>
@@ -64,8 +61,6 @@
         <table class="rmPorts" id="rmPorts"></table>
     </div>
 </div>
-<script src="/dashboard/vendor/d3-array.min.js"></script>
-<script src="/dashboard/vendor/d3-geo.min.js"></script>
 <script src="/dashboard/route-map.js"></script>
 </body>
 </html>

@@ -16,7 +16,10 @@
 // ============================================================
 
 const W = 1100, MAP_H = 560;           // SVG user units
-const COLORS = ["#2346b8", "#2e9b3c"]; // leg 1 blue, leg 2 green (like Tradetech's)
+// Tradetech's own palette (site.tradetech.net theme: primary navy
+// #201B51, brand teal #11C5C0, greys #F2F4F5/#D1D6D8/#616165, amber #FCB900).
+const TT = { navy: "#201B51", navy2: "#323B62", teal: "#11C5C0", sea: "#F2F4F5", land: "#D1D6D8", coast: "#B3BABE", text: "#323234", grey: "#616165", amber: "#FCB900" };
+const COLORS = [TT.navy, TT.teal]; // leg 1, leg 2
 const MAX_LAT = 82;
 
 // ── Pure geometry (also run by the Node self-check at the bottom) ──
@@ -112,12 +115,8 @@ if (typeof document !== "undefined") {
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     let land = null, borders = null, current = null, placing = null;
-    let view = null;   // flat map: { x0, y0, w, h } in longitude / Mercator degrees
-    let globe = null;  // globe: { rotate: [λ, φ, 0], scale } (d3 orthographic)
-    let layer = null;  // the layer last drawn (for click -> lon/lat)
-    let landFeature = null, borderFeature = null; // GeoJSON for d3 (globe)
-    let mode = "globe";
-    try { mode = localStorage.getItem("tt-route-map-mode") || "globe"; } catch (e) { /* storage blocked — default */ }
+    let view = null;   // { x0, y0, w, h } in longitude / Mercator degrees
+    let layer = null;  // the map last drawn (for click -> lon/lat)
 
     const status = msg => { $("rmStatus").textContent = msg; };
 
@@ -149,7 +148,7 @@ if (typeof document !== "undefined") {
         status(`Loading ${label}…`);
         const result = await promise;
         if (!result.ok) { status(result.reason); return; }
-        if (current?.reload !== reload) view = globe = null; // a different route re-fits; a reload (after Place) keeps your zoom
+        if (current?.reload !== reload) view = null; // a different route re-fits; a reload (after Place) keeps your zoom
         current = { ...result, label, reload };
         land ||= await (await fetch("/route-map/land.json")).json();
         borders ||= await (await fetch("/route-map/borders.json")).json();
@@ -162,7 +161,7 @@ if (typeof document !== "undefined") {
         const placed = ports.filter(p => p.place);
         if (!placed.length) { status("None of this route's ports could be placed — use “Place” in the table below."); }
 
-        layer = mode === "globe" ? globeLayer(placed) : flatLayer(placed);
+        layer = flatLayer(placed);
 
         // Arrows between consecutive placed ports.
         const pivot = pivotRow(data.ports);
@@ -176,8 +175,7 @@ if (typeof document !== "undefined") {
             }
         }
 
-        // Dots + labels, one per distinct spot (a port visited twice gets
-        // one dot); on the globe only ports on the visible side.
+        // Dots + labels, one per distinct spot (a port visited twice gets one dot).
         const spots = new Map();
         for (const p of placed) {
             const at = layer.pos(p);
@@ -192,9 +190,9 @@ if (typeof document !== "undefined") {
         let dots = "", labels = "";
         spotList.forEach((s, i) => {
             const approx = s.p.place.how === "approx", l = spotsLabels[i];
-            dots += (s.highlighted ? `<circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="11" fill="none" stroke="#f2c200" stroke-width="4"/>` : "")
-                + `<circle data-port="${esc(s.p.name)}" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="5.5" fill="${approx ? "#f28c28" : "#e8202a"}" stroke="#fff" stroke-width="1.5"/>`;
-            labels += `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" font-size="13" font-weight="bold" fill="#111" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(texts[i])}</text>`;
+            dots += (s.highlighted ? `<circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="11" fill="none" stroke="${TT.amber}" stroke-width="4"/>` : "")
+                + `<circle data-port="${esc(s.p.name)}" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="5.5" fill="${approx ? TT.amber : TT.navy}" stroke="#fff" stroke-width="1.5"/>`;
+            labels += `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" font-size="13" font-weight="bold" fill="${TT.navy}" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(texts[i])}</text>`;
         });
 
         // Vessel operator / carriers box (inside the SVG so Export includes it).
@@ -203,14 +201,14 @@ if (typeof document !== "undefined") {
         const carriers = (data.carriers || []).map(c => [c.name || c.code, c.service ? `— ${c.service}` : ""].filter(Boolean).join(" "));
         const lineH = 18, boxLines = 1 + Math.max(1, carriers.length);
         const boxH = 24 + boxLines * lineH + 10, totalH = MAP_H + boxH + 20;
-        let box = `<rect x="${W - 520}" y="${MAP_H + 10}" width="500" height="${boxH}" fill="#fff" stroke="#e0403f" stroke-width="1.5"/>`;
-        box += `<text x="${W - 380}" y="${MAP_H + 34}" text-anchor="end" font-size="14" font-weight="bold" fill="#111">Vessel Operator:</text>`
-            + `<text x="${W - 370}" y="${MAP_H + 34}" font-size="14" fill="#111">${esc(opLine)}</text>`
-            + `<text x="${W - 380}" y="${MAP_H + 34 + lineH}" text-anchor="end" font-size="14" font-weight="bold" fill="#111">Carriers:</text>`;
+        let box = `<rect x="${W - 520}" y="${MAP_H + 10}" width="500" height="${boxH}" fill="#fff" stroke="${TT.navy}" stroke-width="1.5" rx="4"/>`;
+        box += `<text x="${W - 380}" y="${MAP_H + 34}" text-anchor="end" font-size="14" font-weight="bold" fill="${TT.navy}">Vessel Operator:</text>`
+            + `<text x="${W - 370}" y="${MAP_H + 34}" font-size="14" fill="${TT.text}">${esc(opLine)}</text>`
+            + `<text x="${W - 380}" y="${MAP_H + 34 + lineH}" text-anchor="end" font-size="14" font-weight="bold" fill="${TT.navy}">Carriers:</text>`;
         (carriers.length ? carriers : [source === "review-store" ? "(not in this older receipt)" : "—"])
-            .forEach((c, i) => { box += `<text x="${W - 370}" y="${MAP_H + 34 + lineH * (i + 1)}" font-size="14" fill="#111">${esc(c)}</text>`; });
-        const title = `<text x="14" y="${MAP_H + 34}" font-size="16" font-weight="bold" fill="#111">${esc(data.service || current.label)}</text>`
-            + `<text x="14" y="${MAP_H + 54}" font-size="12" fill="#555">${pivot ? `<tspan fill="${COLORS[0]}">━ leg 1</tspan>  <tspan fill="${COLORS[1]}">━ leg 2</tspan>  ·  ` : ""}<tspan fill="#c9a000">◯</tspan> highlighted port</text>`;
+            .forEach((c, i) => { box += `<text x="${W - 370}" y="${MAP_H + 34 + lineH * (i + 1)}" font-size="14" fill="${TT.text}">${esc(c)}</text>`; });
+        const title = `<text x="14" y="${MAP_H + 34}" font-size="16" font-weight="bold" fill="${TT.navy}">${esc(data.service || current.label)}</text>`
+            + `<text x="14" y="${MAP_H + 54}" font-size="12" fill="${TT.grey}">${pivot ? `<tspan fill="${COLORS[0]}">━ leg 1</tspan>  <tspan fill="${COLORS[1]}">━ leg 2</tspan>  ·  ` : ""}<tspan fill="${TT.amber}">◯</tspan> highlighted port</text>`;
 
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${totalH}" font-family="Arial, Helvetica, sans-serif">
             <defs>${COLORS.map((c, i) => `<marker id="arrow${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" markerUnits="strokeWidth" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join("")}
@@ -220,7 +218,7 @@ if (typeof document !== "undefined") {
                 ${layer.background}
                 ${arrows}${dots}${labels}
             </g>
-            <rect width="${W}" height="${MAP_H}" fill="none" stroke="#bbb"/>
+            <rect width="${W}" height="${MAP_H}" fill="none" stroke="${TT.land}"/>
             ${title}${box}
         </svg>`;
         $("rmMap").innerHTML = svg;
@@ -232,7 +230,7 @@ if (typeof document !== "undefined") {
         renderTable(ports);
     }
 
-    // ── Flat map (Mercator, like Tradetech's) ──
+    // ── The map (Mercator, like Tradetech's own route map) ──
     function flatLayer(placed) {
         const center = placed.length ? centerLon(placed.map(p => p.place.lon)) : 0;
         const xy = p => ({ x: unwrap(p.place.lon, center), y: mercY(p.place.lat) });
@@ -255,14 +253,14 @@ if (typeof document !== "undefined") {
         }
         let dateLines = "";
         for (let x = Math.ceil((view.x0 - 180) / 360) * 360 + 180; x < view.x0 + view.w; x += 360) {
-            dateLines += `<line x1="${sx(x).toFixed(1)}" y1="0" x2="${sx(x).toFixed(1)}" y2="${MAP_H}" stroke="#9a9a9a" stroke-dasharray="4 4"/>`;
+            dateLines += `<line x1="${sx(x).toFixed(1)}" y1="0" x2="${sx(x).toFixed(1)}" y2="${MAP_H}" stroke="${TT.grey}" stroke-opacity="0.5" stroke-dasharray="4 4"/>`;
         }
 
         const pos = p => { const { x, y } = xy(p); return { x: sx(x), y: sy(y), visible: true }; };
         return {
-            background: `<rect width="${W}" height="${MAP_H}" fill="#ffffff"/>
-                <path d="${landPath}" fill="#d6d6d6" stroke="#9a9a9a" stroke-width="0.6" fill-rule="evenodd"/>
-                <path d="${borderPath}" fill="none" stroke="#a8a8a8" stroke-width="0.7"/>${dateLines}`,
+            background: `<rect width="${W}" height="${MAP_H}" fill="${TT.sea}"/>
+                <path d="${landPath}" fill="${TT.land}" stroke="${TT.coast}" stroke-width="0.6" fill-rule="evenodd"/>
+                <path d="${borderPath}" fill="none" stroke="#ffffff" stroke-width="0.8"/>${dateLines}`,
             pos,
             arc(pa, pb) {
                 const a = pos(pa), b = pos(pb);
@@ -273,73 +271,6 @@ if (typeof document !== "undefined") {
             invert(ux, uy) {
                 const lon = ((((ux / k + view.x0 + 180) % 360) + 360) % 360) - 180;
                 return [lon, invMercY(view.y0 + view.h - uy / k)];
-            },
-        };
-    }
-
-    // ── Globe (3D: d3 orthographic) ──
-    // Arcs are great circles lifted off the surface (higher the longer the
-    // hop) so they read as 3D; any part behind the globe is hidden.
-    function globeLayer(placed) {
-        const R0 = Math.min(W, MAP_H) / 2 - 16;
-        if (!globe) {
-            const c = placed.length ? d3.geoCentroid({ type: "MultiPoint", coordinates: placed.map(p => [p.place.lon, p.place.lat]) }) : [0, 20];
-            const spread = Math.max(0.05, ...placed.map(p => d3.geoDistance(c, [p.place.lon, p.place.lat])));
-            // whole globe for a far-flung route, closer in for a regional one
-            globe = { rotate: [-c[0], -c[1], 0], scale: spread >= Math.PI / 2 ? R0 : Math.min(R0 * 6, Math.max(R0, (R0 * 0.85) / Math.sin(spread))) };
-        }
-        // d3 wants each ring wound so it encloses the SMALL side of the sphere
-        landFeature ||= { type: "MultiPolygon", coordinates: land.map(r => [d3.geoArea({ type: "Polygon", coordinates: [r] }) > 2 * Math.PI ? [...r].reverse() : r]) };
-        borderFeature ||= { type: "MultiLineString", coordinates: borders };
-
-        const proj = d3.geoOrthographic().translate([W / 2, MAP_H / 2]).scale(globe.scale).rotate(globe.rotate).clipAngle(90).precision(0.3);
-        const path = d3.geoPath(proj);
-        const rot = d3.geoRotation(globe.rotate);
-        // lon/lat (+ height above the surface, 1 = on it) -> unit-sphere x, y, z (z toward the viewer)
-        const toXYZ = (ll, lift = 1) => {
-            const [l, p] = rot(ll).map(v => (v * Math.PI) / 180);
-            return [Math.cos(p) * Math.sin(l) * lift, Math.sin(p) * lift, Math.cos(p) * Math.cos(l) * lift];
-        };
-        const screen = ([x, y]) => [W / 2 + globe.scale * x, MAP_H / 2 - globe.scale * y];
-        const visible = ([x, y, z]) => z > 0 || x * x + y * y > 1; // in front, or lifted out past the edge
-        const sphere = path({ type: "Sphere" });
-
-        return {
-            background: `<defs>
-                    <radialGradient id="rmOcean" cx="42%" cy="38%" r="65%"><stop offset="0" stop-color="#f6fbff"/><stop offset="1" stop-color="#c6dcee"/></radialGradient>
-                    <radialGradient id="rmShade" cx="42%" cy="38%" r="62%"><stop offset="0.6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.16"/></radialGradient>
-                </defs>
-                <rect width="${W}" height="${MAP_H}" fill="#ffffff"/>
-                <path d="${sphere}" fill="url(#rmOcean)"/>
-                <path d="${path(d3.geoGraticule10())}" fill="none" stroke="#b9cfe2" stroke-width="0.5"/>
-                <path d="${path(landFeature)}" fill="#d9d9d9" stroke="#9a9a9a" stroke-width="0.5"/>
-                <path d="${path(borderFeature)}" fill="none" stroke="#a8a8a8" stroke-width="0.6"/>
-                <path d="${sphere}" fill="url(#rmShade)" stroke="#8fa7bb" stroke-width="1"/>`,
-            pos(p) {
-                const v = toXYZ([p.place.lon, p.place.lat]);
-                const [x, y] = screen(v);
-                return { x, y, visible: v[2] > 0 };
-            },
-            arc(pa, pb) {
-                const A = [pa.place.lon, pa.place.lat], B = [pb.place.lon, pb.place.lat];
-                const dist = d3.geoDistance(A, B);
-                if (dist < 1e-4) return [];
-                const along = d3.geoInterpolate(A, B), height = Math.min(0.3, 0.06 + dist * 0.22), n = Math.max(16, Math.ceil(dist * 60));
-                const segs = [];
-                let cur = null;
-                for (let i = 0; i <= n; i++) {
-                    const t = i / n, v = toXYZ(along(t), 1 + height * Math.sin(Math.PI * t));
-                    if (!visible(v)) { cur = null; continue; }
-                    const [x, y] = screen(v);
-                    if (!cur) segs.push(cur = { pts: [], end: false });
-                    cur.pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
-                    if (i === n) cur.end = true;
-                }
-                return segs.filter(g => g.pts.length > 1).map(g => ({ d: `M${g.pts.join("L")}`, end: g.end }));
-            },
-            invert(ux, uy) {
-                if (Math.hypot(ux - W / 2, uy - MAP_H / 2) > globe.scale) return null; // off the globe
-                return proj.invert([ux, uy]);
             },
         };
     }
@@ -387,7 +318,7 @@ if (typeof document !== "undefined") {
         if (e.button !== 0 || !current) return;
         const p = toUser(e);
         if (p.uy > MAP_H) return;
-        drag = { ...p, view, rotate: globe?.rotate }; dragged = false;
+        drag = { ...p, view }; dragged = false;
         e.preventDefault(); // no text selection while dragging
     });
     window.addEventListener("mousemove", (e) => {
@@ -395,35 +326,18 @@ if (typeof document !== "undefined") {
         const p = toUser(e);
         if (Math.hypot(p.ux - drag.ux, p.uy - drag.uy) > 3) dragged = true;
         if (!dragged) return;
-        if (mode === "globe" && globe) {
-            // spin so the surface follows the cursor (degrees per pixel at the centre)
-            const k = 180 / (Math.PI * globe.scale);
-            globe.rotate = [drag.rotate[0] + (p.ux - drag.ux) * k, Math.max(-89, Math.min(89, drag.rotate[1] - (p.uy - drag.uy) * k)), 0];
-        } else if (drag.view) view = panBy(drag.view, p.ux - drag.ux, p.uy - drag.uy);
+        if (drag.view) view = panBy(drag.view, p.ux - drag.ux, p.uy - drag.uy);
         redraw();
     });
     window.addEventListener("mouseup", () => { drag = null; });
 
     function zoomBy(factor, ux, uy) {
-        if (mode === "globe" && globe) {
-            const R0 = Math.min(W, MAP_H) / 2 - 16;
-            globe.scale = Math.max(R0 * 0.6, Math.min(R0 * 80, globe.scale * factor));
-        } else if (view) view = zoomAt(view, ux, uy, factor);
+        if (view) view = zoomAt(view, ux, uy, factor);
     }
     const zoomCenter = factor => { if (current) { zoomBy(factor, W / 2, MAP_H / 2); render(false); } };
-    const setMode = m => {
-        mode = m;
-        try { localStorage.setItem("tt-route-map-mode", m); } catch (e) { /* not remembered — fine */ }
-        $("rmModeGlobe").classList.toggle("active", m === "globe");
-        $("rmModeFlat").classList.toggle("active", m === "flat");
-        if (current) render(false);
-    };
-    $("rmModeGlobe").onclick = () => setMode("globe");
-    $("rmModeFlat").onclick = () => setMode("flat");
-    setMode(mode);
     $("rmZoomIn").onclick = () => zoomCenter(1.6);
     $("rmZoomOut").onclick = () => zoomCenter(1 / 1.6);
-    $("rmZoomReset").onclick = () => { if (current) { view = globe = null; render(false); } };
+    $("rmZoomReset").onclick = () => { if (current) { view = null; render(false); } };
 
     $("rmMap").addEventListener("click", (e) => {
         if (dragged) { dragged = false; return; } // end of a pan, not a placement click
@@ -431,7 +345,6 @@ if (typeof document !== "undefined") {
         const { ux, uy } = toUser(e);
         if (uy > MAP_H) return;
         const at = layer.invert(ux, uy);
-        if (!at) return; // clicked off the globe
         const [lon, lat] = at;
         const name = placing;
         placing = null;

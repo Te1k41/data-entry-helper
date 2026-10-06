@@ -73,15 +73,6 @@ function handleHighlightReviewJs(req, res) {
     serveFile(res, "highlight-review.js", "application/javascript");
 }
 
-// Vendored third-party scripts (dashboard/vendor/, e.g. d3-geo for the
-// Route Map globe) — fixed allowlist, never a path from the request.
-const VENDOR_FILES = new Set(["d3-array.min.js", "d3-geo.min.js"]);
-function handleVendor(req, res) {
-    const name = req.url.split("?")[0].slice("/dashboard/vendor/".length);
-    if (!VENDOR_FILES.has(name)) { res.writeHead(404); res.end(); return; }
-    serveFile(res, `vendor/${name}`, "application/javascript");
-}
-
 function handleRouteMapPage(req, res) {
     serveFile(res, "route-map.html", "text/html");
 }
@@ -105,5 +96,4 @@ module.exports = {
     handleHighlightReviewJs,
     handleRouteMapPage,
     handleRouteMapJs,
-    handleVendor,
 };
