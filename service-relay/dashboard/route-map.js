@@ -62,6 +62,22 @@ function pivotRow(ports) {
     return null;
 }
 
+// Directional (one-bound) service: loops back to its own start, so its
+// real last port is just the loop closing — port highlighting drops it
+// (PortHighlighting.excludeDirectionalClosure) and the map doesn't draw
+// the hop into it. Same rule as PortSyncBoundary.isDirectionalService()
+// (src/core/boundary.js), on receipt data instead of the live form:
+//   any port_key with a real bound marker ("ES", "EEWS", "WE") -> full bound;
+//   else service ends "-<letter>" ("AE1-E", "ABC-A") -> directional;
+//   else SP001's key blank or not all letters ("*", "E1") -> directional.
+function isDirectional(service, ports) {
+    const bound = k => /^([NSEW][SE]){1,2}$/.test(String(k || "").trim().toUpperCase());
+    if (ports.some(p => bound(p.key))) return false;
+    if (/-[A-Z]$/i.test(String(service || "").trim())) return true;
+    const first = ports.find(p => p.row === "001");
+    return !!first && !/^[A-Za-z]+$/.test(String(first.key || "").trim());
+}
+
 // Quadratic curve control point: bend to the LEFT of the direction of
 // travel, so an out leg and its return leg between the same two areas
 // bow apart instead of drawing on top of each other.
@@ -107,7 +123,7 @@ function panBy(v, dx, dy, mapW = W, mapH = MAP_H) {
 const cityLabel = name => String(name || "").split(",")[0].replace(/\s*\(.*?\)\s*/g, " ").trim()
     .toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 
-if (typeof module !== "undefined") module.exports = { mercY, invMercY, centerLon, unwrap, fitView, pivotRow, bendPoint, cityLabel, placeLabels, zoomAt, panBy };
+if (typeof module !== "undefined") module.exports = { isDirectional, mercY, invMercY, centerLon, unwrap, fitView, pivotRow, bendPoint, cityLabel, placeLabels, zoomAt, panBy };
 
 // ── Page ──────────────────────────────────────────────────────
 
@@ -166,8 +182,11 @@ if (typeof document !== "undefined") {
         // Arrows between consecutive placed ports.
         const pivot = pivotRow(data.ports);
         const legOf = p => (pivot && parseInt(p.row, 10) > pivot ? 1 : 0);
+        const directional = isDirectional(data.service, data.ports);
+        const closure = directional ? ports[ports.length - 1] : null; // the loop-closing last port
         let arrows = "";
         for (let i = 1; i < placed.length; i++) {
+            if (placed[i] === closure) continue; // directional: no hop back into the start
             const leg = legOf(placed[i]);
             const gap = ports.indexOf(placed[i]) - ports.indexOf(placed[i - 1]) > 1; // an unplaced port in between
             for (const seg of layer.arc(placed[i - 1], placed[i])) {
@@ -208,7 +227,7 @@ if (typeof document !== "undefined") {
         (carriers.length ? carriers : [source === "review-store" ? "(not in this older receipt)" : "—"])
             .forEach((c, i) => { box += `<text x="${W - 370}" y="${MAP_H + 34 + lineH * (i + 1)}" font-size="14" fill="${TT.text}">${esc(c)}</text>`; });
         const title = `<text x="14" y="${MAP_H + 34}" font-size="16" font-weight="bold" fill="${TT.navy}">${esc(data.service || current.label)}</text>`
-            + `<text x="14" y="${MAP_H + 54}" font-size="12" fill="${TT.grey}">${pivot ? `<tspan fill="${COLORS[0]}">━ leg 1</tspan>  <tspan fill="${COLORS[1]}">━ leg 2</tspan>  ·  ` : ""}<tspan fill="${TT.amber}">◯</tspan> highlighted port</text>`;
+            + `<text x="14" y="${MAP_H + 54}" font-size="12" fill="${TT.grey}">${directional ? "Directional · " : "Full bound · "}${pivot ? `<tspan fill="${COLORS[0]}">━ leg 1</tspan>  <tspan fill="${COLORS[1]}">━ leg 2</tspan>  ·  ` : ""}<tspan fill="${TT.amber}">◯</tspan> highlighted port</text>`;
 
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${totalH}" font-family="Arial, Helvetica, sans-serif">
             <defs>${COLORS.map((c, i) => `<marker id="arrow${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" markerUnits="strokeWidth" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join("")}
