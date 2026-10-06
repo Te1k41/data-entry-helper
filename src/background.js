@@ -302,19 +302,33 @@ async function fpcHideFloatingAndRead(mode) {
     const frame = () => new Promise((r) => { setTimeout(r, 100); requestAnimationFrame(() => requestAnimationFrame(r)); });
     const parentOf = (el) => el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null);
 
+    // Web components (live: zim.com's header is <zim-navbar-v1>) keep their
+    // insides in a shadow root. el.shadowRoot only exposes OPEN ones;
+    // chrome.dom.openOrClosedShadowRoot (content scripts only) also opens
+    // closed ones, so a fixed bar inside either kind is still found.
+    const shadowOf = (el) => {
+        try { return el.shadowRoot || chrome.dom?.openOrClosedShadowRoot?.(el) || null; } catch (e) { return null; }
+    };
+
     const cands = new Set();
     const walk = (root) => root.querySelectorAll("*").forEach((el) => {
         const p = getComputedStyle(el).position;
         if (p === "fixed" || p === "sticky") cands.add(el);
-        if (el.shadowRoot) walk(el.shadowRoot);
+        const sr = shadowOf(el);
+        if (sr) walk(sr);
     });
     walk(document);
-    for (const y of [2, 40, 90, H - 90, H - 40, H - 2]) {
-        for (let i = 0; i <= 10; i++) {
-            for (let el of document.elementsFromPoint(Math.min(W - 1, i * W / 10), y)) {
-                for (; el && el !== document.body && el !== document.documentElement; el = parentOf(el)) cands.add(el);
-            }
+    // Hit-test down through shadow trees too — document.elementsFromPoint
+    // stops at the host element.
+    const probe = (root, x, y, seen) => {
+        for (let el of root.elementsFromPoint?.(x, y) || []) {
+            const sr = shadowOf(el);
+            if (sr && !seen.has(sr)) { seen.add(sr); probe(sr, x, y, seen); }
+            for (; el && el !== document.body && el !== document.documentElement; el = parentOf(el)) cands.add(el);
         }
+    };
+    for (const y of [2, 40, 90, H - 90, H - 40, H - 2]) {
+        for (let i = 0; i <= 10; i++) probe(document, Math.min(W - 1, i * W / 10), y, new Set());
     }
 
     const before = new Map([...cands].map((el) => [el, el.getBoundingClientRect().top]));
