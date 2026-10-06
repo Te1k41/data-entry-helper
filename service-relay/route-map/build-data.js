@@ -8,8 +8,8 @@
 //      locate.js (~8 MB, so NOT committed: built on first use by the
 //      relay and refreshed from the Route Map page's "Update port data"
 //      button — or by running this script)
-//    route-map/data/land.json — world land outlines for the map
-//      background (static, committed)
+//    route-map/data/land.json, borders.json — world land outlines and
+//      country border lines for the map background (static, committed)
 //
 //  Sources (all free/open, fetched live):
 //    - IMF PortWatch ports database (~2,000 ports: name, country,
@@ -18,7 +18,7 @@
 //      and coordinates for everything PortWatch lacks; port entries
 //      first, then any location with coordinates (a city is close
 //      enough to its port at map scale)
-//    - Natural Earth 50m land (public domain) — the map itself
+//    - Natural Earth 50m land + land country borders (public domain) — the map itself
 //
 //  Tradetech's own 3-letter port codes are often NOT UN/LOCODEs
 //  (Shanghai is "SHA" in Tradetech, CNSHG in UN/LOCODE — CNSHA is the
@@ -37,6 +37,7 @@ const PORTWATCH = "https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/ser
 const LOCODE_CSV  = "https://raw.githubusercontent.com/datasets/un-locode/main/data/code-list.csv";
 const COUNTRY_CSV = "https://raw.githubusercontent.com/datasets/un-locode/main/data/country-codes.csv";
 const LAND_GEOJSON = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson";
+const BORDERS_GEOJSON = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_boundary_lines_land.geojson";
 
 async function get(url, as = "text") {
     const res = await fetch(url);
@@ -126,28 +127,46 @@ async function buildPorts() {
     return { builtAt: new Date().toISOString(), countries, byName, byCode };
 }
 
-// Natural Earth land -> [[ [lon,lat], ... ], ...] outer+inner rings, at
-// 0.05° precision with consecutive duplicates dropped (map-scale detail,
-// a fraction of the size). Rings already stop at ±180°, so the map can
-// draw the world 3× side by side to center any longitude without seams.
+// [[lon,lat], ...] at 0.05° precision with consecutive near-duplicates
+// dropped — map-scale detail at a fraction of the size.
+function thin(line) {
+    const out = [];
+    for (const [lon, lat] of line) {
+        const pt = [round(lon, 2), round(lat, 2)];
+        const prev = out[out.length - 1];
+        if (!prev || Math.abs(prev[0] - pt[0]) >= 0.05 || Math.abs(prev[1] - pt[1]) >= 0.05) out.push(pt);
+    }
+    return out;
+}
+
+// Natural Earth land -> outer+inner rings. They already stop at ±180°,
+// so the map can draw the world 3× side by side to center any longitude
+// without seams.
 async function buildLand() {
     const geo = await get(LAND_GEOJSON, "json");
     const rings = [];
     for (const f of geo.features) {
         const polys = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
-        for (const poly of polys) {
-            for (const ring of poly) {
-                const out = [];
-                for (const [lon, lat] of ring) {
-                    const pt = [round(lon, 2), round(lat, 2)];
-                    const prev = out[out.length - 1];
-                    if (!prev || Math.abs(prev[0] - pt[0]) >= 0.05 || Math.abs(prev[1] - pt[1]) >= 0.05) out.push(pt);
-                }
-                if (out.length >= 4) rings.push(out);
-            }
+        for (const ring of polys.flat()) {
+            const out = thin(ring);
+            if (out.length >= 4) rings.push(out);
         }
     }
     return rings;
+}
+
+// Country borders on land (no maritime lines) -> polylines.
+async function buildBorders() {
+    const geo = await get(BORDERS_GEOJSON, "json");
+    const lines = [];
+    for (const f of geo.features) {
+        const parts = f.geometry.type === "LineString" ? [f.geometry.coordinates] : f.geometry.coordinates;
+        for (const part of parts) {
+            const out = thin(part);
+            if (out.length >= 2) lines.push(out);
+        }
+    }
+    return lines;
 }
 
 // Fetch + write the ports index; returns it. Used by the relay
@@ -163,9 +182,10 @@ async function updatePorts() {
 
 async function main() {
     fs.mkdirSync(OUT_DIR, { recursive: true });
-    const [, land] = await Promise.all([updatePorts(), buildLand()]);
+    const [, land, borders] = await Promise.all([updatePorts(), buildLand(), buildBorders()]);
     fs.writeFileSync(path.join(OUT_DIR, "land.json"), JSON.stringify(land));
-    console.log(`✅ land.json: ${land.length} rings`);
+    fs.writeFileSync(path.join(OUT_DIR, "borders.json"), JSON.stringify(borders));
+    console.log(`✅ land.json: ${land.length} rings, borders.json: ${borders.length} lines`);
 }
 
 module.exports = { updatePorts, PORTS_FILE };

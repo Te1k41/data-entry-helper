@@ -93,7 +93,7 @@ if (typeof module !== "undefined") module.exports = { mercY, invMercY, centerLon
 if (typeof document !== "undefined") {
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    let land = null, current = null, placing = null, view = null;
+    let land = null, borders = null, current = null, placing = null, view = null;
 
     const status = msg => { $("rmStatus").textContent = msg; };
 
@@ -127,6 +127,7 @@ if (typeof document !== "undefined") {
         if (!result.ok) { status(result.reason); return; }
         current = { ...result, label, reload };
         land ||= await (await fetch("/route-map/land.json")).json();
+        borders ||= await (await fetch("/route-map/borders.json")).json();
         render();
     }
 
@@ -153,6 +154,16 @@ if (typeof document !== "undefined") {
                     return `${x.toFixed(1)},${y.toFixed(1)}`;
                 });
                 if (inView) landPath += `M${pts.join("L")}Z`;
+            }
+        }
+        // Country borders — same 3 copies, open polylines.
+        let borderPath = "";
+        for (const off of [-360, 0, 360]) {
+            for (const line of borders) {
+                const pts = line.map(([lon, lat]) => [sx(lon + off), sy(mercY(lat))]);
+                if (pts.some(([x, y]) => x > -50 && x < W + 50 && y > -50 && y < MAP_H + 50)) {
+                    borderPath += `M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L")}`;
+                }
             }
         }
         const dateLines = [];
@@ -210,6 +221,7 @@ if (typeof document !== "undefined") {
             <g clip-path="url(#mapClip)">
                 <rect width="${W}" height="${MAP_H}" fill="#ffffff"/>
                 <path d="${landPath}" fill="#d6d6d6" stroke="#9a9a9a" stroke-width="0.6" fill-rule="evenodd"/>
+                <path d="${borderPath}" fill="none" stroke="#a8a8a8" stroke-width="0.7"/>
                 ${dateLines.map(x => `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${MAP_H}" stroke="#9a9a9a" stroke-dasharray="4 4"/>`).join("")}
                 ${arrows}${dots}${labels}
             </g>

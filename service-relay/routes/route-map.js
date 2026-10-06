@@ -9,6 +9,7 @@
 //                                        (lat/lon null = forget it)
 //    POST /route-map/update-ports        re-fetch the port sources
 //    GET  /route-map/land.json           world outlines
+//    GET  /route-map/borders.json        country border lines
 //
 //  Route data comes from the receipt itself (tEXt chunk written by
 //  src/utils/receipt-data-relay.js). Receipts made before that have no
@@ -24,7 +25,7 @@ const highlightReviewStore = require("../highlight-review-store");
 const { locate, setOverride, refreshPorts } = require("../route-map/locate");
 
 const KEYWORD = "TTHelper-Receipt"; // same as ReceiptData.KEYWORD
-const LAND_FILE = path.join(__dirname, "..", "route-map", "data", "land.json");
+const DATA_DIR = path.join(__dirname, "..", "route-map", "data");
 
 function sendJson(res, status, body) {
     res.writeHead(status, { "Content-Type": "application/json" });
@@ -120,9 +121,11 @@ async function handleUpdatePorts(req, res) {
     }
 }
 
-function handleLand(req, res) {
+const serveData = file => (req, res) => {
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "max-age=86400" });
-    fs.createReadStream(LAND_FILE).pipe(res);
-}
+    fs.createReadStream(path.join(DATA_DIR, file)).pipe(res);
+};
+const handleLand = serveData("land.json");
+const handleBorders = serveData("borders.json");
 
-module.exports = { handleList, handleReceipt, handleParse, handleOverride, handleUpdatePorts, handleLand, extractReceiptData };
+module.exports = { handleList, handleReceipt, handleParse, handleOverride, handleUpdatePorts, handleLand, handleBorders, extractReceiptData };

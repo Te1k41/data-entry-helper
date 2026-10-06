@@ -7,7 +7,6 @@ Open items, newest first. Remove an item when it ships (the commit is the record
 - [ ] Prove it on real use, then ship to community: move the page into the extension
   (extension page + bundled land/ports data, no relay) and drop the `-relay` from
   `src/utils/receipt-data-relay.js`. Until then don't sync it (memory: route map private-only).
-- [ ] Country borders on the map (Natural Earth admin-0 boundary lines) like Tradetech's.
 - [ ] 31/494 receipt port names still unplaced (e.g. Pyongtaek, Sihanoukville, Tanger Med,
   Apapa, Messina) — place once via the map's "Place" button, or add aliases.
 - [ ] Batch "Route maps for all receipts" export, if wanted.
@@ -32,6 +31,9 @@ Open items, newest first. Remove an item when it ships (the commit is the record
 
 ## Full Page Capture
 
+- [ ] **COSCO** (`elines.coscoshipping.com` — the COS entry in `service-relay/carrier-links.js`):
+  make Full Page Capture work on its schedule pages. Still to find out on a live page: what
+  breaks there (doesn't scroll / missing parts / seams / repeated header?) and which page.
 - [ ] Confirm on live ZIM (VEX/CTV) + CMA CGM MEDEX that the header/widgets show only once
   (`e87240d` closed-shadow fix). If not: run the `zim-navbar-v1` console check from the chat.
 - [ ] Remaining "account for all situations" plan — open questions first: checkpoint per

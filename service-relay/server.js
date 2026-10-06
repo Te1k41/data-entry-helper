@@ -157,6 +157,7 @@ const ROUTES = [
     { method: "POST", match: exact("/route-map/override"),              handler: routeMapRoutes.handleOverride },
     { method: "POST", match: exact("/route-map/update-ports"),          handler: routeMapRoutes.handleUpdatePorts },
     { method: "GET",  match: exact("/route-map/land.json"),             handler: routeMapRoutes.handleLand },
+    { method: "GET",  match: exact("/route-map/borders.json"),          handler: routeMapRoutes.handleBorders },
 ];
 
 function handleRequest(req, res) {
