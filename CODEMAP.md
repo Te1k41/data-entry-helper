@@ -429,6 +429,13 @@ flowchart LR
   relay_socket_js["relay-socket.js"] --> schedule_dom_scrape_store_js["schedule-dom-scrape-store.js"]
   relay_socket_js["relay-socket.js"] --> config_js["config.js"]
   relay_state_js["relay-state.js"] --> config_js["config.js"]
+  route_map_build_data_js["route-map/build-data.js"] --> route_map_names_js["route-map/names.js"]
+  route_map_build_data_js["route-map/build-data.js"] --> config_js["config.js"]
+  route_map_locate_js["route-map/locate.js"] --> config_js["config.js"]
+  route_map_locate_js["route-map/locate.js"] --> route_map_names_js["route-map/names.js"]
+  route_map_locate_js["route-map/locate.js"] --> route_map_build_data_js["route-map/build-data.js"]
+  route_map_locate_selftest_js["route-map/locate.selftest.js"] --> route_map_locate_js["route-map/locate.js"]
+  route_map_locate_selftest_js["route-map/locate.selftest.js"] --> config_js["config.js"]
   routes_due_services_js["routes/due-services.js"] --> config_js["config.js"]
   routes_due_services_js["routes/due-services.js"] --> due_date_utils_js["due-date-utils.js"]
   routes_due_services_js["routes/due-services.js"] --> carrier_links_js["carrier-links.js"]
@@ -501,7 +508,7 @@ flowchart LR
 | atomic-write.js | - | activity-log-store.js, current-batch-store.js, due-services-store.js, highlight-review-store.js, schedule-dom-scrape-store.js, schedule-guideline-store.js, settings-store.js |
 | build-result.js | config.js, schedule-guideline-store.js, port-dictionary.js | proof-extract.js, routes/result.js |
 | carrier-links.js | - | routes/due-services.js |
-| config.js | settings-store.js | activity-log-store.js, build-result.js, current-batch-store.js, download-watcher.js, due-services-store.js, highlight-review-store.js, merge-cleanup.js, port-dictionary.js, proof-extract.js, relay-socket.js, relay-state.js, routes/due-services.js, routes/files.js, routes/highlight-review.js, routes/proof-extract.js, routes/receipts.js, schedule-dom-scrape-store.js, schedule-guideline-store.js, server.js, vessel-dictionary.js |
+| config.js | settings-store.js | activity-log-store.js, build-result.js, current-batch-store.js, download-watcher.js, due-services-store.js, highlight-review-store.js, merge-cleanup.js, port-dictionary.js, proof-extract.js, relay-socket.js, relay-state.js, route-map/build-data.js, route-map/locate.js, route-map/locate.selftest.js, routes/due-services.js, routes/files.js, routes/highlight-review.js, routes/proof-extract.js, routes/receipts.js, schedule-dom-scrape-store.js, schedule-guideline-store.js, server.js, vessel-dictionary.js |
 | current-batch-store.js | config.js, due-services-trim.js, due-date-utils.js, atomic-write.js, settings-store.js | routes/due-services.js |
 | dashboard/dashboard.js | - | - |
 | dashboard/highlight-review.js | - | - |
@@ -530,6 +537,10 @@ flowchart LR
 | read-json-body.js | - | routes/due-services.js, routes/files.js, routes/fill-test.js, routes/highlight-review.js, routes/proof-extract.js, routes/receipts.js, routes/result.js, routes/settings.js, routes/vessel-dictionary.js |
 | relay-socket.js | relay-state.js, merge-cleanup.js, schedule-guideline-store.js, schedule-dom-scrape-store.js, config.js | routes/due-services.js, server.js |
 | relay-state.js | config.js | download-watcher.js, merge-cleanup.js, relay-socket.js, routes/relay.js |
+| route-map/build-data.js | route-map/names.js, config.js | route-map/locate.js |
+| route-map/locate.js | config.js, route-map/names.js, route-map/build-data.js | route-map/locate.selftest.js |
+| route-map/locate.selftest.js | route-map/locate.js, config.js | - |
+| route-map/names.js | - | route-map/build-data.js, route-map/locate.js |
 | routes/dashboard.js | - | server.js |
 | routes/due-services.js | config.js, due-date-utils.js, carrier-links.js, due-services-store.js, activity-log-store.js, current-batch-store.js, due-services-trim.js, relay-socket.js, read-json-body.js | server.js |
 | routes/files.js | config.js, read-json-body.js | server.js |
