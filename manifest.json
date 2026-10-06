@@ -64,6 +64,7 @@
             "src/features/notes-sidebar.js",
             "src/features/tradetech-stars.js",
             "src/features/validation.js",
+            "src/utils/receipt-data-relay.js",
             "src/features/save-confirmation.js",
             "src/features/date-syncing.js",
             "src/features/manual-etd-highlight.js",

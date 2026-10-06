@@ -74,9 +74,10 @@ const SaveConfirmation = {
                 const arrival = formDoc.querySelector(`input[name="SP${row}_arrival_date"]`)?.value.trim() || "";
                 const depart  = formDoc.querySelector(`input[name="SP${row}_depart_date"]`)?.value.trim()  || "";
                 const key     = formDoc.querySelector(`input[name="SP${row}_port_key"]`)?.value.trim()     || "";
+                const code    = formDoc.querySelector(`input[name="SP${row}_port_code"]`)?.value.trim()    || "";
                 const diffMismatch = this.checkDiffMismatch(formDoc, row, arrival, depart);
 
-                return { row, name, arrival, depart, key, diffMismatch };
+                return { row, code, name, arrival, depart, key, diffMismatch };
             })
             .filter(Boolean);
     },
@@ -184,8 +185,16 @@ const SaveConfirmation = {
 
     // Everything renderRotationCanvas() takes beyond the rows themselves,
     // for the interactive paths (batch capture adds its own extraLines).
+    // receiptData: the route data embedded into the PNG for the Route Map
+    // app (utils/receipt-data-relay.js) — private build only for now;
+    // without that file loaded it's simply absent and nothing changes.
     getReceiptOptions(formDoc) {
-        return { highlightedRow: this.getHighlightedRow(), headline: this.getReceiptHeadline(formDoc) };
+        const highlightedRow = this.getHighlightedRow();
+        return {
+            highlightedRow,
+            headline: this.getReceiptHeadline(formDoc),
+            receiptData: typeof ReceiptData !== "undefined" ? ReceiptData.fromForm(formDoc, highlightedRow) : null,
+        };
     },
 
     // Filename matches the {service}-{MMDDYY} convention Tradetech's own
@@ -352,7 +361,8 @@ const SaveConfirmation = {
     // around.
     downloadRotationPng(rows, serviceCode, options = {}) {
         const canvas = this.renderRotationCanvas(rows, options);
-        canvas.toBlob(blob => {
+        canvas.toBlob(async blob => {
+            if (options.receiptData) blob = await ReceiptData.embedBlob(blob, options.receiptData);
             const url  = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
@@ -426,10 +436,12 @@ const SaveConfirmation = {
         try {
             const rows = this.buildRotationRows(document);
             const extraLines = this.getExtraCaptureFields(document);
-            const canvas = this.renderRotationCanvas(rows, { ...this.getReceiptOptions(document), extraLines });
+            const options = { ...this.getReceiptOptions(document), extraLines };
+            const canvas = this.renderRotationCanvas(rows, options);
+            const dataUrl = canvas.toDataURL("image/png");
             return {
                 ok: true,
-                dataUrl: canvas.toDataURL("image/png"),
+                dataUrl: options.receiptData ? ReceiptData.embedDataUrl(dataUrl, options.receiptData) : dataUrl,
                 filename: this.receiptFilename(this.getServiceCode(document))
             };
         } catch (err) {
