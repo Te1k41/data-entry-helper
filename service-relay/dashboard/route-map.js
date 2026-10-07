@@ -101,13 +101,51 @@ function boundNames(service, ports, directional) {
     return [first ? COMPASS[first] : null, second ? COMPASS[second] : null];
 }
 
-// Quadratic curve control point: bend to the LEFT of the direction of
-// travel, so an out leg and its return leg between the same two areas
-// bow apart instead of drawing on top of each other.
-function bendPoint(a, b) {
-    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-    const bend = Math.min(len * 0.22, 90);
-    return { x: (a.x + b.x) / 2 + (dy / len) * bend, y: (a.y + b.y) / 2 - (dx / len) * bend };
+// Pick each arrow's curve so arrows overlap each other (and run over
+// other ports' dots) as little as possible. Greedy, in route order: for
+// every hop try a few shapes — bow left/right of travel, a little or a
+// lot, or straight — sample each curve, and score how close it runs to
+// curves already drawn, dots it doesn't start/end at, and port labels
+// (boxes: [{x0,y0,x1,y1}]). Lowest score
+// wins; the first option (the old fixed bend) wins ties, so routes that
+// were already clean look the same.
+// segs: [{ a: {x,y}, b: {x,y} }]  dots: [{x,y}]  -> control point per seg.
+// `fixed` (option index per seg) skips the search — zoom/pan redraws reuse
+// the shapes picked when the route opened (same look, no per-frame cost).
+const BEND_OPTIONS = [[1, 0.22], [-1, 0.22], [1, 0.4], [-1, 0.4], [1, 0.1], [-1, 0.1], [1, 0.6], [-1, 0.6], [1, 0]];
+function routeBends(segs, dots, boxes = [], near = 9, fixed = null) {
+    const drawn = [];
+    const at = (a, c, b, t) => ({ x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t ** 2 * b.x, y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t ** 2 * b.y });
+    const chosen = [];
+    const controls = segs.map(({ a, b }, si) => {
+        const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+        let best = null;
+        const options = fixed ? [BEND_OPTIONS[fixed[si]]] : BEND_OPTIONS;
+        for (const [side, f] of options) {
+            const bend = side * Math.min(len * f, 140);
+            const c = { x: (a.x + b.x) / 2 + (dy / len) * bend, y: (a.y + b.y) / 2 - (dx / len) * bend };
+            if (fixed) { best = { c, pts: [], opt: fixed[si] }; break; } // redraw: shape already chosen
+            const pts = [];
+            // a check every ~15px of curve (sparser misses dots on long hops), ends skipped (they touch ports)
+            const n = Math.max(10, Math.min(60, Math.round(len / 15)));
+            for (let k = 1; k < n; k++) pts.push(at(a, c, b, k / n));
+            let score = 0;
+            for (const p of pts) {
+                for (const q of drawn) if (Math.hypot(p.x - q.x, p.y - q.y) < near) score += 1;
+                for (const d of dots) {
+                    if ((d.x === a.x && d.y === a.y) || (d.x === b.x && d.y === b.y)) continue;
+                    if (Math.hypot(p.x - d.x, p.y - d.y) < near + 3) score += 3;
+                }
+                for (const bx of boxes) if (p.x > bx.x0 - 2 && p.x < bx.x1 + 2 && p.y > bx.y0 - 2 && p.y < bx.y1 + 2) score += 2;
+            }
+            if (!best || score < best.score) best = { score, c, pts, opt: fixed ? fixed[si] : BEND_OPTIONS.indexOf(options.find(o => o[0] === side && o[1] === f)) };
+        }
+        drawn.push(...best.pts);
+        chosen.push(best.opt);
+        return best.c;
+    });
+    controls.options = chosen;
+    return controls;
 }
 
 // Greedy label placement: first of right / left / above / below whose box
@@ -146,7 +184,7 @@ function panBy(v, dx, dy, mapW = W, mapH = MAP_H) {
 const cityLabel = name => String(name || "").split(",")[0].replace(/\s*\(.*?\)\s*/g, " ").trim()
     .toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 
-if (typeof module !== "undefined") module.exports = { isDirectional, boundNames, mercY, invMercY, centerLon, unwrap, fitView, pivotRow, bendPoint, cityLabel, placeLabels, zoomAt, panBy };
+if (typeof module !== "undefined") module.exports = { isDirectional, boundNames, routeBends, mercY, invMercY, centerLon, unwrap, fitView, pivotRow, cityLabel, placeLabels, zoomAt, panBy };
 
 // ── Page ──────────────────────────────────────────────────────
 
@@ -159,22 +197,35 @@ if (typeof document !== "undefined") {
 
     const status = msg => { $("rmStatus").textContent = msg; };
 
+    // Every service: receipt PNGs first (newest first), then every stored
+    // service without one, A–Z. The filter box narrows by name.
     async function loadList() {
-        const { folder, files } = await (await fetch("/route-map/receipts")).json();
-        $("rmFolder").textContent = folder;
-        $("rmList").innerHTML = files.length ? files.map(f => `
-            <div class="rmItem" data-file="${esc(f.file)}">${esc(f.file.replace(/-receipt\.png$/i, ""))}
-                <div class="when">${esc(new Date(f.mtime).toLocaleString())}</div></div>`).join("")
-            : `<div class="rmItem" style="cursor:default;color:var(--dim)">No receipts in this folder yet</div>`;
-        for (const el of $("rmList").querySelectorAll("[data-file]")) {
+        const { folder, files, services = [] } = await (await fetch("/route-map/receipts")).json();
+        $("rmFolder").textContent = `${files.length} receipts + ${services.length} stored services · ${folder}`;
+        const items = [
+            ...files.map(f => ({ label: f.file.replace(/-receipt\.png$/i, ""), sub: new Date(f.mtime).toLocaleString(), url: `/route-map/receipt?file=${encodeURIComponent(f.file)}`, file: f.file })),
+            ...services.sort((a, b) => a.service.localeCompare(b.service))
+                .map(sv => ({ label: sv.service, sub: `${sv.operator ? sv.operator + " · " : ""}stored route`, url: `/route-map/service?key=${encodeURIComponent(sv.key)}` })),
+        ];
+        $("rmList").innerHTML = items.length ? items.map((it, i) => `
+            <div class="rmItem" data-i="${i}"${it.file ? ` data-file="${esc(it.file)}"` : ""}>${esc(it.label)}
+                <div class="when">${esc(it.sub)}</div></div>`).join("")
+            : `<div class="rmItem" style="cursor:default;color:var(--dim)">Nothing captured yet</div>`;
+        for (const el of $("rmList").querySelectorAll("[data-i]")) {
+            const it = items[+el.dataset.i];
             el.onclick = () => {
                 for (const x of $("rmList").querySelectorAll(".current")) x.classList.remove("current");
                 el.classList.add("current");
-                const load = () => openRoute(fetch(`/route-map/receipt?file=${encodeURIComponent(el.dataset.file)}`).then(r => r.json()), el.dataset.file, load);
+                const load = () => openRoute(fetch(it.url).then(r => r.json()), it.label, load);
                 load();
             };
         }
     }
+
+    $("rmFilter").oninput = () => {
+        const q = $("rmFilter").value.trim().toUpperCase();
+        for (const el of $("rmList").querySelectorAll("[data-i]")) el.style.display = !q || el.textContent.toUpperCase().includes(q) ? "" : "none";
+    };
 
     async function openFile(file) {
         const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file); });
@@ -207,16 +258,6 @@ if (typeof document !== "undefined") {
         const legOf = p => (pivot && parseInt(p.row, 10) > pivot ? 1 : 0);
         const directional = isDirectional(data.service, data.ports);
         const closure = directional ? ports[ports.length - 1] : null; // the loop-closing last port
-        let arrows = "";
-        for (let i = 1; i < placed.length; i++) {
-            if (placed[i] === closure) continue; // directional: no hop back into the start
-            const leg = legOf(placed[i]);
-            const gap = ports.indexOf(placed[i]) - ports.indexOf(placed[i - 1]) > 1; // an unplaced port in between
-            for (const seg of layer.arc(placed[i - 1], placed[i])) {
-                arrows += `<path d="${seg.d}" fill="none" stroke="${COLORS[leg]}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"${gap ? ' stroke-dasharray="6 4"' : ""}${seg.end ? ` marker-end="url(#arrow${leg})"` : ""}/>`;
-            }
-        }
-
         // Dots + labels, one per distinct spot (a port visited twice gets one dot).
         const spots = new Map();
         for (const p of placed) {
@@ -234,6 +275,29 @@ if (typeof document !== "undefined") {
             dots += `<circle data-port="${esc(s.p.name)}" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="5.5" fill="${approx ? TT.amber : TT.navy}" stroke="#fff" stroke-width="1.5"/>`;
             labels += `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" font-size="13" font-weight="bold" fill="${TT.navy}" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(texts[i])}</text>`;
         });
+
+        // Label boxes, so arrows can steer around the text too.
+        const labelBoxes = spotsLabels.map((l, i) => {
+            const w = texts[i].length * 7.6;
+            const x0 = l.anchor === "start" ? l.x : l.anchor === "end" ? l.x - w : l.x - w / 2;
+            return { x0, y0: l.y - 11, x1: x0 + w, y1: l.y + 3 };
+        });
+
+        const segs = [];
+        for (let i = 1; i < placed.length; i++) {
+            if (placed[i] === closure) continue; // directional: no hop back into the start
+            const a = layer.pos(placed[i - 1]), b = layer.pos(placed[i]);
+            if (Math.hypot(b.x - a.x, b.y - a.y) < 4) continue; // same spot
+            segs.push({ a, b, leg: legOf(placed[i]), gap: ports.indexOf(placed[i]) - ports.indexOf(placed[i - 1]) > 1 }); // gap: an unplaced port in between
+        }
+        const controls = routeBends(segs, placed.map(layer.pos), labelBoxes, 9, withTable ? null : current.bendOptions);
+        current.bendOptions = controls.options;
+        let arrows = "";
+        segs.forEach(({ a, b, leg, gap }, i) => {
+            const c = controls[i];
+            arrows += `<path d="M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${c.x.toFixed(1)},${c.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}" fill="none" stroke="${COLORS[leg]}" stroke-width="2.6" stroke-linecap="round"${gap ? ' stroke-dasharray="6 4"' : ""} marker-end="url(#arrow${leg})"/>`;
+        });
+
 
         // Vessel operator / carriers box (inside the SVG so Export includes it).
         const op = data.vesselOperator || {};
@@ -306,12 +370,6 @@ if (typeof document !== "undefined") {
                 <path d="${landPath}" fill="${TT.land}" stroke="${TT.coast}" stroke-width="0.6" fill-rule="evenodd"/>
                 <path d="${borderPath}" fill="none" stroke="#ffffff" stroke-width="0.8"/>${dateLines}`,
             pos,
-            arc(pa, pb) {
-                const a = pos(pa), b = pos(pb);
-                if (Math.hypot(b.x - a.x, b.y - a.y) < 4) return [];
-                const c = bendPoint(a, b);
-                return [{ d: `M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${c.x.toFixed(1)},${c.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`, end: true }];
-            },
             invert(ux, uy) {
                 const lon = ((((ux / k + view.x0 + 180) % 360) + 360) % 360) - 180;
                 return [lon, invMercY(view.y0 + view.h - uy / k)];

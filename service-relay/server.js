@@ -153,6 +153,7 @@ const ROUTES = [
     { method: "GET",  match: exact("/dashboard/route-map.js"),          handler: dashboardRoutes.handleRouteMapJs },
     { method: "GET",  match: exact("/route-map/receipts"),              handler: routeMapRoutes.handleList },
     { method: "GET",  match: prefix("/route-map/receipt?"),             handler: routeMapRoutes.handleReceipt },
+    { method: "GET",  match: prefix("/route-map/service?"),             handler: routeMapRoutes.handleService },
     { method: "POST", match: exact("/route-map/parse"),                 handler: routeMapRoutes.handleParse },
     { method: "POST", match: exact("/route-map/override"),              handler: routeMapRoutes.handleOverride },
     { method: "POST", match: exact("/route-map/update-ports"),          handler: routeMapRoutes.handleUpdatePorts },

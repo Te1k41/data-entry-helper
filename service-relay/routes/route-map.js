@@ -4,6 +4,7 @@
 //
 //    GET  /route-map/receipts            receipt PNGs in RECEIPTS_FOLDER, newest first
 //    GET  /route-map/receipt?file=NAME   one of those -> route + placed ports
+//    GET  /route-map/service?key=KEY     a stored service with no receipt PNG -> same
 //    POST /route-map/parse {dataUrl}     a dropped/picked receipt PNG -> same
 //    POST /route-map/override {name, lat, lon}   remember a manual placement
 //                                        (lat/lon null = forget it)
@@ -52,10 +53,16 @@ function extractReceiptData(buf) {
 
 // "AL5-W-100226-receipt.png" -> the stored review item for AL5-W, as
 // receipt-data shaped route data.
+const serviceKeyOf = item => item.serviceKey || item.key;
+
 function fromReviewStore(file) {
     const m = file.match(highlightReviewStore.RECEIPT_NAME);
     if (!m) return null;
-    const item = highlightReviewStore.getAll().find(i => (i.serviceKey || i.key) === m[1] && i.ports?.length);
+    return itemToRoute(highlightReviewStore.getAll().find(i => serviceKeyOf(i) === m[1] && i.ports?.length));
+}
+
+// A stored Highlight Review item -> receipt-data shaped route.
+function itemToRoute(item) {
     if (!item) return null;
     return {
         v: 1,
@@ -75,6 +82,9 @@ async function respondWithRoute(res, data, source) {
     sendJson(res, 200, { ok: true, source, data, places });
 }
 
+// Every service the map can draw: receipt PNGs, plus every stored
+// service that has no PNG (older batch runs only saved PNGs for routes
+// with a special port — the stored route data covers all of them).
 function handleList(req, res) {
     let files = [];
     try {
@@ -83,7 +93,22 @@ function handleList(req, res) {
             .map(f => ({ file: f, mtime: fs.statSync(path.join(RECEIPTS_FOLDER, f)).mtimeMs }))
             .sort((a, b) => b.mtime - a.mtime);
     } catch { /* folder doesn't exist yet — nothing captured */ }
-    sendJson(res, 200, { folder: RECEIPTS_FOLDER, files });
+    // A PNG stands in for the ONE item fromReviewStore() would pick for it —
+    // the same service code under a second operator still gets listed.
+    const all = highlightReviewStore.getAll();
+    const shownByPng = new Set(files.map(f => {
+        const svc = f.file.match(highlightReviewStore.RECEIPT_NAME)?.[1];
+        return all.find(i => serviceKeyOf(i) === svc && i.ports?.length)?.key;
+    }).filter(Boolean));
+    const services = all
+        .filter(i => i.ports?.length && !shownByPng.has(i.key))
+        .map(i => ({ key: i.key, service: i.service, operator: i.vesselOperator || "", capturedAt: i.capturedAt || "" }));
+    sendJson(res, 200, { folder: RECEIPTS_FOLDER, files, services });
+}
+
+async function handleService(req, res) {
+    const key = new URL(req.url, "http://localhost").searchParams.get("key") || "";
+    return respondWithRoute(res, itemToRoute(highlightReviewStore.getAll().find(i => i.key === key && i.ports?.length)), "review-store");
 }
 
 async function handleReceipt(req, res) {
@@ -128,4 +153,4 @@ const serveData = file => (req, res) => {
 const handleLand = serveData("land.json");
 const handleBorders = serveData("borders.json");
 
-module.exports = { handleList, handleReceipt, handleParse, handleOverride, handleUpdatePorts, handleLand, handleBorders, extractReceiptData };
+module.exports = { handleList, handleReceipt, handleService, handleParse, handleOverride, handleUpdatePorts, handleLand, handleBorders, extractReceiptData };
