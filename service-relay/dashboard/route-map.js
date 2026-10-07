@@ -19,7 +19,7 @@ const W = 1100, MAP_H = 560;           // SVG user units
 // Tradetech's own palette (site.tradetech.net theme: primary navy
 // #201B51, brand teal #11C5C0, greys #F2F4F5/#D1D6D8/#616165, amber #FCB900).
 const TT = { navy: "#201B51", navy2: "#323B62", teal: "#11C5C0", sea: "#F2F4F5", land: "#D1D6D8", coast: "#B3BABE", text: "#323234", grey: "#616165", amber: "#FCB900" };
-const COLORS = [TT.navy, TT.teal]; // leg 1, leg 2
+const COLORS = [TT.navy, TT.teal]; // 1st bound, 2nd bound
 const MAX_LAT = 82;
 
 // ── Pure geometry (also run by the Node self-check at the bottom) ──
@@ -227,7 +227,7 @@ if (typeof document !== "undefined") {
         (carriers.length ? carriers : [source === "review-store" ? "(not in this older receipt)" : "—"])
             .forEach((c, i) => { box += `<text x="${W - 370}" y="${MAP_H + 34 + lineH * (i + 1)}" font-size="14" fill="${TT.text}">${esc(c)}</text>`; });
         const title = `<text x="14" y="${MAP_H + 34}" font-size="16" font-weight="bold" fill="${TT.navy}">${esc(data.service || current.label)}</text>`
-            + `<text x="14" y="${MAP_H + 54}" font-size="12" fill="${TT.grey}">${directional ? "1 bound · " : "2 bounds · "}${pivot ? `<tspan fill="${COLORS[0]}">━ leg 1</tspan>  <tspan fill="${COLORS[1]}">━ leg 2</tspan>  ·  ` : ""}<tspan fill="${TT.amber}">◯</tspan> highlighted port</text>`;
+            + `<text x="14" y="${MAP_H + 54}" font-size="12" fill="${TT.grey}">${directional ? "1 bound · " : "2 bounds · "}${pivot ? `<tspan fill="${COLORS[0]}">━ 1st bound</tspan>  <tspan fill="${COLORS[1]}">━ 2nd bound</tspan>  ·  ` : ""}<tspan fill="${TT.amber}">◯</tspan> highlighted port</text>`;
 
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${totalH}" font-family="Arial, Helvetica, sans-serif">
             <defs>${COLORS.map((c, i) => `<marker id="arrow${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" markerUnits="strokeWidth" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join("")}
