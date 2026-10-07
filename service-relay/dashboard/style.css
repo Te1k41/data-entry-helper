@@ -439,7 +439,9 @@
         margin: 0 6px;
     }
 
-    button {
+    /* a.btn: page links styled as buttons — real links, so right-click
+       "Open in new tab", middle-click and Ctrl+click all work */
+    button, a.btn {
         font-family: var(--mono);
         font-size: 13px;
         padding: 6px 14px;
@@ -449,7 +451,8 @@
         background: var(--bg-elevated);
         color: var(--text);
     }
-    button:hover { background: var(--border); border-color: var(--muted); }
+    button:hover, a.btn:hover { background: var(--border); border-color: var(--muted); }
+    a.btn { display: inline-block; text-decoration: none; line-height: normal; }
 
     #recalcDaySelect {
         font-family: var(--mono);
