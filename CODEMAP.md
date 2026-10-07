@@ -29,6 +29,7 @@ flowchart LR
   core_boundary_js["core/boundary.js"] --> features_date_syncing_js["features/date-syncing.js"]
   core_boundary_js["core/boundary.js"] --> features_manual_etd_highlight_js["features/manual-etd-highlight.js"]
   core_boundary_js["core/boundary.js"] --> features_port_highlighting_js["features/port-highlighting.js"]
+  core_boundary_js["core/boundary.js"] --> features_save_confirmation_js["features/save-confirmation.js"]
   features_arrival_depart_order_check_js["features/arrival-depart-order-check.js"] --> features_insert_port_js["features/insert-port.js"]
   features_arrival_depart_order_check_js["features/arrival-depart-order-check.js"] --> main_js["main.js"]
   features_auto_nav_schedules_js["features/auto-nav-schedules.js"] --> features_due_service_scanner_relay_js["features/due-service-scanner-relay.js"]
@@ -306,7 +307,7 @@ flowchart LR
 |---|---|---|
 | background-relay.js | renamingEnabled, ws, relayAvailable, pendingRenamingSend, awaitingRenamingEcho, batchJobRunning, connectWebSocket, broadcastRenameState, isRecognizedSchedulePage, AWR_AUDIT_SETTLE_MS, AWR_AUDIT_THROTTLE_MS, sleep, waitForTabComplete, RECEIPT_CAPTURE_SETTLE_MS, RECEIPT_CAPTURE_THROTTLE_MS, AWR_DATE_RESTORE_RECORDS, ddMmmYyyyToMmDdYy, setRelayAvailable | features/merge-download-signal-relay.js, features/rename-toggle-relay.js, features/schedule-capture-relay.js, features/service-relay-send-relay.js, utils/relay-socket-client.js, background.js |
 | background.js | fpcExtraCaptures, FPC_MAX_DIMENSION, FPC_MAX_AREA, FPC_SLICE_DELAY_MS, FPC_OVERLAP_PX, fpcInProgress, pickTargetFrame, computeCaptureGeometry, fpcRestoreFloating, sendToTab, sleep, reportCaptureError | background-relay.js |
-| core/boundary.js | PortSyncBoundary | features/date-syncing.js, features/manual-etd-highlight.js, features/port-highlighting.js |
+| core/boundary.js | PortSyncBoundary | features/date-syncing.js, features/manual-etd-highlight.js, features/port-highlighting.js, features/save-confirmation.js |
 | features/arrival-depart-order-check.js | ArrivalDepartOrderCheck | features/insert-port.js, main.js |
 | features/auto-nav-schedules.js | AutoNavSchedules | features/due-service-scanner-relay.js, main.js |
 | features/awr-audit-relay.js | top, AwrAudit | background-relay.js, background.js, features/awr-flag.js, features/date-calculator.js, features/full-page-capture-inject.js, features/highlighter-settings.js, features/keyboard-navigation.js, features/live-check-relay.js, features/notes-sidebar.js, features/port-name-reminder.js, features/rename-toggle-relay.js, features/rotation-receipt-capture-relay.js, features/save-confirmation.js, features/schedule-preview-tools-relay.js, features/tradetech-stars.js, features/upload-proof-relay.js, features/vessel-name-reminder.js, features/vessel-recommendation.js, features/voyage-direction.js, utils/banner.js, utils/button.js, utils/draggable-panel.js, utils/toolbar.js, features/custom-rules-settings.js, main.js |

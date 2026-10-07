@@ -31,14 +31,16 @@ const PortSyncBoundary = {
     //  - SP001_port_key is blank or has any non-letter character ("*", "E1"…).
     // Anything else is a full-bound service. The one shared definition —
     // port-highlighting.js reuses it.
-    isDirectionalService() {
-        const keyFields = document.querySelectorAll('input[type="text"][name^="SP"][name$="_port_key"]');
+    // `doc`: the document holding the form — defaults to this frame's own;
+    // the receipt passes the form frame's document (it can run elsewhere).
+    isDirectionalService(doc = document) {
+        const keyFields = doc.querySelectorAll('input[type="text"][name^="SP"][name$="_port_key"]');
         if (Array.from(keyFields).some(f => this.parsePortKeyDirections(f.value))) return false;
 
-        const serviceField = document.querySelector('input[type="text"][name="service"]');
+        const serviceField = doc.querySelector('input[type="text"][name="service"]');
         if (/-[A-Z]$/i.test(serviceField ? serviceField.value.trim() : "")) return true;
 
-        const keyField = document.querySelector('input[type="text"][name="SP001_port_key"]');
+        const keyField = doc.querySelector('input[type="text"][name="SP001_port_key"]');
         return !!keyField && !/^[A-Za-z]+$/.test(keyField.value.trim());
     },
 

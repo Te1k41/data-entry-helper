@@ -176,11 +176,15 @@ const SaveConfirmation = {
         return field?.name.match(/^SP(\d+)_port_name$/)?.[1] || null;
     },
 
-    // "<service> · <vessel operator>" (e.g. "WDKU · SOM") for the
-    // receipt's title line — whichever of the two is filled in.
+    // "<service> · <vessel operator> · <1 bound|2 bounds>" (e.g. "WDKU ·
+    // SOM · 2 bounds") for the receipt's title line. 1 bound = directional
+    // (loops back to its own start), 2 bounds = full bound (two legs) —
+    // same rule as port highlighting (PortSyncBoundary.isDirectionalService).
     getReceiptHeadline(formDoc) {
         const read = name => formDoc.querySelector(`input[name="${name}"]`)?.value.trim() || "";
-        return [read("service"), read("vessel_operator")].filter(Boolean).join(" · ");
+        const bounds = typeof PortSyncBoundary === "undefined" ? ""
+            : PortSyncBoundary.isDirectionalService(formDoc) ? "1 bound" : "2 bounds";
+        return [read("service"), read("vessel_operator"), bounds].filter(Boolean).join(" · ");
     },
 
     // Everything renderRotationCanvas() takes beyond the rows themselves,
@@ -223,7 +227,7 @@ const SaveConfirmation = {
     // table, mirroring the live page's own orange region-change
     // highlight. Both default to [] / null so the 2 existing interactive
     // callers keep working unchanged if they don't pass them.
-    // `headline` (optional) is "<service> · <vessel operator>" (see
+    // `headline` (optional) is "<service> · <vessel operator> · <bounds>" (see
     // getReceiptHeadline()) — prepended to the title line rather than
     // added as extra lines, so the receipt's HEIGHT stays a pure function
     // of its port-row count (the Highlight Review page reads that count
