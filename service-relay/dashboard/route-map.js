@@ -1,7 +1,7 @@
 // ============================================================
 //  dashboard/route-map.js — draws a receipt's route on a world map,
 //  like Tradetech's own route map: red port dots, curved arrows (one
-//  colour per leg), the highlighted port ringed, and the Vessel
+//  colour per bound, named Eastbound/Westbound/…), and the Vessel
 //  Operator / Carriers box. Everything is one SVG, so Export PNG
 //  captures exactly what's on screen.
 //
@@ -78,6 +78,29 @@ function isDirectional(service, ports) {
     return !!first && !/^[A-Za-z]+$/.test(String(first.key || "").trim());
 }
 
+// Compass name of each bound, for the legend: ["Eastbound", "Westbound"].
+// 2 bounds: the Start markers in the port keys, in row order — "ES" = an
+// Eastbound bound starts here, "WS" = a Westbound one; the 1st bound is
+// the first start, the 2nd the next DIFFERENT one ("SENS" = S ends, N
+// starts). 1 bound: the service suffix ("AE1-E" -> Eastbound). A plain
+// letter suffix ("-A") or no marker -> null (shown as "1st/2nd bound").
+const COMPASS = { N: "Northbound", S: "Southbound", E: "Eastbound", W: "Westbound" };
+function boundNames(service, ports, directional) {
+    if (directional) {
+        const m = String(service || "").trim().match(/-([NSEW])$/i);
+        return [m ? COMPASS[m[1].toUpperCase()] : null];
+    }
+    const starts = [], ends = [];
+    for (const p of ports) {
+        const k = String(p.key || "").trim().toUpperCase();
+        if (!/^([NSEW][SE]){1,2}$/.test(k)) continue;
+        for (const chunk of k.match(/../g)) (chunk[1] === "S" ? starts : ends).push(chunk[0]);
+    }
+    // a bound with no Start marker still shows up by its End ("WS … EE")
+    const first = starts[0] || ends[0], second = starts.find(c => c !== first) || ends.find(c => c !== first);
+    return [first ? COMPASS[first] : null, second ? COMPASS[second] : null];
+}
+
 // Quadratic curve control point: bend to the LEFT of the direction of
 // travel, so an out leg and its return leg between the same two areas
 // bow apart instead of drawing on top of each other.
@@ -123,7 +146,7 @@ function panBy(v, dx, dy, mapW = W, mapH = MAP_H) {
 const cityLabel = name => String(name || "").split(",")[0].replace(/\s*\(.*?\)\s*/g, " ").trim()
     .toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 
-if (typeof module !== "undefined") module.exports = { isDirectional, mercY, invMercY, centerLon, unwrap, fitView, pivotRow, bendPoint, cityLabel, placeLabels, zoomAt, panBy };
+if (typeof module !== "undefined") module.exports = { isDirectional, boundNames, mercY, invMercY, centerLon, unwrap, fitView, pivotRow, bendPoint, cityLabel, placeLabels, zoomAt, panBy };
 
 // ── Page ──────────────────────────────────────────────────────
 
@@ -200,8 +223,7 @@ if (typeof document !== "undefined") {
             const at = layer.pos(p);
             if (!at.visible) continue;
             const key = `${at.x.toFixed(0)},${at.y.toFixed(0)}`;
-            if (!spots.has(key)) spots.set(key, { x: at.x, y: at.y, p, highlighted: false });
-            if (p.row === data.highlightedRow) spots.get(key).highlighted = true;
+            if (!spots.has(key)) spots.set(key, { x: at.x, y: at.y, p });
         }
         const spotList = [...spots.values()];
         const texts = spotList.map(s => cityLabel(s.p.name) + (s.p.place.how === "approx" ? " ≈" : ""));
@@ -209,8 +231,7 @@ if (typeof document !== "undefined") {
         let dots = "", labels = "";
         spotList.forEach((s, i) => {
             const approx = s.p.place.how === "approx", l = spotsLabels[i];
-            dots += (s.highlighted ? `<circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="11" fill="none" stroke="${TT.amber}" stroke-width="4"/>` : "")
-                + `<circle data-port="${esc(s.p.name)}" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="5.5" fill="${approx ? TT.amber : TT.navy}" stroke="#fff" stroke-width="1.5"/>`;
+            dots += `<circle data-port="${esc(s.p.name)}" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="5.5" fill="${approx ? TT.amber : TT.navy}" stroke="#fff" stroke-width="1.5"/>`;
             labels += `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" font-size="13" font-weight="bold" fill="${TT.navy}" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(texts[i])}</text>`;
         });
 
@@ -226,8 +247,12 @@ if (typeof document !== "undefined") {
             + `<text x="${W - 380}" y="${MAP_H + 34 + lineH}" text-anchor="end" font-size="14" font-weight="bold" fill="${TT.navy}">Carriers:</text>`;
         (carriers.length ? carriers : [source === "review-store" ? "(not in this older receipt)" : "—"])
             .forEach((c, i) => { box += `<text x="${W - 370}" y="${MAP_H + 34 + lineH * (i + 1)}" font-size="14" fill="${TT.text}">${esc(c)}</text>`; });
+        // "2 bounds · ━ Eastbound ━ Westbound" — one swatch per bound drawn
+        const names = boundNames(data.service, data.ports, directional);
+        const legs = directional || !pivot ? [names[0] || ""] : [names[0] || "1st bound", names[1] || "2nd bound"];
+        const legend = legs.filter(Boolean).map((n, i) => `  ·  <tspan fill="${COLORS[i]}">━ ${esc(n)}</tspan>`).join("");
         const title = `<text x="14" y="${MAP_H + 34}" font-size="16" font-weight="bold" fill="${TT.navy}">${esc(data.service || current.label)}</text>`
-            + `<text x="14" y="${MAP_H + 54}" font-size="12" fill="${TT.grey}">${directional ? "1 bound · " : "2 bounds · "}${pivot ? `<tspan fill="${COLORS[0]}">━ 1st bound</tspan>  <tspan fill="${COLORS[1]}">━ 2nd bound</tspan>  ·  ` : ""}<tspan fill="${TT.amber}">◯</tspan> highlighted port</text>`;
+            + `<text x="14" y="${MAP_H + 54}" font-size="12" fill="${TT.grey}">${directional ? "1 bound" : "2 bounds"}${legend}</text>`;
 
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${totalH}" font-family="Arial, Helvetica, sans-serif">
             <defs>${COLORS.map((c, i) => `<marker id="arrow${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" markerUnits="strokeWidth" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join("")}
@@ -297,7 +322,7 @@ if (typeof document !== "undefined") {
     function renderTable(ports) {
         const label = { exact: "✓", waypoint: "✓ waypoint", code: "✓ by code", override: "✓ placed by you", approx: "≈ approximate" };
         $("rmPorts").innerHTML = `<tr><th>SP</th><th>Port</th><th>Key</th><th>Arrival</th><th>Depart</th><th>On map</th><th></th></tr>`
-            + ports.map((p, i) => `<tr class="${p.row === current.data.highlightedRow ? "hl" : ""}">
+            + ports.map((p, i) => `<tr>
                 <td>${esc(p.row)}</td><td>${esc(p.name)}${p.code ? ` <span style="color:var(--dim)">${esc(p.code)}</span>` : ""}</td>
                 <td>${esc(p.key)}</td><td>${esc(p.arrival)}</td><td>${esc(p.depart)}</td>
                 <td class="pl-${p.place ? p.place.how : "none"}" title="${p.place ? esc(`matched “${p.place.matched}” (${p.place.source})`) : ""}">${p.place ? label[p.place.how] : "✗ not placed"}</td>
