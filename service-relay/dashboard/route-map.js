@@ -104,6 +104,37 @@ function boundNames(service, ports, directional) {
     return [first ? COMPASS[first] : null, second ? COMPASS[second] : null];
 }
 
+// Which bound(s) each hop sails in, from each bound's own Start..End rows
+// in the port keys. Bounds can OVERLAP: in A3C (SHANGHAI[SS] … SYDNEY[NS] …
+// BRISBANE[SE] … NINGBO[NE]) Sydney -> Brisbane is in both — those hops get
+// both bounds and are drawn as two separate lines. Bound order matches
+// boundNames() (first Start, then the next different compass). A hop
+// outside every stretch falls back to the pivot rule.
+// ports: [{row, key}] in route order -> per hop i (ports[i-1] -> ports[i]) an array of bound indexes
+function hopBounds(ports) {
+    const rows = ports.map(p => parseInt(p.row, 10));
+    const marks = {}; // compass -> { start, end }
+    const order = [];
+    ports.forEach((p, i) => {
+        const k = String(p.key || "").trim().toUpperCase();
+        if (!/^([NSEW][SE]){1,2}$/.test(k)) return;
+        for (const [c, m] of k.match(/../g)) {
+            marks[c] ||= {};
+            if (m === "S" && marks[c].start === undefined) { marks[c].start = rows[i]; if (!order.includes(c)) order.push(c); }
+            if (m === "E" && marks[c].end === undefined) marks[c].end = rows[i];
+        }
+    });
+    for (const c of Object.keys(marks)) if (!order.includes(c)) order.push(c); // a bound with only an End marker
+    const bounds = order.slice(0, 2).map(c => ({ start: marks[c].start ?? rows[0], end: marks[c].end ?? rows[rows.length - 1] }));
+    const pivot = pivotRow(ports);
+    return ports.map((p, i) => {
+        if (i === 0) return [];
+        const from = rows[i - 1], to = rows[i];
+        const inside = bounds.map((b, bi) => (from >= b.start && to <= b.end ? bi : -1)).filter(bi => bi >= 0);
+        return inside.length ? inside : [pivot && to > pivot ? 1 : 0];
+    });
+}
+
 // Pick each arrow's curve so arrows overlap each other (and run over
 // other ports' dots) as little as possible. Greedy, in route order: for
 // every hop try a few shapes — bow left/right of travel, a little or a
@@ -231,7 +262,7 @@ function shapesPath(shapes, v, closed, mapW = W, mapH = MAP_H) {
     return out;
 }
 
-if (typeof module !== "undefined") module.exports = { projectShapes, shapesPath, isDirectional, boundNames, routeBends, mercY, invMercY, centerLon, unwrap, fitView, pivotRow, cityLabel, placeLabels, zoomAt, panBy };
+if (typeof module !== "undefined") module.exports = { hopBounds, projectShapes, shapesPath, isDirectional, boundNames, routeBends, mercY, invMercY, centerLon, unwrap, fitView, pivotRow, cityLabel, placeLabels, zoomAt, panBy };
 
 // ── Page ──────────────────────────────────────────────────────
 
@@ -308,7 +339,7 @@ if (typeof document !== "undefined") {
 
         // Arrows between consecutive placed ports.
         const pivot = pivotRow(data.ports);
-        const legOf = p => (pivot && parseInt(p.row, 10) > pivot ? 1 : 0);
+        const boundsOfHop = hopBounds(data.ports); // per port index: bound(s) of the hop INTO that port
         const directional = isDirectional(data.service, data.ports);
         const closure = directional ? ports[ports.length - 1] : null; // the loop-closing last port
         // Dots + labels, one per distinct spot (a port visited twice gets one dot).
@@ -341,7 +372,10 @@ if (typeof document !== "undefined") {
             if (placed[i] === closure) continue; // directional: no hop back into the start
             const a = layer.pos(placed[i - 1]), b = layer.pos(placed[i]);
             if (Math.hypot(b.x - a.x, b.y - a.y) < 4) continue; // same spot
-            segs.push({ hop: i, a, b, leg: legOf(placed[i]), gap: ports.indexOf(placed[i]) - ports.indexOf(placed[i - 1]) > 1 }); // gap: an unplaced port in between
+            const gap = ports.indexOf(placed[i]) - ports.indexOf(placed[i - 1]) > 1; // an unplaced port in between
+            // one line per bound sailing this hop — a stretch both bounds share
+            // gets two separate lines (routeBends keeps them apart)
+            for (const leg of directional ? [0] : boundsOfHop[ports.indexOf(placed[i])]) segs.push({ hop: `${i}-${leg}`, a, b, leg, gap });
         }
         // 140 px at the route's fitted view, scaled with zoom (zoom-invariant shapes)
         const controls = routeBends(segs, placed.map(layer.pos), labelBoxes, 9, withTable ? null : current.bendOptions, 140 * (current.fitW || view.w) / view.w);
