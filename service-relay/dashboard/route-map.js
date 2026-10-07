@@ -5,9 +5,12 @@
 //  Operator / Carriers box. Everything is one SVG, so Export PNG
 //  captures exactly what's on screen.
 //
-//  Zoom (wheel, ＋/－) and pan (drag) change the VIEW and redraw, rather
-//  than scaling a picture — so arrows, dots, labels and arrowheads keep the
-//  same clear on-screen size at every zoom, while coastlines get sharper.
+//  Two layers: the world (sea, land, borders) is painted into a <canvas>;
+//  the route (arrows, dots, labels, info box) is an SVG on top. During a
+//  zoom/drag nothing is rebuilt: the canvas is slid/scaled by CSS and the
+//  route by an SVG transform, and both redraw sharp once the gesture
+//  pauses (~150 ms) — big whole-world routes (ZNS-1) stay smooth even on
+//  slow PCs. Export PNG composites both.
 //
 //  Data: routes/route-map.js (receipt list, route + placed ports, land).
 //  Map: Mercator, centred on the route's own longitude — the world is
@@ -110,21 +113,24 @@ function boundNames(service, ports, directional) {
 // wins; the first option (the old fixed bend) wins ties, so routes that
 // were already clean look the same.
 // segs: [{ a: {x,y}, b: {x,y} }]  dots: [{x,y}]  -> control point per seg.
-// `fixed` (option index per seg) skips the search — zoom/pan redraws reuse
+// `fixed` ({ [seg.hop]: option index }) skips the search — zoom/pan redraws reuse
 // the shapes picked when the route opened (same look, no per-frame cost).
 const BEND_OPTIONS = [[1, 0.22], [-1, 0.22], [1, 0.4], [-1, 0.4], [1, 0.1], [-1, 0.1], [1, 0.6], [-1, 0.6], [1, 0]];
-function routeBends(segs, dots, boxes = [], near = 9, fixed = null) {
+// `cap`: the most a hop may bow, in px — the caller scales it with zoom so
+// a curve keeps exactly its shape while zooming.
+function routeBends(segs, dots, boxes = [], near = 9, fixed = null, cap = 140) {
     const drawn = [];
     const at = (a, c, b, t) => ({ x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t ** 2 * b.x, y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t ** 2 * b.y });
-    const chosen = [];
+    const chosen = {};
     const controls = segs.map(({ a, b }, si) => {
+        const key = segs[si].hop ?? si, pinned = fixed?.[key]; // keyed by hop: zooming can merge spots and drop segs
         const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
         let best = null;
-        const options = fixed ? [BEND_OPTIONS[fixed[si]]] : BEND_OPTIONS;
+        const options = pinned !== undefined ? [BEND_OPTIONS[pinned]] : BEND_OPTIONS;
         for (const [side, f] of options) {
-            const bend = side * Math.min(len * f, 140);
+            const bend = side * Math.min(len * f, cap);
             const c = { x: (a.x + b.x) / 2 + (dy / len) * bend, y: (a.y + b.y) / 2 - (dx / len) * bend };
-            if (fixed) { best = { c, pts: [], opt: fixed[si] }; break; } // redraw: shape already chosen
+            if (pinned !== undefined) { best = { c, pts: [], opt: pinned }; break; } // redraw: shape already chosen
             const pts = [];
             // a check every ~15px of curve (sparser misses dots on long hops), ends skipped (they touch ports)
             const n = Math.max(10, Math.min(60, Math.round(len / 15)));
@@ -138,10 +144,10 @@ function routeBends(segs, dots, boxes = [], near = 9, fixed = null) {
                 }
                 for (const bx of boxes) if (p.x > bx.x0 - 2 && p.x < bx.x1 + 2 && p.y > bx.y0 - 2 && p.y < bx.y1 + 2) score += 2;
             }
-            if (!best || score < best.score) best = { score, c, pts, opt: fixed ? fixed[si] : BEND_OPTIONS.indexOf(options.find(o => o[0] === side && o[1] === f)) };
+            if (!best || score < best.score) best = { score, c, pts, opt: BEND_OPTIONS.findIndex(o => o[0] === side && o[1] === f) };
         }
         drawn.push(...best.pts);
-        chosen.push(best.opt);
+        chosen[key] = best.opt;
         return best.c;
     });
     controls.options = chosen;
@@ -235,6 +241,7 @@ if (typeof document !== "undefined") {
     let land = null, borders = null, current = null, placing = null;
     let landShapes = null, borderShapes = null; // projected once (projectShapes)
     let view = null;   // { x0, y0, w, h } in longitude / Mercator degrees
+    let landView = null; // the view the land canvas was last painted for
     let layer = null;  // the map last drawn (for click -> lon/lat)
 
     const status = msg => { $("rmStatus").textContent = msg; };
@@ -280,14 +287,18 @@ if (typeof document !== "undefined") {
         status(`Loading ${label}…`);
         const result = await promise;
         if (!result.ok) { status(result.reason); return; }
-        if (current?.reload !== reload) view = null; // a different route re-fits; a reload (after Place) keeps your zoom
-        current = { ...result, label, reload };
+        const sameRoute = current?.reload === reload;
+        if (!sameRoute) view = null; // a different route re-fits; a reload (after Place) keeps your zoom
+        current = { ...result, label, reload, bendOptions: {}, fitW: sameRoute ? current.fitW : undefined };
         land ||= await (await fetch("/route-map/land.json")).json();
         borders ||= await (await fetch("/route-map/borders.json")).json();
         render();
     }
 
-    function render(withTable = true) {
+    // withTable: also refresh status + port table (not on zoom/pan frames).
+    // withLand: repaint the land canvas (skipped DURING a gesture — the
+    // canvas is CSS-transformed instead, see redraw()).
+    function render(withTable = true, withLand = true) {
         const { data, places, source } = current;
         const ports = data.ports.map((p, i) => ({ ...p, place: places[i] }));
         const placed = ports.filter(p => p.place);
@@ -330,10 +341,11 @@ if (typeof document !== "undefined") {
             if (placed[i] === closure) continue; // directional: no hop back into the start
             const a = layer.pos(placed[i - 1]), b = layer.pos(placed[i]);
             if (Math.hypot(b.x - a.x, b.y - a.y) < 4) continue; // same spot
-            segs.push({ a, b, leg: legOf(placed[i]), gap: ports.indexOf(placed[i]) - ports.indexOf(placed[i - 1]) > 1 }); // gap: an unplaced port in between
+            segs.push({ hop: i, a, b, leg: legOf(placed[i]), gap: ports.indexOf(placed[i]) - ports.indexOf(placed[i - 1]) > 1 }); // gap: an unplaced port in between
         }
-        const controls = routeBends(segs, placed.map(layer.pos), labelBoxes, 9, withTable ? null : current.bendOptions);
-        current.bendOptions = controls.options;
+        // 140 px at the route's fitted view, scaled with zoom (zoom-invariant shapes)
+        const controls = routeBends(segs, placed.map(layer.pos), labelBoxes, 9, withTable ? null : current.bendOptions, 140 * (current.fitW || view.w) / view.w);
+        current.bendOptions = { ...current.bendOptions, ...controls.options };
         let arrows = "";
         segs.forEach(({ a, b, leg, gap }, i) => {
             const c = controls[i];
@@ -363,15 +375,17 @@ if (typeof document !== "undefined") {
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${totalH}" font-family="Arial, Helvetica, sans-serif">
             <defs>${COLORS.map((c, i) => `<marker id="arrow${i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" markerUnits="strokeWidth" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join("")}
                 <clipPath id="mapClip"><rect width="${W}" height="${MAP_H}"/></clipPath></defs>
-            <rect width="${W}" height="${totalH}" fill="#fff"/>
-            <g clip-path="url(#mapClip)">
+            <rect y="${MAP_H}" width="${W}" height="${totalH - MAP_H}" fill="#fff"/>
+            <g clip-path="url(#mapClip)"><g id="rmRoute">
                 ${layer.background}
                 ${arrows}${dots}${labels}
-            </g>
+            </g></g>
             <rect width="${W}" height="${MAP_H}" fill="none" stroke="${TT.land}"/>
             ${title}${box}
         </svg>`;
-        $("rmMap").innerHTML = svg;
+        if (!$("rmLand")) $("rmMap").innerHTML = `<canvas id="rmLand"></canvas><div id="rmSvg"></div>`;
+        $("rmSvg").innerHTML = svg;
+        if (withLand || !landView) paintLand();
         $("rmExport").disabled = false;
 
         const unplaced = ports.filter(p => !p.place).length;
@@ -384,14 +398,10 @@ if (typeof document !== "undefined") {
     function flatLayer(placed) {
         const center = placed.length ? centerLon(placed.map(p => p.place.lon)) : 0;
         const xy = p => ({ x: unwrap(p.place.lon, center), y: mercY(p.place.lat) });
-        view ||= fitView(placed.length ? placed.map(xy) : [{ x: center, y: 0 }]);
+        if (!view) { view = fitView(placed.length ? placed.map(xy) : [{ x: center, y: 0 }]); current.fitW = view.w; }
         const k = W / view.w;
         const sx = x => (x - view.x0) * k, sy = y => (view.y0 + view.h - y) * k;
 
-        // Land + borders, 3 copies so any centre longitude has full coverage.
-        landShapes ||= projectShapes(land);
-        borderShapes ||= projectShapes(borders);
-        const landPath = shapesPath(landShapes, view, true), borderPath = shapesPath(borderShapes, view, false);
         let dateLines = "";
         for (let x = Math.ceil((view.x0 - 180) / 360) * 360 + 180; x < view.x0 + view.w; x += 360) {
             dateLines += `<line x1="${sx(x).toFixed(1)}" y1="0" x2="${sx(x).toFixed(1)}" y2="${MAP_H}" stroke="${TT.grey}" stroke-opacity="0.5" stroke-dasharray="4 4"/>`;
@@ -399,15 +409,35 @@ if (typeof document !== "undefined") {
 
         const pos = p => { const { x, y } = xy(p); return { x: sx(x), y: sy(y), visible: true }; };
         return {
-            background: `<rect width="${W}" height="${MAP_H}" fill="${TT.sea}"/>
-                <path d="${landPath}" fill="${TT.land}" stroke="${TT.coast}" stroke-width="0.6" fill-rule="evenodd"/>
-                <path d="${borderPath}" fill="none" stroke="#ffffff" stroke-width="0.8"/>${dateLines}`,
+            background: dateLines, // sea/land/borders are on the canvas underneath (paintLand)
             pos,
             invert(ux, uy) {
                 const lon = ((((ux / k + view.x0 + 180) % 360) + 360) % 360) - 180;
                 return [lon, invMercY(view.y0 + view.h - uy / k)];
             },
         };
+    }
+
+    // Sea, land and borders for the current view, into the canvas under the
+    // route SVG. Land + borders: 3 world copies so any centre longitude has
+    // full coverage (shapesPath culls off-screen shapes and sub-pixel points).
+    function paintLand() {
+        const canvas = $("rmLand");
+        canvas.style.transform = "";
+        const cssW = canvas.clientWidth, dpr = window.devicePixelRatio || 1; // CSS sizes it (width 100%, map aspect)
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round((cssW * MAP_H / W) * dpr);
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(canvas.width / W, 0, 0, canvas.width / W, 0, 0); // draw in SVG user units
+        ctx.fillStyle = TT.sea;
+        ctx.fillRect(0, 0, W, MAP_H);
+        landShapes ||= projectShapes(land);
+        borderShapes ||= projectShapes(borders);
+        const landPath = new Path2D(shapesPath(landShapes, view, true));
+        ctx.fillStyle = TT.land; ctx.fill(landPath, "evenodd");
+        ctx.strokeStyle = TT.coast; ctx.lineWidth = 0.6; ctx.stroke(landPath);
+        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.8; ctx.stroke(new Path2D(shapesPath(borderShapes, view, false)));
+        landView = { ...view, css: cssW / W }; // css: CSS px per SVG unit (read once here, not per wheel tick — that forced a layout every event)
     }
 
     function renderTable(ports) {
@@ -436,8 +466,28 @@ if (typeof document !== "undefined") {
         const r = $("rmMap").querySelector("svg").getBoundingClientRect();
         return { ux: ((e.clientX - r.left) / r.width) * W, uy: ((e.clientY - r.top) / r.width) * W };
     };
-    let pending = false;
-    const redraw = () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; render(false); }); };
+    // During a zoom/drag gesture, don't rebuild the map: slide/scale the one
+    // already drawn (an SVG transform — no string building, no re-parse), and
+    // redraw it sharp once the gesture pauses. Rebuilding every frame was
+    // what made big routes (ZNS-1) lag on slower PCs: >130 ms frames at 4×
+    // CPU throttle.
+    let settle = null;
+    const redraw = () => {
+        const canvas = $("rmLand");
+        if (canvas && landView) {
+            const kv = W / view.w, sc = landView.w / view.w, css = landView.css;
+            const tx = (landView.x0 - view.x0) * kv * css, ty = (view.y0 + view.h - landView.y0 - landView.h) * kv * css;
+            canvas.style.transform = `matrix(${sc}, 0, 0, ${sc}, ${tx}, ${ty})`;
+        }
+        // the route layer moves with it (SVG units) — nothing rebuilt mid-gesture
+        const route = $("rmMap").querySelector("#rmRoute");
+        if (route && landView) {
+            const kv = W / view.w, sc = landView.w / view.w;
+            route.setAttribute("transform", `matrix(${sc} 0 0 ${sc} ${(landView.x0 - view.x0) * kv} ${(view.y0 + view.h - landView.y0 - landView.h) * kv})`);
+        }
+        clearTimeout(settle);
+        settle = setTimeout(() => render(false), 150);
+    };
 
     $("rmMap").addEventListener("wheel", (e) => {
         if (!current) return;
@@ -494,7 +544,9 @@ if (typeof document !== "undefined") {
         img.onload = () => {
             const canvas = document.createElement("canvas");
             canvas.width = vw * 2; canvas.height = vh * 2;
-            canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage($("rmLand"), 0, 0, W * 2, MAP_H * 2); // the world, under…
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height); // …the route + info box
             const a = document.createElement("a");
             a.href = canvas.toDataURL("image/png");
             a.download = `${(current.data.service || "route").replace(/[^A-Za-z0-9-]/g, "_")}-route-map.png`;

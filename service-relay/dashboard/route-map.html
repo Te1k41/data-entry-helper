@@ -18,6 +18,8 @@
     .rmMapWrap { background: #fff; border: 1px solid var(--border); position: relative; border-radius: 4px; overflow: hidden; }
     .rmMapWrap.placing { cursor: crosshair; outline: 2px solid var(--amber); }
     .rmMapWrap svg { display: block; width: 100%; height: auto; user-select: none; }
+    #rmLand { position: absolute; top: 0; left: 0; width: 100%; aspect-ratio: 1100 / 560; transform-origin: 0 0; will-change: transform; }
+    #rmSvg { position: relative; } /* route SVG sits over the land canvas */
     .rmMapWrap { cursor: grab; }
     .rmMapWrap:active { cursor: grabbing; }
     .rmDrop { border: 2px dashed var(--border); padding: 40px; text-align: center; color: var(--dim); }
