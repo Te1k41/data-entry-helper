@@ -399,6 +399,7 @@ flowchart LR
   download_watcher_js["download-watcher.js"] --> schedule_dom_scrape_store_js["schedule-dom-scrape-store.js"]
   due_services_store_js["due-services-store.js"] --> config_js["config.js"]
   due_services_store_js["due-services-store.js"] --> atomic_write_js["atomic-write.js"]
+  due_services_store_js["due-services-store.js"] --> due_date_utils_js["due-date-utils.js"]
   due_services_trim_js["due-services-trim.js"] --> due_date_utils_js["due-date-utils.js"]
   due_services_trim_js["due-services-trim.js"] --> settings_store_js["settings-store.js"]
   fill_calc_js["fill-calc.js"] --> port_dictionary_js["port-dictionary.js"]
@@ -524,8 +525,8 @@ flowchart LR
 | dashboard/settings.js | - | - |
 | date-translator.js | - | fill-calc.js |
 | download-watcher.js | config.js, relay-state.js, proof-extract.js, proof-parsers/yangming-html.js, proof-parsers/evergreen-html.js, schedule-dom-scrape-store.js | server.js |
-| due-date-utils.js | - | current-batch-store.js, due-services-trim.js, routes/due-services.js |
-| due-services-store.js | config.js, atomic-write.js | routes/due-services.js, server.js |
+| due-date-utils.js | - | current-batch-store.js, due-services-store.js, due-services-trim.js, routes/due-services.js |
+| due-services-store.js | config.js, atomic-write.js, due-date-utils.js | routes/due-services.js, server.js |
 | due-services-trim.js | due-date-utils.js, settings-store.js | current-batch-store.js, routes/due-services.js |
 | fill-calc.js | port-dictionary.js, vessel-dictionary.js, date-translator.js | fill-calc.selftest.js, routes/fill-test.js |
 | fill-calc.selftest.js | fill-calc.js, schedule-guideline-store.js, proof-extract.js, port-dictionary.js, vessel-dictionary.js | - |

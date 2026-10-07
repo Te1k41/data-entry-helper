@@ -11,6 +11,7 @@ const fs   = require("fs");
 const path = require("path");
 const { DATA_FOLDER, HISTORY_FOLDER, DUE_SERVICES_FILE } = require("./config");
 const { writeFileAtomicSync } = require("./atomic-write");
+const { parseTTDate } = require("./due-date-utils");
 
 let dueServices     = []; // [{ record, service, carrier, assignedTo, nextUpdateDate, done? }]
 let dueServicesAsOf = null; // ISO timestamp of the last scan received
@@ -65,9 +66,40 @@ function loadFromDisk() {
         dueServices     = Array.isArray(parsed.services) ? parsed.services : [];
         dueServicesAsOf = parsed.asOf || null;
         console.log(`📂 Loaded ${dueServices.length} saved service(s) from disk (as of ${dueServicesAsOf})`);
+        const expired = expireDone(dueServices);
+        if (expired) { console.log(`🔁 ${expired} done mark(s) expired — their next cycle is due this week`); save(); }
     } catch (err) {
         console.error("❌ Could not load due-services.json — starting empty:", err.message);
     }
+}
+
+// Monday 00:00 of the week containing `date` (the weekly plan's weeks).
+function weekStart(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.getTime();
+}
+
+// A Mark Done covers the cycle that was due when you clicked it. Its
+// nextUpdateDate (set to +15 days) is the NEXT cycle — so once the week
+// of that date arrives, the old done mark no longer applies: the service
+// is due again and must show as not done. Without this, `done` never
+// expired and the weekly plan listed upcoming services (placed by their
+// +15-day date) as already done — reported: "why do upcoming services
+// show done already". Marks made this week keep showing done this week
+// (their date is 2+ weeks out). Returns how many were expired.
+function expireDone(list, now = new Date()) {
+    let expired = 0;
+    for (const s of list) {
+        if (!s.done) continue;
+        const next = parseTTDate(s.nextUpdateDate);
+        if (!next || weekStart(next) > weekStart(now)) continue;
+        s.done = false;
+        delete s._preDoneSnapshot; // that cycle is over — nothing left to undo
+        expired++;
+    }
+    return expired;
 }
 
 // Tradetech's scan has no idea a record was marked done locally — it
@@ -85,6 +117,8 @@ function setAll(services, asOf) {
     dueServices = services.map(incoming => {
         const previous = previousByRecord.get(incoming.record);
         if (!previous || !previous.done) return incoming;
+        // its next cycle has come round: use the scan's real date, not ours
+        if (expireDone([{ ...previous }])) return incoming;
 
         const merged = { ...incoming, done: previous.done, nextUpdateDate: previous.nextUpdateDate };
         if (previous._preDoneSnapshot) merged._preDoneSnapshot = previous._preDoneSnapshot;
@@ -95,7 +129,10 @@ function setAll(services, asOf) {
 }
 
 module.exports = {
-    getAll:        () => dueServices,
+    expireDone, // exported for the self-check
+    // expired done marks are cleared on read — the week can roll over
+    // with no new scan in between
+    getAll:        () => { if (expireDone(dueServices)) save(); return dueServices; },
     getAsOf:       () => dueServicesAsOf,
     setAll,
     findByRecord:  (record) => dueServices.find(s => s.record === record),
