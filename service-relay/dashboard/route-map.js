@@ -351,16 +351,24 @@ if (typeof document !== "undefined") {
             const at = layer.pos(p);
             if (!at.visible) continue;
             const key = `${at.x.toFixed(0)},${at.y.toFixed(0)}`;
-            if (!spots.has(key)) spots.set(key, { x: at.x, y: at.y, p });
+            if (!spots.has(key)) spots.set(key, { x: at.x, y: at.y, p, keys: [] });
+            // bound markers at this port (ES / EE / WS / WE / EEWS …) — every visit's
+            const k = String(p.key || "").trim().toUpperCase();
+            if (/^([NSEW][SE]){1,2}$/.test(k) && !spots.get(key).keys.includes(k)) spots.get(key).keys.push(k);
         }
         const spotList = [...spots.values()];
-        const texts = spotList.map(s => cityLabel(s.p.name) + (s.p.place.how === "approx" ? " ≈" : ""));
+        const texts = spotList.map(s => cityLabel(s.p.name) + (s.p.place.how === "approx" ? " ≈" : "") + (s.keys.length ? " " + s.keys.join(" ") : ""));
+        // each marker in its bound's colour: E… navy if Eastbound is the 1st bound, etc.
+        const nameList = boundNames(data.service, data.ports, directional);
+        const markerColor = k => COLORS[Math.max(0, nameList.indexOf(COMPASS[k[0]]))];
+        // a combined key ("EEWS" = East ends, West starts) is coloured per half
+        const markerSpans = keys => keys.map(k => " " + k.match(/../g).map(c => `<tspan font-size="11" fill="${markerColor(c)}">${esc(c)}</tspan>`).join("")).join("");
         const spotsLabels = placeLabels(spotList.map((s, i) => ({ x: s.x, y: s.y, width: texts[i].length * 7.6 })), spotList);
         let dots = "", labels = "";
         spotList.forEach((s, i) => {
             const approx = s.p.place.how === "approx", l = spotsLabels[i];
             dots += `<circle data-port="${esc(s.p.name)}" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="5.5" fill="${approx ? TT.amber : TT.navy}" stroke="#fff" stroke-width="1.5"/>`;
-            labels += `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" font-size="13" font-weight="bold" fill="${TT.navy}" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(texts[i])}</text>`;
+            labels += `<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="${l.anchor}" font-size="13" font-weight="bold" fill="${TT.navy}" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(cityLabel(s.p.name) + (approx ? " ≈" : ""))}${markerSpans(s.keys)}</text>`;
         });
 
         // Label boxes, so arrows can steer around the text too.
