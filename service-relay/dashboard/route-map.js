@@ -146,7 +146,10 @@ function hopBounds(ports) {
 // segs: [{ a: {x,y}, b: {x,y} }]  dots: [{x,y}]  -> control point per seg.
 // `fixed` ({ [seg.hop]: option index }) skips the search — zoom/pan redraws reuse
 // the shapes picked when the route opened (same look, no per-frame cost).
-const BEND_OPTIONS = [[1, 0.22], [-1, 0.22], [1, 0.4], [-1, 0.4], [1, 0.1], [-1, 0.1], [1, 0.6], [-1, 0.6], [1, 0]];
+// [side, bow as a share of the hop's length, minimum bow as a share of `cap`]
+// — the minimum keeps two lines on a very short hop (Shanghai -> Ningbo,
+// sailed by both bounds) visibly apart instead of 2–3 px on top of each other.
+const BEND_OPTIONS = [[1, 0.22, 0.07], [-1, 0.22, 0.07], [1, 0.4, 0.12], [-1, 0.4, 0.12], [1, 0.1, 0.04], [-1, 0.1, 0.04], [1, 0.6, 0.17], [-1, 0.6, 0.17], [1, 0, 0]];
 // `cap`: the most a hop may bow, in px — the caller scales it with zoom so
 // a curve keeps exactly its shape while zooming.
 function routeBends(segs, dots, boxes = [], near = 9, fixed = null, cap = 140) {
@@ -158,8 +161,8 @@ function routeBends(segs, dots, boxes = [], near = 9, fixed = null, cap = 140) {
         const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
         let best = null;
         const options = pinned !== undefined ? [BEND_OPTIONS[pinned]] : BEND_OPTIONS;
-        for (const [side, f] of options) {
-            const bend = side * Math.min(len * f, cap);
+        for (const [side, f, minFrac] of options) {
+            const bend = side * Math.min(Math.max(len * f, cap * minFrac), cap);
             const c = { x: (a.x + b.x) / 2 + (dy / len) * bend, y: (a.y + b.y) / 2 - (dx / len) * bend };
             if (pinned !== undefined) { best = { c, pts: [], opt: pinned }; break; } // redraw: shape already chosen
             const pts = [];
