@@ -184,7 +184,48 @@ function panBy(v, dx, dy, mapW = W, mapH = MAP_H) {
 const cityLabel = name => String(name || "").split(",")[0].replace(/\s*\(.*?\)\s*/g, " ").trim()
     .toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
 
-if (typeof module !== "undefined") module.exports = { isDirectional, boundNames, routeBends, mercY, invMercY, centerLon, unwrap, fitView, pivotRow, cityLabel, placeLabels, zoomAt, panBy };
+// Coastline / border data -> map units ONCE: flat [x0,y0,x1,y1,...] arrays
+// (x = longitude, y = Mercator degrees) plus a bounding box per shape, so
+// a redraw never re-does the Mercator maths and can skip off-screen shapes.
+function projectShapes(lines) {
+    return lines.map(line => {
+        const pts = new Float64Array(line.length * 2);
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        line.forEach(([lon, lat], i) => {
+            const y = mercY(lat);
+            pts[2 * i] = lon; pts[2 * i + 1] = y;
+            x0 = Math.min(x0, lon); x1 = Math.max(x1, lon); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        });
+        return { pts, x0, y0, x1, y1 };
+    });
+}
+
+// SVG path for projected shapes in view `v` (3 world copies). Skips shapes
+// whose box misses the view, and points under 1px from the last one drawn —
+// zoomed out that drops most points, zoomed in you get full detail. This is
+// what keeps zoom/pan smooth on a whole-world route.
+function shapesPath(shapes, v, closed, mapW = W, mapH = MAP_H) {
+    const k = mapW / v.w, m = 50 / k;
+    const xMin = v.x0 - m, xMax = v.x0 + v.w + m, yMin = v.y0 - m, yMax = v.y0 + v.h + m;
+    let out = "";
+    for (const off of [-360, 0, 360]) {
+        for (const sh of shapes) {
+            if (sh.x1 + off < xMin || sh.x0 + off > xMax || sh.y1 < yMin || sh.y0 > yMax) continue;
+            const p = sh.pts, last = p.length - 2;
+            let d = "", lx = NaN, ly = NaN, n = 0;
+            for (let i = 0; i <= last; i += 2) {
+                const x = (p[i] + off - v.x0) * k, y = (v.y0 + v.h - p[i + 1]) * k;
+                if (n && i !== last && Math.abs(x - lx) < 1 && Math.abs(y - ly) < 1) continue;
+                d += (n ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
+                lx = x; ly = y; n++;
+            }
+            if (n > (closed ? 2 : 1)) out += closed ? d + "Z" : d;
+        }
+    }
+    return out;
+}
+
+if (typeof module !== "undefined") module.exports = { projectShapes, shapesPath, isDirectional, boundNames, routeBends, mercY, invMercY, centerLon, unwrap, fitView, pivotRow, cityLabel, placeLabels, zoomAt, panBy };
 
 // ── Page ──────────────────────────────────────────────────────
 
@@ -192,6 +233,7 @@ if (typeof document !== "undefined") {
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     let land = null, borders = null, current = null, placing = null;
+    let landShapes = null, borderShapes = null; // projected once (projectShapes)
     let view = null;   // { x0, y0, w, h } in longitude / Mercator degrees
     let layer = null;  // the map last drawn (for click -> lon/lat)
 
@@ -345,20 +387,11 @@ if (typeof document !== "undefined") {
         view ||= fitView(placed.length ? placed.map(xy) : [{ x: center, y: 0 }]);
         const k = W / view.w;
         const sx = x => (x - view.x0) * k, sy = y => (view.y0 + view.h - y) * k;
-        const inView = (x, y) => x > -50 && x < W + 50 && y > -50 && y < MAP_H + 50;
 
         // Land + borders, 3 copies so any centre longitude has full coverage.
-        let landPath = "", borderPath = "";
-        for (const off of [-360, 0, 360]) {
-            for (const ring of land) {
-                const pts = ring.map(([lon, lat]) => [sx(lon + off), sy(mercY(lat))]);
-                if (pts.some(([x, y]) => inView(x, y))) landPath += `M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L")}Z`;
-            }
-            for (const line of borders) {
-                const pts = line.map(([lon, lat]) => [sx(lon + off), sy(mercY(lat))]);
-                if (pts.some(([x, y]) => inView(x, y))) borderPath += `M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join("L")}`;
-            }
-        }
+        landShapes ||= projectShapes(land);
+        borderShapes ||= projectShapes(borders);
+        const landPath = shapesPath(landShapes, view, true), borderPath = shapesPath(borderShapes, view, false);
         let dateLines = "";
         for (let x = Math.ceil((view.x0 - 180) / 360) * 360 + 180; x < view.x0 + view.w; x += 360) {
             dateLines += `<line x1="${sx(x).toFixed(1)}" y1="0" x2="${sx(x).toFixed(1)}" y2="${MAP_H}" stroke="${TT.grey}" stroke-opacity="0.5" stroke-dasharray="4 4"/>`;
